@@ -434,6 +434,16 @@ module appService 'modules/appservice.bicep' = {
   }
 }
 
+module consolePlatform 'modules/lab-console-platform.bicep' = {
+  name: 'lab-console-platform'
+  params: {
+    webAppName: appService.outputs.webAppName
+    centralLawId: lawCentral.outputs.id
+    location: appServiceLocation
+    tags: commonTags
+  }
+}
+
 // ---------------------------------------------------------------------------------
 // Action Group + Alerts (CPU, failed requests, pod restarts, service health)
 // ---------------------------------------------------------------------------------

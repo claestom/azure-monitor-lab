@@ -191,6 +191,27 @@ module appService '../modules/appservice.bicep' = {
   }
 }
 
+module consolePlatform '../modules/lab-console-platform.bicep' = {
+  name: 'lab-console-platform'
+  params: {
+    webAppName: appService.outputs.webAppName
+    centralLawId: lawCentral.id
+    location: appServiceLocation
+    tags: commonTags
+  }
+}
+
+module consoleCustomLogs '../modules/custom-logs.bicep' = {
+  name: 'custom-logs'
+  params: {
+    namePrefix: namePrefix
+    location: location
+    centralLawId: lawCentral.id
+    centralLawName: lawCentralName
+    tags: commonTags
+  }
+}
+
 module connectionMonitor '../modules/connection-monitor.bicep' = {
   scope: resourceGroup(subscription().subscriptionId, 'NetworkWatcherRG')
   name: 'connection-monitor'

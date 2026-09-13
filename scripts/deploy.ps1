@@ -35,7 +35,8 @@ param(
   [string] $Location       = 'northeurope',
   [string] $ParametersFile = (Join-Path $PSScriptRoot '..' 'infra' 'main.parameters.json'),
   [switch] $SkipPreflight,
-  [int]    $MaxDeployRetries = 0
+  [int]    $MaxDeployRetries = 0,
+  [guid[]] $ConsoleOperatorObjectIds
 )
 
 $ErrorActionPreference = 'Stop'
@@ -144,6 +145,8 @@ function Register-ResourceProvider {
 
 Write-Step "Ensuring preview resource providers are registered"
 Register-ResourceProvider -Namespace 'Microsoft.CloudHealth'
+Register-ResourceProvider -Namespace 'Microsoft.App'
+Register-ResourceProvider -Namespace 'Microsoft.ContainerRegistry'
 
 # 2. Deploy
 Write-Step "Deploying main.bicep (this takes about 5 minutes: AKS + VMs + Grafana)"
@@ -306,7 +309,7 @@ Write-Host "  Windows VM     : $winVm"
 
 # 3. Post-deploy
 $postDeploy = Join-Path $PSScriptRoot 'post-deploy.ps1'
-& $postDeploy -ResourceGroup $ResourceGroup -WebAppName $webAppName -AksName $aksName -WebAppHost $webAppHost -CentralLawName $centralLawName
+& $postDeploy -SubscriptionId $active.id -TenantId $active.tenantId -ResourceGroup $ResourceGroup -WebAppName $webAppName -AksName $aksName -WebAppHost $webAppHost -CentralLawName $centralLawName -ConsoleOperatorObjectIds $ConsoleOperatorObjectIds
 
 # 4. Service Group (tenant-scoped, preview) + service group member relationship.
 #    Required before SLIs can be attached as extensions on the group.
@@ -329,10 +332,10 @@ if ($aiEnabled) {
   Write-Step "AI feature enabled — creating agents + simulating traffic (scripts/setup-ai.ps1)"
   $setupAi = Join-Path $PSScriptRoot 'setup-ai.ps1'
   try {
-    & $setupAi -ResourceGroup $ResourceGroup
+    & $setupAi -ResourceGroup $ResourceGroup -SubscriptionId $active.id -TenantId $active.tenantId
   } catch {
-    Write-Host "  AI setup failed: $($_.Exception.Message)" -ForegroundColor Yellow
-    Write-Host "  Re-run manually once Python + az are ready: ./scripts/setup-ai.ps1" -ForegroundColor Yellow
+    Write-Host "  Optional AI traffic generation failed: $($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host '  Console agent provisioning completed earlier. This warning concerns optional demo traffic.' -ForegroundColor Yellow
   }
 }
 

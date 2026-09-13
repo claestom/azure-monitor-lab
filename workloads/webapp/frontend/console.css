@@ -172,6 +172,29 @@ dialog p { font-size: 13px; color: #53636e; line-height: 1.7; margin-bottom: 14p
 .infra-sources li span { margin-left: 10px; font-size: 11px; }
 .infra-sources li p { color: var(--muted); font-size: 11px; }
 .infra-scenarios { margin: 20px 0 28px; }
+.operations-layout { display: grid; grid-template-columns: 300px minmax(0,1fr); gap: 36px; padding: 24px 0 36px; min-height: 500px; }
+.operation-actions { display: grid; gap: 10px; }
+.operation-actions .action { min-height: 58px; }
+.operations-activity { min-width: 0; border-left: 1px solid var(--border); padding-left: 28px; }
+.operations-activity .tool-actions { align-items: center; font-size: 11px; }
+.operation-details { display: grid; grid-template-columns: 110px minmax(0,1fr); gap: 7px 14px; margin: 16px 0; font-size: 11px; line-height: 1.6; }
+.operation-details dt { color: var(--muted); }
+.operation-details dd { margin: 0; overflow-wrap: anywhere; }
+#operations-context .operation-details { grid-template-columns: 100px minmax(0,1fr) 90px minmax(0,1fr); padding: 14px 0; border-bottom: 1px solid var(--border); }
+#operations-updated { font-size: 10px; min-height: 16px; }
+.operation-run { border-bottom: 1px solid var(--border); padding: 12px 0 20px; }
+.operation-run summary { display: flex; gap: 12px; justify-content: space-between; align-items: center; cursor: pointer; min-height: 38px; font-size: 13px; }
+.operation-state { font-size: 11px; text-align: right; }
+.operation-message { font-size: 12px; line-height: 1.7; margin-top: 12px; overflow-wrap: anywhere; }
+.operation-steps { list-style: none; margin: 16px 0; padding: 0; }
+.operation-steps li { display: grid; grid-template-columns: 18px minmax(0,1fr) auto; gap: 8px; padding: 9px 0; border-bottom: 1px solid #e8eef1; font-size: 11px; }
+.operation-steps svg { width: 15px; height: 15px; color: var(--teal); }
+.operation-run-link { display: inline-flex; padding: 8px 0; font-size: 12px; }
+#operation-dialog { max-width: 620px; max-height: calc(100dvh - 32px); overflow-y: auto; }
+#operation-dialog h2 { margin-top: 0; }
+#operation-dialog input:not([type="checkbox"]) { height: 40px; min-width: 0; width: 100%; padding: 0 10px; background: #fff; border: 1px solid #cbd6dd; border-radius: 4px; font: inherit; font-weight: 400; }
+#operation-dialog .consent { margin-top: 18px; }
+.operation-error { margin: 16px 0 0; color: var(--red); font-size: 12px; overflow-wrap: anywhere; }
 .agent-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 28px 0; }
 .agent-heading h2 { font-size: 23px; }
 .agent-heading .eyebrow { margin-bottom: 8px; }
@@ -213,8 +236,8 @@ textarea:disabled { background: #edf2f4; }
 .agent-metadata dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 a[aria-disabled="true"] { cursor: not-allowed; color: var(--muted); opacity: .65; }
 @media (max-width: 760px) {
-	.app-tabs { gap: 4px; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); }
-	.app-tabs button { flex-direction: column; font-size: 10px; padding: 10px 2px; gap: 7px; min-width: 0; min-height: 76px; overflow-wrap: anywhere; }
+	.app-tabs { gap: 6px; display: flex; overflow-x: auto; scrollbar-width: thin; }
+	.app-tabs button { flex: 0 0 96px; flex-direction: column; font-size: 10px; padding: 10px 6px; gap: 7px; min-width: 0; min-height: 76px; overflow-wrap: normal; }
 	.app-tabs svg { width: 17px; height: 17px; }
 	.infra-heading { padding: 20px 0; }
 	.infra-heading h2 { font-size: 20px; }
@@ -233,6 +256,14 @@ a[aria-disabled="true"] { cursor: not-allowed; color: var(--muted); opacity: .65
 	.infra-table td:nth-child(n+3) { grid-column: 1 / -1; }
 	.infra-table td:nth-child(n+3)::before { content: attr(data-label); display: block; font-size: 10px; color: var(--muted); margin-bottom: 4px; }
 	.infra-sources ul { grid-template-columns: minmax(0,1fr); }
+	.operations-layout { grid-template-columns: minmax(0,1fr); gap: 28px; }
+	.operation-actions { grid-template-columns: repeat(2,minmax(0,1fr)); }
+	.operation-actions .action { min-height: 64px; }
+	.operations-activity { border-left: 0; padding-left: 0; }
+	#operations-context .operation-details { grid-template-columns: 84px minmax(0,1fr); }
+	.operation-details { grid-template-columns: 84px minmax(0,1fr); gap: 7px 10px; }
+	#operation-dialog { padding: 20px; }
+	#operation-dialog .dialog-actions { flex-wrap: wrap; }
 	.agent-heading { flex-wrap: wrap; gap: 16px; }
 	.agent-heading h2 { font-size: 21px; }
 	.agent-layout { grid-template-columns: minmax(0,1fr); gap: 24px; }

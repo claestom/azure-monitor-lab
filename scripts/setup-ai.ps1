@@ -55,10 +55,13 @@ param(
   [string] $ChatDeployment   = 'gpt-5-mini',
   [string] $RouterDeployment = 'model-router',
   [int]    $Conversations    = 150,
-  [switch] $SkipTraffic
+  [switch] $SkipTraffic,
+  [guid] $SubscriptionId,
+  [guid] $TenantId
 )
 
 $ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $true
 function Write-Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
@@ -78,7 +81,12 @@ if ([string]::IsNullOrWhiteSpace($NamePrefix))    { $NamePrefix    = 'amlab' }
 
 # Subscription guardrail — same gate as deploy.ps1 / post-deploy.ps1.
 $targetFile = Join-Path $repoRoot '.azure-target.json'
-if (Test-Path $targetFile) {
+if ($SubscriptionId -ne [guid]::Empty) {
+  if ($TenantId -eq [guid]::Empty) { throw 'An expected tenant is required with an explicit subscription.' }
+  az account set --subscription $SubscriptionId --only-show-errors
+  $active = az account show --query '{id:id,tenantId:tenantId}' --output json --only-show-errors | ConvertFrom-Json
+  if ($LASTEXITCODE -ne 0 -or $active.id -ne $SubscriptionId.ToString() -or $active.tenantId -ne $TenantId.ToString()) { throw 'AI setup subscription or tenant mismatch.' }
+} elseif (Test-Path $targetFile) {
   $target = Get-Content -Raw $targetFile | ConvertFrom-Json
   az account set --subscription $target.expectedSubscriptionId | Out-Null
   $active = az account show --query "{id:id, tenantId:tenantId}" -o json | ConvertFrom-Json
@@ -132,9 +140,11 @@ $env:APPLICATIONINSIGHTS_CONNECTION_STRING = $AppInsightsConnectionString
 $aiDir = Join-Path $repoRoot 'workloads' 'ai'
 Write-Step "Installing Python dependencies"
 & $python -m pip install -q -r (Join-Path $aiDir 'requirements.txt')
+if ($LASTEXITCODE -ne 0) { throw 'AI dependency installation failed.' }
 
 Write-Step "Creating demo agents"
 & $python (Join-Path $aiDir 'create_agents.py')
+if ($LASTEXITCODE -ne 0) { throw 'AI demo agents could not be prepared.' }
 
 # --- Traffic ---
 if ($SkipTraffic) {
@@ -143,6 +153,7 @@ if ($SkipTraffic) {
 } else {
   Write-Step "Simulating $Conversations conversations (token/trace/cost telemetry)"
   & $python (Join-Path $aiDir 'simulate_traffic.py') --conversations $Conversations
+  if ($LASTEXITCODE -ne 0) { throw 'AI traffic simulation failed.' }
 }
 
 Write-Host "`n✅ AI stage ready. Explore the Foundry project Observability/Tracing tab and Monitor > Alerts." -ForegroundColor Green

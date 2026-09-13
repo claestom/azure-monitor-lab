@@ -39,6 +39,8 @@ The GenAI workload and Azure SRE Agent can also be deployed on the same telemetr
 - `kubectl` (any recent version)
 - Bicep CLI (bundled with `az` 2.20+), or Terraform 1.6+ if you take the Terraform path
 - PowerShell 7+
+- .NET 8 SDK for publishing the Control Center
+- Deployment rights for the console registry, Consumption job environment, custom roles, and role assignments; tenant permission to manage its single-tenant sign-in registration and validate operator users. See [console deployment prerequisites](workloads/webapp/LAB-OPERATIONS.md#prerequisites). ACR Tasks must be available in the subscription; no local Docker or GitHub runner credentials are needed.
 - A subscription with quota for ~5 small VMs/nodes (`Standard_B2s`), 1 App Service B1, Managed Grafana, Storage, Event Hub, and Key Vault
 - For the optional AI stage only: Python 3.10+. `scripts/setup-ai.ps1` provisions the demo agents and traffic simulator from [`workloads/ai/`](workloads/ai/), and the models it deploys are billable.
 - For deployments with an SRE Agent: npm and tar on the deployment machine to package the pinned native MCP runtime. The deployed .NET app does not need Node.js.
@@ -117,7 +119,7 @@ notepad lab.config.json
 ./scripts/deploy.ps1 -ResourceGroup rg-my-lab -Location westeurope
 ```
 
-Defaults: resource group `rg-azure-monitor-lab`, region `northeurope`. Override them with `-ResourceGroup` / `-Location` (explicit args win over `lab.config.json`, which in turn wins over these defaults). The group is created if it doesn't exist yet, or reused if it does. The whole run takes about 5 minutes. See [REFERENCE.md → Deploy](docs/REFERENCE.md#deploy) for the config details and the subscription guardrail.
+Defaults: resource group `rg-azure-monitor-lab`, region `northeurope`. Override them with `-ResourceGroup` / `-Location` (explicit args win over `lab.config.json`, then defaults). The group is created or reused. Infrastructure provisioning, native packaging, and the cloud runner build can take tens of minutes. A successful run includes console sign-in, health, the six-operation Azure runner, and access to selected optional agents. See [deployment reference](docs/REFERENCE.md#deploy) for config and guardrails.
 
 <details>
 <summary><b>Pre-flight check</b> (region SKU / quota validation before deploy)</summary>
@@ -151,7 +153,9 @@ The deploying identity needs `Microsoft.Authorization/roleAssignments/write` at 
 
 ### Lab Control Center
 
-The normal post-deployment step publishes the [Lab Control Center](docs/LAB-CONTROL-CENTER.md) from the checked-out branch. In the Azure portal, open the lab's **App Service**, then select **Browse** to see **Azure Monitor Lab Control Center**. **Infra Health** is the first/default tab, followed by **Traffic & Faults**, **SRE MCP Assistant**, and **Foundry Playground**. Infrastructure health combines Azure platform availability with the Health Dashboard's telemetry rules and requires [explicit read-only access setup](workloads/webapp/README.md#infrastructure-health). No separate frontend build is needed when deploying the checked-in assets. Technical setup and development commands remain in the [web app reference](workloads/webapp/README.md).
+Normal deployment publishes the [Lab Control Center](docs/LAB-CONTROL-CENTER.md) from the checked-out branch and automatically configures sign-in, health access, and its independent Azure job runner. Open the lab's **App Service**, select **Browse**, and sign in as an approved operator. The tabs are **Infra Health**, **Traffic & Faults**, **Lab Operations**, **SRE MCP Assistant**, and **Foundry Playground**. The [six script operations](workloads/webapp/LAB-OPERATIONS.md) need no GitHub credentials or manual enablement. Foundry requires Stage AI; the SRE assistant requires both AI and SRE stages. No separate frontend build is needed for checked-in assets. See the [developer reference](workloads/webapp/README.md).
+
+Scripted deployment and Terraform with Stage B complete this automatically. Portal/raw templates still require their normal workload-publication wrapper, which includes the same console initialization. Noninteractive deployment supplies approved user object IDs through `-ConsoleOperatorObjectIds` or Terraform's `console_operator_object_ids`; an interactive deployment defaults to its signed-in user.
 
 Scripted, staged, and portal/Cloud Shell paths use the same packaging helper. If an SRE Agent is present, the Linux MCP runtime is included automatically. The portal template alone provisions infrastructure; complete its Cloud Shell post-deployment step to publish this application.
 

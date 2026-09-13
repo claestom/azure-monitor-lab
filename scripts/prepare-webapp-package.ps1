@@ -25,7 +25,7 @@ $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json -AsHashta
 if ($config.LabConsole.Sre.AgentName -or $BundleSreMcp) {
   & (Join-Path $PSScriptRoot 'install-sre-mcp.ps1') -Destination (Join-Path $PublishDirectory 'mcp') -Platform linux-x64
   $config.LabConsole.Sre.McpExecutable = 'mcp/azmcp'
-  Write-Host 'SRE MCP runtime included. Authenticated agent execution remains disabled until explicitly configured.'
+  Write-Host 'SRE MCP runtime included. The deployment bootstrap configures authenticated access next.'
 }
 $config | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $configPath -Encoding utf8
 Write-Host "Lab console package prepared in $PublishDirectory"

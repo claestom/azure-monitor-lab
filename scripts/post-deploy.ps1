@@ -17,7 +17,10 @@ param(
   [switch] $BundleSreMcp,
   [string] $SreTenantId,
   [string] $SreModelEndpoint,
-  [string] $SreModelDeployment
+  [string] $SreModelDeployment,
+  [guid[]] $ConsoleOperatorObjectIds,
+  [guid] $SubscriptionId,
+  [guid] $TenantId
 )
 
 $ErrorActionPreference = 'Stop'
@@ -26,26 +29,35 @@ $tempDirectory = [System.IO.Path]::GetTempPath()
 
 # Subscription guardrail
 $targetFile = Join-Path $PSScriptRoot '..' '.azure-target.json'
-if (Test-Path $targetFile) {
+if ($SubscriptionId -ne [guid]::Empty) {
+  if ($TenantId -eq [guid]::Empty) { throw 'An expected tenant is required with an explicit subscription.' }
+  az account set --subscription $SubscriptionId --only-show-errors
+  $active = az account show --query '{id:id,tenantId:tenantId}' --output json --only-show-errors | ConvertFrom-Json
+  if ($LASTEXITCODE -ne 0 -or $active.id -ne $SubscriptionId.ToString() -or $active.tenantId -ne $TenantId.ToString()) { throw 'Post-deployment subscription or tenant mismatch.' }
+} elseif (Test-Path $targetFile) {
   $target = Get-Content -Raw $targetFile | ConvertFrom-Json
   az account set --subscription $target.expectedSubscriptionId | Out-Null
   $active = az account show --query "{id:id, tenantId:tenantId}" -o json | ConvertFrom-Json
   if ($active.id -ne $target.expectedSubscriptionId -or $active.tenantId -ne $target.expectedTenantId) {
     throw "BLOCKED: not on allowed lab subscription. Aborting post-deploy."
   }
+} else {
+  throw 'Pass the expected subscription and tenant or provide the lab target configuration before deployment.'
 }
 
 # 1. Build + zip-deploy the bundled .NET 8 minimal API (workloads/webapp/AmlabHello)
 #    so App Insights gets requests/dependencies/failures from a real app.
 Write-Step "Disabling Kudu build and setting startup command"
 az webapp config appsettings set `
-  --resource-group $ResourceGroup --name $WebAppName `
+  --subscription $active.id --resource-group $ResourceGroup --name $WebAppName `
   --settings SCM_DO_BUILD_DURING_DEPLOYMENT=false `
   --output none
+if ($LASTEXITCODE -ne 0) { throw 'Could not configure prebuilt app deployment.' }
 az webapp config set `
-  --resource-group $ResourceGroup --name $WebAppName `
+  --subscription $active.id --resource-group $ResourceGroup --name $WebAppName `
   --startup-file 'dotnet AmlabHello.dll' `
   --output none
+if ($LASTEXITCODE -ne 0) { throw 'Could not configure the app startup command.' }
 Start-Sleep -Seconds 30
 
 Write-Step "Publishing AmlabHello (workloads/webapp) and zip-deploying"
@@ -72,11 +84,14 @@ if (-not (Test-Path (Join-Path $pub 'AmlabHello.dll'))) {
 $consoleAccountJson = az account show --query '{id:id,tenantId:tenantId}' --output json
 if ($LASTEXITCODE -ne 0 -or -not $consoleAccountJson) { throw 'Unable to resolve the deployment subscription and tenant.' }
 $consoleAccount = $consoleAccountJson | ConvertFrom-Json
+if ($consoleAccount.id -ne $active.id -or $consoleAccount.tenantId -ne $active.tenantId) { throw 'The Azure account changed during deployment.' }
 if ($SreTenantId -and $SreTenantId -ne $consoleAccount.tenantId) { throw 'SRE tenant must match the deployment tenant.' }
 & (Join-Path $PSScriptRoot 'prepare-webapp-package.ps1') `
   -PublishDirectory $pub -ResourceGroup $ResourceGroup -SubscriptionId $consoleAccount.id -TenantId $consoleAccount.tenantId `
   -CentralLawName $CentralLawName -BundleSreMcp:$BundleSreMcp `
   -SreModelEndpoint $SreModelEndpoint -SreModelDeployment $SreModelDeployment
+& (Join-Path $PSScriptRoot 'initialize-webapp-console.ps1') -SubscriptionId $consoleAccount.id -TenantId $consoleAccount.tenantId `
+  -ResourceGroup $ResourceGroup -WebAppName $WebAppName -ConsoleConfigPath (Join-Path $pub 'lab-console.json') -AllowedUserObjectIds $ConsoleOperatorObjectIds
 $zip = "$pub.zip"
 Compress-Archive -Path (Join-Path $pub '*') -DestinationPath $zip -Force
 $deployOutput = ''
@@ -85,7 +100,7 @@ $scmRestartRetries = 0
 $zipDeployRetries = 0
 do {
   $deployOutput = & az webapp deploy `
-    --resource-group $ResourceGroup --name $WebAppName `
+    --subscription $active.id --resource-group $ResourceGroup --name $WebAppName `
     --src-path $zip --type zip --restart true --async true --track-status false --output none 2>&1 | Out-String
   $deployExitCode = $LASTEXITCODE
   $scmRestarted = $deployOutput -match 'SCM container restart|management operation and a deployment operation in quick succession'
@@ -129,11 +144,13 @@ Remove-Item -Force $zip
 
 # 2. Get AKS credentials and apply the workload + k6 load generator
 Write-Step "Getting AKS credentials"
-az aks get-credentials --resource-group $ResourceGroup --name $AksName --overwrite-existing --output none
+az aks get-credentials --subscription $active.id --resource-group $ResourceGroup --name $AksName --overwrite-existing --output none
+if ($LASTEXITCODE -ne 0) { throw 'Could not obtain the lab Kubernetes credentials.' }
 
 Write-Step "Applying frontend deployment + service"
 $frontendYaml = Join-Path $PSScriptRoot '..' 'workloads' 'k8s' '01-frontend.yaml'
 kubectl apply -f $frontendYaml
+if ($LASTEXITCODE -ne 0) { throw 'The demo frontend could not be deployed.' }
 
 Write-Step "Substituting App Service URL into the k6 CronJob and applying"
 $loadgenTemplate = Join-Path $PSScriptRoot '..' 'workloads' 'k8s' '02-loadgen.yaml'
@@ -141,13 +158,15 @@ $loadgenRendered = Join-Path $tempDirectory "amlab-loadgen-$([guid]::NewGuid().T
 $webAppUrl = "https://$WebAppHost"
 (Get-Content -Raw $loadgenTemplate).Replace('__APP_SERVICE_URL__', "'$webAppUrl'") | Set-Content -Encoding UTF8 $loadgenRendered
 kubectl apply -f $loadgenRendered
+if ($LASTEXITCODE -ne 0) { throw 'The demo load generator could not be deployed.' }
 Remove-Item $loadgenRendered -Force
 
 # FEATURE 4 — Apply the OpenTelemetry distributed-tracing demo (AKS → App Service).
 if ([string]::IsNullOrWhiteSpace($AppInsightsConnectionString)) {
   Write-Step "Looking up App Insights connection string for the OTel caller"
-  $appiName = az resource list -g $ResourceGroup --resource-type Microsoft.Insights/components --query "[0].name" -o tsv
-  $AppInsightsConnectionString = az monitor app-insights component show -g $ResourceGroup -a $appiName --query connectionString -o tsv
+  $appiId = az resource list --subscription $active.id -g $ResourceGroup --resource-type Microsoft.Insights/components --query '[0].id' -o tsv
+  $AppInsightsConnectionString = az resource show --subscription $active.id --ids $appiId --api-version 2020-02-02 --query properties.ConnectionString -o tsv
+  if ($LASTEXITCODE -ne 0 -or -not $AppInsightsConnectionString) { throw 'Application Insights configuration could not be resolved.' }
 }
 
 Write-Step "Rendering and applying OTel caller deployment"
@@ -155,6 +174,7 @@ $otelTemplate = Join-Path $PSScriptRoot '..' 'workloads' 'k8s' '04-otel-caller.y
 $otelRendered = Join-Path $tempDirectory "amlab-otel-$([guid]::NewGuid().ToString('N')).yaml"
 (Get-Content -Raw $otelTemplate).Replace('__APP_SERVICE_URL__', $webAppUrl).Replace('__APPI_CONN_STR__', $AppInsightsConnectionString) | Set-Content -Encoding UTF8 $otelRendered
 kubectl apply -f $otelRendered
+if ($LASTEXITCODE -ne 0) { throw 'The OpenTelemetry caller could not be deployed.' }
 Remove-Item $otelRendered -Force
 
 # NEW — Node.js auto-instrumentation via @azure/monitor-opentelemetry (GA distro).
@@ -163,6 +183,7 @@ $nodeTemplate = Join-Path $PSScriptRoot '..' 'workloads' 'k8s' '05-nodeapp-otel.
 $nodeRendered = Join-Path $tempDirectory "amlab-nodeapp-$([guid]::NewGuid().ToString('N')).yaml"
 (Get-Content -Raw $nodeTemplate).Replace('__APP_SERVICE_URL__', $webAppUrl).Replace('__APPI_CONN_STR__', $AppInsightsConnectionString) | Set-Content -Encoding UTF8 $nodeRendered
 kubectl apply -f $nodeRendered
+if ($LASTEXITCODE -ne 0) { throw 'The instrumented Node workload could not be deployed.' }
 Remove-Item $nodeRendered -Force
 
 # 3. Wait for the LoadBalancer IP and print it
@@ -187,20 +208,26 @@ Write-Host "  kubectl create job --from=cronjob/loadgen loadgen-now -n demo" -Fo
 # 4. Assign Monitoring Metrics Publisher role on the custom-logs DCR
 #    so send-custom-logs.ps1 can ingest data via the Logs Ingestion API.
 Write-Step "Assigning 'Monitoring Metrics Publisher' role for custom log ingestion"
-$currentUser = az ad signed-in-user show -o json | ConvertFrom-Json
-$dcrInfo = az resource list -g $ResourceGroup --resource-type "Microsoft.Insights/dataCollectionRules" -o json | ConvertFrom-Json
-$customLogsDcr = $dcrInfo | Where-Object { $_.name -like '*customlogs*' }
-if ($customLogsDcr) {
-  $existing = az role assignment list --assignee $currentUser.id --scope $customLogsDcr.id --role "Monitoring Metrics Publisher" -o json | ConvertFrom-Json
-  if ($existing.Count -eq 0) {
-    az role assignment create --assignee $currentUser.id --role "Monitoring Metrics Publisher" --scope $customLogsDcr.id -o none 2>$null
-    Write-Host "  Role assigned. NOTE: RBAC propagation on the Monitor data plane can take up to 30 minutes." -ForegroundColor Yellow
-  } else {
-    Write-Host "  Role already assigned." -ForegroundColor Green
-  }
-} else {
-  Write-Host "  Custom logs DCR not found — skipping." -ForegroundColor Yellow
+$logOperators = @($ConsoleOperatorObjectIds)
+if (-not $logOperators.Count) {
+  $currentUser = az rest --method get --url 'https://graph.microsoft.com/v1.0/me?$select=id' --subscription $active.id --output json --only-show-errors | ConvertFrom-Json
+  if ($LASTEXITCODE -ne 0 -or -not $currentUser.id) { throw 'Specify console operator IDs for a noninteractive deployment.' }
+  $logOperators = @([guid]$currentUser.id)
 }
+$dcrInfo = az resource list --subscription $active.id -g $ResourceGroup --resource-type Microsoft.Insights/dataCollectionRules -o json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) { throw 'Custom-log access discovery failed.' }
+$customLogsDcr = @($dcrInfo | Where-Object { $_.name -like '*customlogs*' })
+if ($customLogsDcr.Count -ne 1) { throw 'The console custom-log rule was not uniquely resolved.' }
+foreach ($operatorId in $logOperators) {
+  $existing = @(az role assignment list --scope $customLogsDcr[0].id --role 'Monitoring Metrics Publisher' --subscription $active.id -o json | ConvertFrom-Json)
+  if ($LASTEXITCODE -ne 0) { throw 'Could not inspect custom-log operator access.' }
+  if (-not @($existing | Where-Object { $_.principalId -eq $operatorId.ToString() -and $_.scope -ieq $customLogsDcr[0].id }).Count) {
+    az role assignment create --assignee-object-id $operatorId --assignee-principal-type User --role 'Monitoring Metrics Publisher' `
+      --scope $customLogsDcr[0].id --subscription $active.id --output none --only-show-errors
+    if ($LASTEXITCODE -ne 0) { throw 'Custom-log operator access could not be assigned.' }
+  }
+}
+Write-Host '  Custom-log operator access configured. Data-plane RBAC propagation can take up to 30 minutes.' -ForegroundColor Green
 
 # 5. Create the hourly Perf -> Perf_Hourly_CL summary rule (scenario 21 prereq).
 #    Bicep created the destination table; the rule itself is REST-only.

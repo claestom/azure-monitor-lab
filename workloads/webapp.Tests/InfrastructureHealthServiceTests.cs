@@ -18,7 +18,7 @@ public sealed class InfrastructureHealthServiceTests
     private static readonly string App = $"{Scope}/providers/Microsoft.Web/sites/test-app";
     private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-09-11T12:00:00Z");
 
-    private static InfrastructureHealthService Create(FakeAzure transport, FakeClock? clock = null, Action<Dictionary<string, string?>>? configure = null)
+    private static InfrastructureHealthService Create(FakeAzure transport, FakeClock? clock = null, Action<Dictionary<string, string?>>? configure = null, FakeCredential? credential = null)
     {
         var settings = new Dictionary<string, string?>
         {
@@ -26,7 +26,7 @@ public sealed class InfrastructureHealthServiceTests
             ["LabConsole:ResourceGroup"] = "test-rg", ["LabConsole:Health:CentralWorkspaceResourceId"] = Workspace
         };
         configure?.Invoke(settings);
-        var credential = new FakeCredential();
+        credential ??= new FakeCredential();
         var http = new HttpClient(transport);
         var logs = new LogsQueryClient(credential, new LogsQueryClientOptions { Transport = new HttpClientTransport(http), Retry = { MaxRetries = 0 } });
         return new(new ConfigurationBuilder().AddInMemoryCollection(settings).Build(), http, credential, logs, clock ?? new FakeClock());
@@ -122,6 +122,25 @@ public sealed class InfrastructureHealthServiceTests
         Assert.Equal("not_configured", result.State);
         Assert.Empty(transport.ArmRequests);
         Assert.Empty(transport.Queries);
+    }
+
+    [Fact]
+    public async Task ReusesArmAuthenticationUntilTheTokenNeedsRefresh()
+    {
+        using var transport = new FakeAzure();
+        var clock = new FakeClock { Current = DateTimeOffset.UtcNow };
+        var credential = new FakeCredential { ExpiresAt = clock.Current.AddHours(1) };
+        var service = Create(transport, clock, credential: credential);
+        await service.CheckAsync(default);
+        Assert.Equal(3, transport.ArmRequests.Count);
+        Assert.Equal(1, credential.ArmTokenRequests);
+        clock.Current = clock.Current.AddMinutes(2);
+        await service.CheckAsync(default);
+        Assert.Equal(1, credential.ArmTokenRequests);
+        clock.Current = credential.ExpiresAt.AddMinutes(-4);
+        credential.ExpiresAt = clock.Current.AddHours(1);
+        await service.CheckAsync(default);
+        Assert.Equal(2, credential.ArmTokenRequests);
     }
 
     [Fact]
@@ -221,7 +240,13 @@ public sealed class InfrastructureHealthServiceTests
 
     private sealed class FakeCredential : TokenCredential
     {
-        public override AccessToken GetToken(TokenRequestContext requestContext, CancellationToken cancellationToken) => new("test-token", DateTimeOffset.UtcNow.AddHours(1));
+        public DateTimeOffset ExpiresAt { get; set; } = DateTimeOffset.UtcNow.AddHours(1);
+        public int ArmTokenRequests { get; private set; }
+        public override AccessToken GetToken(TokenRequestContext requestContext, CancellationToken cancellationToken)
+        {
+            if (requestContext.Scopes.Contains("https://management.azure.com/.default")) ArmTokenRequests++;
+            return new("test-token", ExpiresAt);
+        }
         public override ValueTask<AccessToken> GetTokenAsync(TokenRequestContext requestContext, CancellationToken cancellationToken) => ValueTask.FromResult(GetToken(requestContext, cancellationToken));
     }
 

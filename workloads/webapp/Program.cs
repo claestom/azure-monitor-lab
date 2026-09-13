@@ -28,6 +28,16 @@ builder.Services.AddSingleton<ISreMcpClient, SreMcpClient>();
 builder.Services.AddSingleton<ISreModel, SreModel>();
 builder.Services.AddSingleton<SreAssistant>();
 builder.Services.AddSingleton<InfrastructureHealthService>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<ILabOperationsRunner>(services => new ContainerJobOperations(
+    services.GetRequiredService<IConfiguration>(), services.GetRequiredService<IHttpClientFactory>()));
+builder.Services.AddSingleton<LabOperationsJournal>();
+builder.Services.AddSingleton<LabOperationsService>();
+builder.Services.AddHttpClient("lab-operations", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(15);
+    client.MaxResponseContentBufferSize = 2 * 1024 * 1024;
+}).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
 builder.Services.AddHttpClient("infrastructure-health", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(15);
@@ -49,6 +59,18 @@ builder.Services.AddHttpClient(Microsoft.Extensions.Options.Options.DefaultName,
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddFixedWindowLimiter("lab-operations", limiter =>
+    {
+        limiter.PermitLimit = 10;
+        limiter.Window = TimeSpan.FromMinutes(1);
+        limiter.QueueLimit = 0;
+    });
+    options.AddFixedWindowLimiter("lab-operation-reads", limiter =>
+    {
+        limiter.PermitLimit = 30;
+        limiter.Window = TimeSpan.FromMinutes(1);
+        limiter.QueueLimit = 0;
+    });
     options.AddFixedWindowLimiter("infrastructure-health", limiter =>
     {
         limiter.PermitLimit = 30;
@@ -116,7 +138,7 @@ app.UseStaticFiles();
 app.UseSession();
 app.Use(async (context, next) =>
 {
-    if (context.Request.Path == "/api/infra/health" || context.Request.Path == "/api/agents/run" || context.Request.Path == "/api/agents/catalog" || context.Request.Path.StartsWithSegments("/api/sre"))
+    if (context.Request.Path == "/api/infra/health" || context.Request.Path == "/api/agents/run" || context.Request.Path == "/api/agents/catalog" || context.Request.Path.StartsWithSegments("/api/sre") || context.Request.Path.StartsWithSegments("/api/operations"))
     {
         var hosted = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WEBSITE_INSTANCE_ID"));
         var allowed = hosted
@@ -130,10 +152,11 @@ app.Use(async (context, next) =>
             await Results.Json(new { available = false, state = "authentication_required", message = "Sign in with an approved lab operator account to use protected lab views.", error = "Authenticated operator access is required.", agents = Array.Empty<object>() }, statusCode: 401).ExecuteAsync(context);
             return;
         }
-        if (context.Request.Path.StartsWithSegments("/api/sre"))
+        if (context.Request.Path.StartsWithSegments("/api/sre") || context.Request.Path.StartsWithSegments("/api/operations"))
         {
             context.Session.SetString("active", "true");
             context.Items["SreOwner"] = hosted ? context.Request.Headers["X-MS-CLIENT-PRINCIPAL-ID"].ToString() : context.Session.Id;
+            context.Items["OperationsOwner"] = context.Items["SreOwner"];
         }
         if (context.Request.Method == "POST")
         {
@@ -167,6 +190,15 @@ app.MapGet("/api/console/config", (IConfiguration configuration) =>
 app.MapGet("/healthz", () => Results.Text("OK"));
 app.MapGet("/api/infra/health", (InfrastructureHealthService service, CancellationToken cancellationToken) => service.CheckAsync(cancellationToken))
     .RequireRateLimiting("infrastructure-health");
+
+app.MapGet("/api/operations/catalog", (HttpContext context, LabOperationsService service, CancellationToken cancellationToken) =>
+    service.CatalogAsync((string)context.Items["OperationsOwner"]!, cancellationToken)).RequireRateLimiting("lab-operation-reads");
+app.MapPost("/api/operations/prepare", (LabOperationRequest request, HttpContext context, LabOperationsService service, CancellationToken cancellationToken) =>
+    service.PrepareAsync((string)context.Items["OperationsOwner"]!, request, cancellationToken)).RequireRateLimiting("lab-operations");
+app.MapPost("/api/operations/approval", (LabOperationApproval request, HttpContext context, LabOperationsService service, CancellationToken cancellationToken) =>
+    service.ApproveAsync((string)context.Items["OperationsOwner"]!, request, cancellationToken)).RequireRateLimiting("lab-operations");
+app.MapGet("/api/operations/runs/{id}", (string id, HttpContext context, LabOperationsService service, CancellationToken cancellationToken) =>
+    service.ReadAsync((string)context.Items["OperationsOwner"]!, id, cancellationToken)).RequireRateLimiting("lab-operation-reads");
 
 app.MapGet("/api/sre/availability", (SreAssistant service, CancellationToken cancellationToken) => service.AvailabilityAsync(cancellationToken))
     .RequireRateLimiting("sre-reads");

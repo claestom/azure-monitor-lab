@@ -106,6 +106,7 @@ $appName = if ($apps.Count -eq 1) { $apps[0].name } else { $null }
 if ($EnableSreAssistant -and $sreAgents.Count -ne 1) { throw 'SRE MCP assistant requires exactly one discovered agent.' }
 @{ LabConsole = @{
   Links = $links; ResourceGroup = $ResourceGroup; AppService = $appName
+  Operations = @{ Enabled = $false; SubscriptionId = $SubscriptionId; TenantId = $TenantId }
   Health = @{
     Enabled = [bool]$EnableInfrastructureHealth; SubscriptionId = $SubscriptionId; TenantId = $TenantId
     CentralWorkspaceResourceId = $(if ($workspace) { $workspace.id } else { $null })

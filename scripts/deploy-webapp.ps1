@@ -6,11 +6,12 @@ param(
   [Parameter(Mandatory)] [string] $WebAppName,
   [string] $CentralLawName,
   [string] $SreModelEndpoint,
-  [string] $SreModelDeployment
+  [string] $SreModelDeployment,
+  [guid[]] $ConsoleOperatorObjectIds
 )
 
 $ErrorActionPreference = 'Stop'
-if (-not $PSCmdlet.ShouldProcess("$SubscriptionId/$ResourceGroup/$WebAppName", 'Publish and ZIP-deploy only the lab Web App')) { return }
+if (-not $PSCmdlet.ShouldProcess("$SubscriptionId/$ResourceGroup/$WebAppName", 'Provision console runner and sign-in access, then publish the lab Web App')) { return }
 az account set --subscription $SubscriptionId --only-show-errors
 if ($LASTEXITCODE -ne 0) { throw 'Could not select the deployment subscription.' }
 $account = az account show --query '{id:id,tenantId:tenantId}' --output json --only-show-errors | ConvertFrom-Json
@@ -31,6 +32,8 @@ try {
   & (Join-Path $PSScriptRoot 'prepare-webapp-package.ps1') -PublishDirectory $publish -ResourceGroup $ResourceGroup `
     -SubscriptionId $SubscriptionId -TenantId $TenantId -CentralLawName $CentralLawName `
     -SreModelEndpoint $SreModelEndpoint -SreModelDeployment $SreModelDeployment
+  & (Join-Path $PSScriptRoot 'initialize-webapp-console.ps1') -SubscriptionId $SubscriptionId -TenantId $TenantId `
+    -ResourceGroup $ResourceGroup -WebAppName $WebAppName -ConsoleConfigPath (Join-Path $publish 'lab-console.json') -AllowedUserObjectIds $ConsoleOperatorObjectIds
   Compress-Archive -Path (Join-Path $publish '*') -DestinationPath $archive
   az webapp config appsettings set --subscription $SubscriptionId --resource-group $ResourceGroup --name $WebAppName `
     --settings SCM_DO_BUILD_DURING_DEPLOYMENT=false --output none --only-show-errors
@@ -42,7 +45,7 @@ try {
     --src-path $archive --type zip --restart true --async false --track-status false --timeout 600000 --output none --only-show-errors
   if ($LASTEXITCODE -ne 0) { throw 'ZIP deployment did not report success. Check deployment status before retrying.' }
   Write-Host "Web App code deployment completed: https://$($web.host)"
-  Write-Host 'Only this Web App was updated. Verify /healthz and the console in a browser; configure agent access separately when required.'
+  Write-Host 'Web App and its console runner/access configuration are ready. No AKS workloads or lab actions were applied.'
 } finally {
   Remove-Item -LiteralPath $publish -Recurse -Force -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $archive -Force -ErrorAction SilentlyContinue

@@ -50,6 +50,8 @@ try {
   if ($config.LabConsole.Foundry.ProjectEndpoint -ne 'https://foundry.services.ai.azure.com/api/projects/project') { throw 'Foundry endpoint missing.' }
   if ($config.LabConsole.Foundry.Enabled) { throw 'Billable agent execution enabled by default.' }
   if ($config.LabConsole.Health.Enabled) { throw 'Health reads enabled by default.' }
+  if ($config.LabConsole.Operations.Enabled -ne $false) { throw 'Operations must be explicitly disabled in generated configuration.' }
+  if ($config.LabConsole.Operations.SubscriptionId -ne 'test-sub') { throw 'Operations subscription context missing.' }
   if ($config.LabConsole.Health.CentralWorkspaceResourceId -ne "$resourceBase/Microsoft.OperationalInsights/workspaces/law-lab-central") { throw 'Central health workspace missing.' }
   if ($config.LabConsole.Health.AppInsightsWorkspaceResourceId -ne "$resourceBase/Microsoft.OperationalInsights/workspaces/law-lab-appinsights") { throw 'Application health workspace association missing.' }
   & $helper -SubscriptionId test-sub -ResourceGroup test-rg -OutputPath $output -EnableInfrastructureHealth -TenantId test-tenant

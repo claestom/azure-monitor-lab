@@ -22,6 +22,7 @@ public sealed class InfrastructureHealthService
     private readonly TimeProvider clock;
     private readonly SemaphoreSlim gate = new(1, 1);
     private InfrastructureHealthSnapshot? snapshot;
+    private AccessToken armToken;
 
     public InfrastructureHealthService(IConfiguration configuration, IHttpClientFactory clients)
         : this(configuration, clients.CreateClient("infrastructure-health"), CreateCredential(configuration), null, TimeProvider.System) { }
@@ -219,9 +220,10 @@ public sealed class InfrastructureHealthService
 
     private async Task<JsonDocument> GetArmAsync(Uri uri, CancellationToken cancellationToken)
     {
-        var token = await credential.GetTokenAsync(new TokenRequestContext(["https://management.azure.com/.default"]), cancellationToken);
+        if (armToken.ExpiresOn <= clock.GetUtcNow().AddMinutes(5))
+            armToken = await credential.GetTokenAsync(new TokenRequestContext(["https://management.azure.com/.default"]), cancellationToken);
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", armToken.Token);
         using var response = await arm.SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
         return JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));

@@ -4,15 +4,20 @@ param(
   [Parameter(Mandatory)] [guid] $TenantId,
   [Parameter(Mandatory)] [ValidatePattern('^[a-zA-Z0-9_.()-]+$')] [string] $ResourceGroup,
   [Parameter(Mandatory)] [ValidatePattern('^[a-zA-Z0-9-]+$')] [string] $WebAppName,
-  [Parameter(Mandatory)] [ValidatePattern('^[a-zA-Z0-9-]+$')] [string] $SreAgentName,
-  [Parameter(Mandatory)] [ValidatePattern('^[a-zA-Z0-9-]+$')] [string] $FoundryAccountName,
-  [Parameter(Mandatory)] [ValidatePattern('^[a-zA-Z0-9_-]+$')] [string] $FoundryProjectName,
-  [Parameter(Mandatory)] [ValidatePattern('^[a-zA-Z0-9_.-]+$')] [string] $ModelDeployment,
-  [Parameter(Mandatory)] [ValidateCount(1, 10)] [guid[]] $AllowedUserObjectIds
+  [ValidatePattern('^[a-zA-Z0-9-]+$')] [string] $SreAgentName,
+  [ValidatePattern('^[a-zA-Z0-9-]+$')] [string] $FoundryAccountName,
+  [ValidatePattern('^[a-zA-Z0-9_-]+$')] [string] $FoundryProjectName,
+  [ValidatePattern('^[a-zA-Z0-9_.-]+$')] [string] $ModelDeployment,
+  [Parameter(Mandatory)] [ValidateCount(1, 10)] [guid[]] $AllowedUserObjectIds,
+  [switch] $AuthenticationOnly
 )
 
 $ErrorActionPreference = 'Stop'
-if (-not $PSCmdlet.ShouldProcess("$SubscriptionId/$ResourceGroup/$WebAppName", 'Configure single-tenant operator sign-in, scoped app identity roles, and enable agent tabs')) { return }
+if (-not $AuthenticationOnly -and (-not $SreAgentName -or -not $FoundryAccountName -or -not $FoundryProjectName -or -not $ModelDeployment)) {
+  throw 'Agent setup requires the SRE, Foundry, and model targets. Use AuthenticationOnly for a lab without optional agents.'
+}
+$action = if ($AuthenticationOnly) { 'Configure single-tenant console operator sign-in' } else { 'Configure console sign-in, scoped app identity roles, and agent access' }
+if (-not $PSCmdlet.ShouldProcess("$SubscriptionId/$ResourceGroup/$WebAppName", $action)) { return }
 az account set --subscription $SubscriptionId --only-show-errors
 if ($LASTEXITCODE -ne 0) { throw 'Could not select the expected subscription.' }
 $account = az account show --query '{id:id,tenantId:tenantId}' --output json --only-show-errors | ConvertFrom-Json
@@ -53,6 +58,7 @@ try {
   if (-not $web.identity.principalId -or $web.identity.type -notmatch 'SystemAssigned' -or $web.identity.tenantId -ne $TenantId.ToString()) {
     throw 'The Web App needs an existing system-assigned identity in the expected tenant.'
   }
+  if (-not $AuthenticationOnly) {
   $null = Invoke-SetupRequest GET "$arm${sreId}?api-version=2025-05-01-preview"
   $model = Invoke-SetupRequest GET "$arm${modelId}?api-version=2025-06-01"
   $project = Invoke-SetupRequest GET "$arm${projectId}?api-version=2025-06-01"
@@ -70,6 +76,7 @@ try {
       -and -not $candidate.UserInfo -and -not $candidate.Query -and -not $candidate.Fragment
   } | Select-Object -Unique)
   if ($modelEndpoint.Count -ne 1 -or $projectEndpoint.Count -ne 1) { throw 'Could not resolve unique trusted model and project endpoints.' }
+  }
   foreach ($operatorId in $AllowedUserObjectIds) { $null = Invoke-SetupRequest GET "https://graph.microsoft.com/v1.0/users/$operatorId`?`$select=id" }
 
   $auth = (Invoke-SetupRequest GET "$arm$webId/config/authsettingsV2?api-version=$version").properties
@@ -83,12 +90,12 @@ try {
       -or $auth.identityProviders.azureActiveDirectory.registration.clientSecretSettingName -ne $secretSetting)) {
     throw 'An existing authentication configuration differs from this lab setup. Review it before changing providers.'
   }
-  $roleRequests = @(
+  $roleRequests = if ($AuthenticationOnly) { @() } else { @(
     @{ Name = 'Reader'; Scope = $sreId },
     @{ Name = 'SRE Agent Administrator'; Scope = $sreId },
     @{ Name = 'Cognitive Services OpenAI User'; Scope = $modelId },
     @{ Name = 'Foundry User'; Scope = $projectId }
-  )
+  ) }
   foreach ($role in $roleRequests) {
     $definitions = @(az role definition list --name $role.Name --subscription $SubscriptionId --query '[].id' --output json --only-show-errors | ConvertFrom-Json)
     if ($LASTEXITCODE -ne 0 -or $definitions.Count -ne 1) { throw "Could not resolve role '$($role.Name)'." }
@@ -128,11 +135,14 @@ try {
   if (@($principals).Count -eq 0) { $null = Invoke-SetupRequest POST 'https://graph.microsoft.com/v1.0/servicePrincipals' @{ appId = $clientId } }
 
   $phase = 'sign-in credential transfer'
-  if (-not $settings[$secretSetting]) {
+  $credentialExpiry = [DateTimeOffset]::MinValue
+  $expiryKnown = [DateTimeOffset]::TryParse($settings['LabConsole__SignInCredentialExpiresAt'], [ref]$credentialExpiry)
+  if (-not $settings[$secretSetting] -or -not $expiryKnown -or $credentialExpiry -le [DateTimeOffset]::UtcNow.AddDays(30)) {
     $expiry = [DateTimeOffset]::UtcNow.AddDays(180).ToString('o')
     $credential = Invoke-SetupRequest POST "https://graph.microsoft.com/v1.0/applications/$($registration.id)/addPassword" @{
       passwordCredential = @{ displayName = 'App Service lab sign-in'; endDateTime = $expiry }
     }
+    if (-not $credential.secretText) { throw 'The sign-in credential was not returned by Microsoft Entra.' }
     $settings[$secretSetting] = $credential.secretText
     $settings['LabConsole__SignInCredentialExpiresAt'] = $expiry
     $credential = $null
@@ -140,6 +150,7 @@ try {
   foreach ($name in @($settings.Keys | Where-Object { $_ -like 'LabConsole__AllowedPrincipalIds__*' })) { $settings.Remove($name) }
   for ($index = 0; $index -lt $AllowedUserObjectIds.Count; $index++) { $settings["LabConsole__AllowedPrincipalIds__$index"] = $AllowedUserObjectIds[$index].ToString() }
   $settings['WEBSITE_AUTH_AAD_ALLOWED_TENANTS'] = $TenantId.ToString()
+  if (-not $AuthenticationOnly) {
   $settings['LabConsole__Sre__Enabled'] = 'false'
   $settings['LabConsole__Foundry__Enabled'] = 'false'
   $settings['LabConsole__ResourceGroup'] = $ResourceGroup
@@ -151,6 +162,9 @@ try {
   $settings['LabConsole__Sre__ModelEndpoint'] = $modelEndpoint[0]
   $settings['LabConsole__Sre__ModelDeployment'] = $ModelDeployment
   $settings['LabConsole__Foundry__ProjectEndpoint'] = $projectEndpoint[0]
+  }
+  $settings['LabConsole__ResourceGroup'] = $ResourceGroup
+  $settings['LabConsole__AppService'] = $WebAppName
   $null = Invoke-SetupRequest PUT "$arm$webId/config/appsettings?api-version=$version" @{ properties = $settings }
   $authProperties = @{
     platform = @{ enabled = $true; runtimeVersion = '~1' }
@@ -179,12 +193,14 @@ try {
     Write-Host "Scoped role ready: $($role.Name)"
   }
   $phase = 'agent enablement'
+  if (-not $AuthenticationOnly) {
   $settings['LabConsole__Sre__Enabled'] = 'true'
   $settings['LabConsole__Foundry__Enabled'] = 'true'
+  }
   $null = Invoke-SetupRequest PUT "$arm$webId/config/appsettings?api-version=$version" @{ properties = $settings }
-  Write-Host "Hosted agent access configured for $($AllowedUserObjectIds.Count) operator(s). Anonymous lab controls are preserved."
+  Write-Host "Console access configured for $($AllowedUserObjectIds.Count) operator(s). Anonymous traffic controls are preserved."
   Write-Host "Sign in at https://$($web.properties.defaultHostName)/.auth/login/aad"
-  Write-Host "Sign-in credential expiry: $($settings['LabConsole__SignInCredentialExpiresAt']). Rotate it in Entra and update the App Service setting before expiry."
+  Write-Host "Sign-in credential expiry: $($settings['LabConsole__SignInCredentialExpiresAt'])."
 } catch {
   throw "Hosted agent setup stopped during $phase. $($_.Exception.Message) Reconcile existing resources before retrying."
 } finally {

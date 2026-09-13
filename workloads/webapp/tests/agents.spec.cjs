@@ -50,6 +50,8 @@ test('tabs preserve console state, support keyboard navigation, and validate age
   await expect(page.locator('#total')).toHaveText('2');
   await page.getByRole('tab', { name: 'Traffic & Faults', exact: true }).focus();
   await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('tab', { name: 'Lab Operations', exact: true })).toBeFocused();
+  await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('tab', { name: 'SRE MCP Assistant', exact: true })).toBeFocused();
   await expect(page.locator('#panel-console')).toBeHidden();
   await expect(page.getByLabel('Investigation brief')).toHaveCount(0);

@@ -16,6 +16,6 @@ module.exports = defineConfig({
     url: 'http://127.0.0.1:5188/healthz',
     reuseExistingServer: false,
     timeout: 120000,
-    env: { ASPNETCORE_ENVIRONMENT: 'Production', APPLICATIONINSIGHTS_CONNECTION_STRING: '', LabConsole__Foundry__Enabled: 'false', LabConsole__Sre__Enabled: 'false', LabConsole__Health__Enabled: 'false' }
+    env: { ASPNETCORE_ENVIRONMENT: 'Production', APPLICATIONINSIGHTS_CONNECTION_STRING: '', LabConsole__Foundry__Enabled: 'false', LabConsole__Sre__Enabled: 'false', LabConsole__Health__Enabled: 'false', LabConsole__Operations__Enabled: 'false' }
   }
 });

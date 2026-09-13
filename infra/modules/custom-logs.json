@@ -1,0 +1,220 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.37.4.10188",
+      "templateHash": "13977932200121899644"
+    }
+  },
+  "parameters": {
+    "namePrefix": {
+      "type": "string",
+      "metadata": {
+        "description": "Name prefix for resources."
+      }
+    },
+    "location": {
+      "type": "string",
+      "metadata": {
+        "description": "Region."
+      }
+    },
+    "centralLawId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the central LAW."
+      }
+    },
+    "centralLawName": {
+      "type": "string",
+      "metadata": {
+        "description": "Central LAW name."
+      }
+    },
+    "tags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Resource tags."
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Insights/dataCollectionEndpoints",
+      "apiVersion": "2023-03-11",
+      "name": "[format('dce-{0}-customlogs', parameters('namePrefix'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "networkAcls": {
+          "publicNetworkAccess": "Enabled"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.OperationalInsights/workspaces/tables",
+      "apiVersion": "2022-10-01",
+      "name": "[format('{0}/{1}', parameters('centralLawName'), 'SecurityAudit_CL')]",
+      "properties": {
+        "plan": "Analytics",
+        "schema": {
+          "name": "SecurityAudit_CL",
+          "columns": [
+            {
+              "name": "TimeGenerated",
+              "type": "datetime",
+              "description": "Event timestamp"
+            },
+            {
+              "name": "EventType",
+              "type": "string",
+              "description": "Type of security event (Login, AccessDenied, PrivilegeEscalation, etc.)"
+            },
+            {
+              "name": "Severity",
+              "type": "string",
+              "description": "Event severity (Info, Warning, Critical)"
+            },
+            {
+              "name": "UserPrincipal",
+              "type": "string",
+              "description": "UPN or service principal name"
+            },
+            {
+              "name": "SourceIP",
+              "type": "string",
+              "description": "Source IP address"
+            },
+            {
+              "name": "Resource",
+              "type": "string",
+              "description": "Target resource path"
+            },
+            {
+              "name": "Action",
+              "type": "string",
+              "description": "Action attempted"
+            },
+            {
+              "name": "Result",
+              "type": "string",
+              "description": "Outcome (Success, Denied, Error)"
+            },
+            {
+              "name": "Details",
+              "type": "string",
+              "description": "Free-text detail / reason"
+            }
+          ]
+        },
+        "retentionInDays": 30
+      }
+    },
+    {
+      "type": "Microsoft.Insights/dataCollectionRules",
+      "apiVersion": "2023-03-11",
+      "name": "[format('dcr-{0}-customlogs', parameters('namePrefix'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "kind": "Direct",
+      "properties": {
+        "dataCollectionEndpointId": "[resourceId('Microsoft.Insights/dataCollectionEndpoints', format('dce-{0}-customlogs', parameters('namePrefix')))]",
+        "streamDeclarations": {
+          "Custom-SecurityAudit_CL": {
+            "columns": [
+              {
+                "name": "TimeGenerated",
+                "type": "datetime"
+              },
+              {
+                "name": "EventType",
+                "type": "string"
+              },
+              {
+                "name": "Severity",
+                "type": "string"
+              },
+              {
+                "name": "UserPrincipal",
+                "type": "string"
+              },
+              {
+                "name": "SourceIP",
+                "type": "string"
+              },
+              {
+                "name": "Resource",
+                "type": "string"
+              },
+              {
+                "name": "Action",
+                "type": "string"
+              },
+              {
+                "name": "Result",
+                "type": "string"
+              },
+              {
+                "name": "Details",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "destinations": {
+          "logAnalytics": [
+            {
+              "workspaceResourceId": "[parameters('centralLawId')]",
+              "name": "centralLaw"
+            }
+          ]
+        },
+        "dataFlows": [
+          {
+            "streams": [
+              "Custom-SecurityAudit_CL"
+            ],
+            "destinations": [
+              "centralLaw"
+            ],
+            "transformKql": "source",
+            "outputStream": "Custom-SecurityAudit_CL"
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.OperationalInsights/workspaces/tables', parameters('centralLawName'), 'SecurityAudit_CL')]",
+        "[resourceId('Microsoft.Insights/dataCollectionEndpoints', format('dce-{0}-customlogs', parameters('namePrefix')))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "dceEndpoint": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Insights/dataCollectionEndpoints', format('dce-{0}-customlogs', parameters('namePrefix'))), '2023-03-11').logsIngestion.endpoint]"
+    },
+    "dceName": {
+      "type": "string",
+      "value": "[format('dce-{0}-customlogs', parameters('namePrefix'))]"
+    },
+    "dcrName": {
+      "type": "string",
+      "value": "[format('dcr-{0}-customlogs', parameters('namePrefix'))]"
+    },
+    "dcrId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Insights/dataCollectionRules', format('dcr-{0}-customlogs', parameters('namePrefix')))]"
+    },
+    "dcrImmutableId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Insights/dataCollectionRules', format('dcr-{0}-customlogs', parameters('namePrefix'))), '2023-03-11').immutableId]"
+    },
+    "tableName": {
+      "type": "string",
+      "value": "SecurityAudit_CL"
+    }
+  }
+}

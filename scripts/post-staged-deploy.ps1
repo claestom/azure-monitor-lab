@@ -21,7 +21,9 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory)] [string] $ResourceGroup,
-  [string] $NamePrefix = 'amlab'
+  [string] $NamePrefix = 'amlab',
+  [string] $SubscriptionId,
+  [guid[]] $ConsoleOperatorObjectIds
 )
 
 $ErrorActionPreference = 'Stop'
@@ -30,7 +32,11 @@ function Write-Info($msg) { Write-Host "    $msg" -ForegroundColor DarkGray }
 
 # Honor the generated subscription and tenant guardrail when available.
 $targetFile = Join-Path $PSScriptRoot '..' '.azure-target.json'
-if (Test-Path $targetFile) {
+if ($SubscriptionId) {
+  az account set --subscription $SubscriptionId --only-show-errors
+  $active = az account show --query '{id:id,tenantId:tenantId}' --output json --only-show-errors | ConvertFrom-Json
+  if ($LASTEXITCODE -ne 0 -or $active.id -ne $SubscriptionId) { throw 'The staged deployment subscription could not be verified.' }
+} elseif (Test-Path $targetFile) {
   $target = Get-Content -Raw $targetFile | ConvertFrom-Json
   az account set --subscription $target.expectedSubscriptionId | Out-Null
   $active = az account show --query "{id:id, tenantId:tenantId}" -o json | ConvertFrom-Json
@@ -75,11 +81,13 @@ Write-Info "Central LAW: $($centralLaw.name)"
 Write-Step "Running App Service and AKS post-deployment setup"
 $postDeploy = Join-Path $PSScriptRoot 'post-deploy.ps1'
 & $postDeploy `
+  -SubscriptionId $active.id -TenantId $active.tenantId `
   -ResourceGroup $ResourceGroup `
   -WebAppName $webApp.name `
   -AksName $aks.name `
   -WebAppHost $webAppHost `
-  -CentralLawName $centralLaw.name
+  -CentralLawName $centralLaw.name `
+  -ConsoleOperatorObjectIds $ConsoleOperatorObjectIds
 
 Write-Step "Provisioning service group and health model prerequisites"
 $setupHm = Join-Path $PSScriptRoot 'setup-health-model.ps1'

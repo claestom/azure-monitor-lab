@@ -105,7 +105,18 @@ if ($fixture.RegistrationUpdates -ne 1 -or $fixture.Applications[0].web.implicit
 if ($fixture.Applications[0].web.implicitGrantSettings.enableAccessTokenIssuance -or $fixture.Applications[0].web.redirectUris.Count -ne 2) { throw 'Repair changed unrelated registration settings.' }
 & $helper @parameters | Out-Null
 if ($fixture.RegistrationUpdates -ne 1 -or $fixture.AddedCredentials -ne 1 -or $fixture.Roles.Count -ne 4) { throw 'Repaired registration was not idempotent or recreated resources.' }
+$fixture.Settings['LabConsole__SignInCredentialExpiresAt'] = [DateTimeOffset]::UtcNow.AddDays(10).ToString('o')
+& $helper @parameters | Out-Null
+if ($fixture.AddedCredentials -ne 2 -or [DateTimeOffset]$fixture.Settings['LabConsole__SignInCredentialExpiresAt'] -le [DateTimeOffset]::UtcNow.AddDays(30)) { throw 'Redeployment did not renew the near-expiry sign-in credential.' }
+& $helper @parameters | Out-Null
+if ($fixture.AddedCredentials -ne 2) { throw 'Credential renewal is not idempotent.' }
 $fixture.Roles = @(); $fixture.FailRole = $true
+ $beforeAgentRequests = @($fixture.Requests | Where-Object { $_ -match '/agents/|/accounts/' }).Count
+ $authOnly = $parameters.Clone()
+ foreach ($key in @('SreAgentName', 'FoundryAccountName', 'FoundryProjectName', 'ModelDeployment')) { $authOnly.Remove($key) }
+ & $helper @authOnly -AuthenticationOnly | Out-Null
+ if (@($fixture.Requests | Where-Object { $_ -match '/agents/|/accounts/' }).Count -ne $beforeAgentRequests) { throw 'Authentication-only setup queried optional agent resources.' }
+ if ($fixture.Roles.Count -ne 0 -or $fixture.Settings['LabConsole__Sre__Enabled'] -ne 'true') { throw 'Authentication-only setup changed existing agent roles or settings.' }
 $caught = $false
 try { & $helper @parameters | Out-Null } catch { $caught = $true }
 if (-not $caught -or $fixture.Settings['LabConsole__Sre__Enabled'] -ne 'false') { throw 'Role failure did not fail closed.' }

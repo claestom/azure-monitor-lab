@@ -35,7 +35,7 @@ $allDce = az resource list -g $ResourceGroup --resource-type "Microsoft.Insights
 $dce = ($allDce | Where-Object { $_.name -like '*customlogs*' }).name
 if (-not $dce) { throw "DCE for custom logs not found in $ResourceGroup" }
 
-$dceProps = az monitor data-collection endpoint show -g $ResourceGroup -n $dce -o json | ConvertFrom-Json
+$dceProps = az resource show -g $ResourceGroup -n $dce --resource-type Microsoft.Insights/dataCollectionEndpoints --api-version 2023-03-11 --query properties -o json | ConvertFrom-Json
 $dceEndpoint = $dceProps.logsIngestion.endpoint
 
 # List DCRs and filter in PowerShell
@@ -43,7 +43,7 @@ $allDcr = az resource list -g $ResourceGroup --resource-type "Microsoft.Insights
 $dcr = ($allDcr | Where-Object { $_.name -like '*customlogs*' }).name
 if (-not $dcr) { throw "DCR for custom logs not found in $ResourceGroup" }
 
-$dcrProps = az monitor data-collection rule show -g $ResourceGroup -n $dcr -o json | ConvertFrom-Json
+$dcrProps = az resource show -g $ResourceGroup -n $dcr --resource-type Microsoft.Insights/dataCollectionRules --api-version 2023-03-11 --query properties -o json | ConvertFrom-Json
 $dcrImmutableId = $dcrProps.immutableId
 
 Write-Host "  DCE endpoint:    $dceEndpoint" -ForegroundColor Gray

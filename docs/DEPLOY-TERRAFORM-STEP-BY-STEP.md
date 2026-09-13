@@ -193,13 +193,11 @@ If your shell reports "Too many command line arguments", retype the command manu
 
 ### Step 6 - Enable Stage B, then C, then D, then E
 
-Flip one stage flag at a time in `stages.tfvars` and re-run plan/apply. Each new `terraform plan` should show exactly one additional `azapi_resource.stage_*` add when you enable the next stage.
+Flip one stage flag at a time in `stages.tfvars` and rerun plan/apply. Stage B adds both its ARM deployment and `terraform_data.console_ready`. This completion hook publishes the app and AKS workloads and automatically provisions console sign-in, health permissions, the registry/image/job, and selected agent integrations. Do not run another post-deployment command after a successful apply.
 
-After applying Stage B, run the local post-deployment setup. This publishes the sample App Service, applies the AKS demo workloads, creates the summary rule, and provisions the health model and SLI prerequisites. The script discovers the suffixed resource names automatically:
+The machine running apply needs PowerShell 7, Azure CLI signed into the selected subscription, the .NET 8 SDK, and the lab workload tools. The deployer needs Azure role-definition/assignment and Entra registration permissions. Optional AI/SRE packaging also needs Python/npm/tar. For a service-principal deployment, set `console_operator_object_ids` to approved tenant user object IDs. See [console prerequisites](../workloads/webapp/LAB-OPERATIONS.md#prerequisites).
 
-```powershell
-./scripts/post-staged-deploy.ps1 -ResourceGroup $rg
-```
+Changes to relevant stages or source files rerun initialization. A failed completion hook fails apply, so incomplete console setup is not reported as deployment success. The hook has no destroy-time provisioner: the registry/job and other nested resources follow the lab's existing resource-group cleanup model.
 
 ### Step 7 - Enable Stage AI (optional)
 
@@ -213,15 +211,14 @@ ai_location = "swedencentral"
 router_model_version = "2025-08-07"  # verify with: az cognitiveservices account list-models -l swedencentral
 ```
 
-Then apply the stage and run the post-deployment setup:
+Then apply the stage:
 
 ```powershell
 terraform plan -var-file stages.tfvars
 terraform apply -var-file stages.tfvars
-./scripts/setup-ai.ps1 -g $rg   # match `resource_group_name` in stages.tfvars; creates demo agents and simulates traffic
 ```
 
-`setup-ai.ps1` pip-installs the packages listed in [`workloads/ai/requirements.txt`](../workloads/ai/requirements.txt) before creating the agents and simulating traffic.
+When Stage B is enabled, apply automatically installs the [AI dependencies](../workloads/ai/requirements.txt), prepares four matching agents, and refreshes console access without simulated conversations. To generate optional AI scenario telemetry, run `./scripts/setup-ai.ps1 -g $rg`. An AI-only deployment without Stage B has no Web App completion hook and uses that script to prepare its separate AI scenario.
 
 The AI stage creates the Foundry account, project, four model deployments, App Insights connection, token alerts, AI FinOps query pack and workbook, and the AI tier in the workload health model. It requires the Stage A Application Insights resource but does not require Stages B to E.
 

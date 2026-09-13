@@ -40,6 +40,7 @@
     <div class="app-tabs" role="tablist" aria-label="Lab views">
       <button id="tab-health" role="tab" aria-label="Infrastructure Health" aria-controls="panel-health" aria-selected="true" tabindex="0"><i data-lucide="heart-pulse"></i>Infra Health</button>
       <button id="tab-console" role="tab" aria-controls="panel-console" aria-selected="false" tabindex="-1"><i data-lucide="activity"></i>Traffic &amp; Faults</button>
+      <button id="tab-operations" role="tab" aria-controls="panel-operations" aria-selected="false" tabindex="-1"><i data-lucide="panels-top-left"></i>Lab Operations</button>
       <button id="tab-sre" role="tab" aria-controls="panel-sre" aria-selected="false" tabindex="-1"><i data-lucide="scan-line"></i>SRE MCP Assistant</button>
       <button id="tab-foundry" role="tab" aria-controls="panel-foundry" aria-selected="false" tabindex="-1"><i data-lucide="messages-square"></i>Foundry Playground</button>
     </div>
@@ -123,6 +124,28 @@
         </section>
       </div>
     </div>
+    <section id="panel-operations" role="tabpanel" aria-labelledby="tab-operations" tabindex="0" hidden>
+      <div class="agent-heading"><div><p class="eyebrow">AZURE JOBS / APPROVED LAB SCRIPTS</p><h2>Lab Operations</h2></div><button id="operations-connect" class="icon-button" type="button" title="Refresh runner connection and history" aria-label="Refresh runner connection and history"><i data-lucide="refresh-cw"></i></button></div>
+      <div id="operations-status" class="status-band" role="status">Runner not checked</div>
+      <a id="operations-sign-in" class="button secondary" href="/.auth/login/aad?post_login_redirect_uri=/" hidden><i data-lucide="external-link"></i>Sign In</a>
+      <div id="operations-context"></div>
+      <div class="operations-layout">
+        <section aria-labelledby="operations-actions-heading"><div class="section-heading"><h2 id="operations-actions-heading">Lab actions</h2><span class="session-tag">APPROVAL REQUIRED</span></div>
+          <div class="operation-actions">
+            <button class="action" data-operation="start" aria-haspopup="dialog" disabled><i data-lucide="play"></i><span>Start Lab</span><i data-lucide="arrow-right"></i></button>
+            <button class="action danger-accent" data-operation="break" aria-haspopup="dialog" disabled><i data-lucide="triangle-alert"></i><span>Break Lab</span><i data-lucide="arrow-right"></i></button>
+            <button class="action" data-operation="restore" aria-haspopup="dialog" disabled><i data-lucide="refresh-cw"></i><span>Restore Lab</span><i data-lucide="arrow-right"></i></button>
+            <button class="action" data-operation="ramp" aria-haspopup="dialog" disabled><i data-lucide="chart-no-axes-combined"></i><span>Start Load Ramp</span><i data-lucide="arrow-right"></i></button>
+            <button class="action" data-operation="logs" aria-haspopup="dialog" disabled><i data-lucide="logs"></i><span>Send Custom Logs</span><i data-lucide="arrow-right"></i></button>
+            <button class="action" data-operation="annotation" aria-haspopup="dialog" disabled><i data-lucide="panels-top-left"></i><span>Add Release Marker</span><i data-lucide="arrow-right"></i></button>
+          </div>
+          <nav class="scenario-links" aria-label="Related scenarios for operations"><span>Related Scenarios</span><a data-documentation href="https://github.com/claestom/azure-monitor-lab/blob/master/docs/DEMO-SCENARIOS.md#s8" target="_blank" rel="noopener noreferrer">8: Break the lab</a><a data-documentation href="https://github.com/claestom/azure-monitor-lab/blob/master/docs/DEMO-SCENARIOS.md#s13" target="_blank" rel="noopener noreferrer">13: Smart Detection</a><a data-documentation href="https://github.com/claestom/azure-monitor-lab/blob/master/docs/DEMO-SCENARIOS.md#s24" target="_blank" rel="noopener noreferrer">24: Custom Logs</a><a data-documentation href="https://github.com/claestom/azure-monitor-lab/blob/master/docs/DEMO-SCENARIOS.md#s33" target="_blank" rel="noopener noreferrer">33: Release annotations</a></nav>
+        </section>
+        <section class="operations-activity" aria-labelledby="operations-runs-heading"><div class="section-heading"><h2 id="operations-runs-heading">Run activity</h2><div class="tool-actions"><span id="operations-run-count" class="muted">0 runs</span><button id="operations-refresh" class="icon-button" type="button" title="Refresh operation status" aria-label="Refresh operation status" disabled><i data-lucide="refresh-cw"></i></button></div></div>
+          <p id="operations-updated" class="muted"></p><div id="operations-runs"></div><div id="operations-empty" class="empty-history"><i data-lucide="inbox"></i><p>No operations submitted</p></div>
+        </section>
+      </div>
+    </section>
     <section id="panel-sre" role="tabpanel" aria-labelledby="tab-sre" tabindex="0" hidden>
       <div class="agent-heading"><div><p class="eyebrow">AZURE MCP / SRE MANAGEMENT</p><h2>SRE MCP Assistant</h2></div><a id="sre-open" class="button secondary" aria-disabled="true"><i data-lucide="external-link"></i>Open SRE Agent</a></div>
       <div class="agent-layout">
@@ -186,6 +209,22 @@
   <div class="mobile-feedback" hidden><div><span class="field-label">LATEST REQUEST</span><span id="mobile-status" role="status">Waiting for a request</span></div><a class="button secondary" href="#session-heading" aria-label="View session activity"><i data-lucide="activity"></i>Activity</a></div>
   <dialog id="performance-dialog" aria-labelledby="dialog-heading">
     <form method="dialog"><div class="dialog-icon"><i data-lucide="cpu"></i></div><h2 id="dialog-heading">Run performance experiment?</h2><p>This request deliberately consumes CPU, creates handled exceptions, and makes an outbound call. It can affect other users of this demo app.</p><p>One console experiment per 30 seconds per app instance. Profiler recommendations are not immediate.</p><div class="dialog-actions"><button class="button secondary" value="cancel">Cancel</button><button class="button primary" id="confirm-performance" value="confirm"><i data-lucide="play"></i>Run Experiment</button></div></form>
+  </dialog>
+  <dialog id="operation-dialog" aria-labelledby="operation-heading" aria-describedby="operation-impact">
+    <h2 id="operation-heading">Lab operation</h2><p id="operation-impact"></p>
+    <form id="operation-prepare-form">
+      <label id="operation-count-field" hidden>Event count<input id="operation-count" type="number" min="1" max="100" step="1" value="10" required></label>
+      <div id="operation-marker-fields" hidden><label>Marker name<input id="operation-name" type="text" maxlength="80" pattern="[a-zA-Z0-9][a-zA-Z0-9 ._\(\)\-]{0,79}" autocomplete="off"></label><label>Category<select id="operation-category" aria-label="Marker category"><option value="Deployment">Deployment</option><option value="Incident">Incident</option></select></label></div>
+      <div class="dialog-actions"><button type="button" class="button secondary" data-operation-cancel>Cancel</button><button id="operation-review" type="submit" class="button primary"><i data-lucide="scan-line"></i>Review Operation</button></div>
+    </form>
+    <form id="operation-approve-form" hidden>
+      <div id="operation-preview"></div><p id="operation-expiry" class="history-note"></p>
+      <label>Confirm resource group<input id="operation-target-confirm" type="text" autocomplete="off" required></label>
+      <label class="consent"><input id="operation-consent" type="checkbox" required>I approve these changes and associated Azure charges.</label>
+      <p class="history-note">The job runs independently. Cancellation does not undo completed changes or stop already-submitted Azure workloads.</p>
+      <div class="dialog-actions"><button type="button" class="button secondary" data-operation-cancel>Cancel</button><button id="operation-approve" type="submit" class="button primary" disabled><i data-lucide="check"></i>Approve &amp; Run</button></div>
+    </form>
+    <p id="operation-error" class="operation-error" role="alert"></p>
   </dialog>
   <div id="toast" class="toast" role="status" hidden></div>
 </body>

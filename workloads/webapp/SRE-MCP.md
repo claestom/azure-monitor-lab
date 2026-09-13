@@ -22,7 +22,9 @@ The exact available tools are listed in the UI. The server allowlist intentional
 
 ## Enable Hosted Chat
 
-The optional [setup-webapp-agent-access.ps1](../../scripts/setup-webapp-agent-access.ps1) helper configures both agent tabs for an existing lab. It verifies the subscription and tenant, creates or reuses a single-tenant Entra registration, restricts access to specified user object IDs, and grants the app identity the four resource-scoped roles described below. It preserves anonymous access to the demo APIs. Review its `-WhatIf` output before opting in:
+With both AI and SRE stages selected, normal deployment automatically packages MCP, discovers the existing chat model, and configures sign-in and scoped access. There is no separate hosted-chat setup command or enablement flag to set afterward. The AI stage supplies the host model; the SRE stage alone does not.
+
+The [setup-webapp-agent-access.ps1](../../scripts/setup-webapp-agent-access.ps1) helper is called by the deployment bootstrap. It verifies the subscription/tenant, creates or reuses the single-tenant Entra registration, restricts access to approved users, and grants the four roles below. It preserves anonymous demo traffic endpoints. For a targeted administrative repair only, review `-WhatIf` before applying:
 
 ```powershell
 ../../scripts/setup-webapp-agent-access.ps1 `
@@ -33,18 +35,18 @@ The optional [setup-webapp-agent-access.ps1](../../scripts/setup-webapp-agent-ac
   -AllowedUserObjectIds @('<operator-object-id>') -WhatIf
 ```
 
-Remove `-WhatIf` to apply the reviewed setup. This is an explicit access change, not part of ordinary lab deployment. It requires permission to create an Entra app registration and assign Azure roles. The generated 180-day sign-in credential is transferred in memory to the encrypted App Service setting and is never printed or written to the repository. Its expiry is recorded in `LabConsole__SignInCredentialExpiresAt`; rotate it before expiry. Reruns preserve an existing credential. For production use, prefer the documented managed-identity federation or a Key Vault reference. Deleting the lab resource group does not delete its Entra app registration; remove that registration separately when the lab is retired.
+Normal deployment requires permission to manage the Entra registration and assign Azure roles. The 180-day sign-in credential is transferred in memory to a protected App Service setting, never printed or committed. Its expiry is recorded in `LabConsole__SignInCredentialExpiresAt`; redeployment automatically renews missing, expired, or near-expiry credentials and reuses healthy ones. No scheduled renewal service is installed. Deleting the lab resource group does not delete the tenant registration; review it separately during cleanup.
 
 App Service requests the OpenID Connect hybrid response `code id_token`, so the Entra web registration must enable **ID tokens** (`web.implicitGrantSettings.enableIdTokenIssuance`). This is compatible with confidential-client code redemption; it does not require implicit access tokens. New registrations enable ID tokens and leave implicit access tokens disabled. Rerunning the helper repairs a missing ID-token flag on a compatible existing registration without changing its redirect URIs, access-token policy, or credential. A callback HTTP 401 can result from this mismatch; validate the requested response type as well as the initial sign-in redirect.
 
-1. Configure App Service Authentication with Entra ID and restrict the application to approved lab operators. Every admitted operator can invoke the backend's scoped SRE permissions. Chat ownership does not enforce each user's Azure RBAC. This is a shared-identity lab, not a multi-tenant authorization gateway.
-2. Give the system-assigned app identity control-plane **Reader** access sufficient to discover the selected SRE resource and **SRE Agent Administrator** on that specific agent for management operations. This role is broad; review it before granting and avoid subscription-wide assignment. Also grant **Cognitive Services OpenAI User** at the configured model account scope and **Foundry User** at the single project scope for the playground. The project role alone may not grant model-account inference. The web UI does not grant roles; the optional setup helper makes these changes only when explicitly run.
-3. The normal lab post-deployment workflow automatically packages the native Linux MCP runtime when it discovers an SRE Agent, using [prepare-webapp-package.ps1](../../scripts/prepare-webapp-package.ps1). The tenant comes from the verified deployment account. Configure the host model through app settings below, or pass `-SreModelEndpoint 'https://<account>.openai.azure.com/' -SreModelDeployment '<deployment-name>'` when invoking [post-deploy.ps1](../../scripts/post-deploy.ps1) directly. `-BundleSreMcp` still supports explicitly packaging the runtime before the SRE Agent exists. This script performs its normal Azure deployment operations when run.
-4. Set `LabConsole__Sre__Enabled=true` explicitly in App Service settings after reviewing access. The deployment helper always generates `Enabled=false`; bundling alone does not enable chat. Environment settings override the generated file.
+1. Deployment configures Entra sign-in and the operator allowlist. Every admitted operator can invoke the backend's scoped SRE permissions; chat ownership does not enforce that user's Azure RBAC. This is a shared-identity lab, not a multi-tenant authorization gateway.
+2. The app receives **Reader** and **SRE Agent Administrator** on the selected SRE Agent, **Cognitive Services OpenAI User** on the model account, and **Foundry User** on its project. SRE management is broad within that one agent. The Web UI never grants roles.
+3. [prepare-webapp-package.ps1](../../scripts/prepare-webapp-package.ps1) bundles native Linux MCP. The bootstrap selects the unique deployed `gpt-5-mini` host model and configures the verified tenant and resource scope. Ambiguous targets or required setup failures stop deployment.
+4. The bootstrap enables chat after access setup succeeds. Packaging alone still leaves it disabled; local development and a plain `dotnet publish` do not provision Azure access.
 
 | Setting | Value |
 |---|---|
-| `LabConsole__Sre__Enabled` | Explicit opt-in; default `false` |
+| `LabConsole__Sre__Enabled` | Set by normal deployment when both required stages exist; unconfigured/local builds default to `false` |
 | `LabConsole__Sre__SubscriptionId` | Intended lab subscription GUID, never an implicit CLI default |
 | `LabConsole__Sre__TenantId` | Lab tenant GUID |
 | `LabConsole__Sre__AgentName` | Existing SRE Agent resource name |

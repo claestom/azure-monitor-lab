@@ -1,8 +1,12 @@
 # Azure Monitor Lab Control Center
 
-The ASP.NET Core 8 app serves **Azure Monitor Lab Control Center** at `/`. Four keyboard-accessible tabs separate Infra Health (first/default), Traffic & Faults, SRE MCP Assistant, and Foundry Playground. It runs in the existing App Service and uses the existing Application Insights integration. Basic traffic actions need no additional resources. Health reads, MCP assistant, and Foundry execution require explicit enablement, authenticated access, and a backend identity with the appropriate permissions.
+The ASP.NET Core 8 app serves **Azure Monitor Lab Control Center** at `/`. Five keyboard-accessible tabs separate Infra Health (first/default), Traffic & Faults, Lab Operations, SRE MCP Assistant, and Foundry Playground. It runs in the existing App Service and uses the existing Application Insights integration. Normal deployment configures operator sign-in, health access, an independent Azure job runner, and available optional agents automatically. Basic traffic actions remain anonymous; protected operations require an approved operator.
 
 Start with the [Control Center guide](../../docs/LAB-CONTROL-CENTER.md) for the application overview, screenshot, and scenario mapping. This page is the technical reference for configuration, local development, deployment, and runtime limits. The shared environment strip reuses existing context/catalog calls; it does not perform background model requests. Guide and Related Scenarios links open repository documentation without executing actions.
+
+## Lab Operations
+
+The [Lab Operations reference](LAB-OPERATIONS.md) covers six scripts, automatic Azure Container Apps Job provisioning, managed identities, persistent history, exact-operation approvals, and recovery. Normal deployment builds and pins the runner image, configures access, and enables the tab. No GitHub credentials or manual runner setup are required; no shell is exposed through the Web App.
 
 ## Infrastructure Health
 
@@ -12,27 +16,17 @@ The tab includes only `Microsoft.Compute/virtualMachines`, `Microsoft.Compute/vi
 
 ### Hosted Access
 
-1. Publish this version of the app. The standard package helper discovers the central workspace and the App Insights component's associated workspace in the same resource group. Health reads default to disabled.
-2. Configure single-tenant App Service Authentication and `LabConsole__AllowedPrincipalIds__0` for an approved operator. Existing agent-tab authentication can be reused; the health helper does not create or modify an Entra registration. Without AI/SRE, configure the same operator-only authentication directly in App Service, preserving anonymous access to the demo endpoints.
-3. Review the opt-in helper using the actual workspace names, including any deployment suffix:
+The normal deployment bootstrap discovers the central workspace, configures single-tenant sign-in, grants the app **Reader** on the lab resource group and **Log Analytics Reader** on its workspaces, and enables health after setup succeeds. This works without AI or SRE stages. The deploying user becomes the default operator; automation supplies `ConsoleOperatorObjectIds` or Terraform's `console_operator_object_ids` as deployment inputs.
 
-```powershell
-../../scripts/setup-webapp-health-access.ps1 `
-  -SubscriptionId '<lab-subscription-id>' -TenantId '<lab-tenant-id>' `
-  -ResourceGroup '<lab-resource-group>' -WebAppName '<lab-web-app>' `
-  -CentralLawName '<central-workspace-name>' -AppInsightsLawName '<application-workspace-name>' `
-  -WhatIf
-```
+The caller needs role-assignment and app-configuration permissions, plus permission to manage the sign-in registration under the tenant's policy. A setup failure stops deployment. Allow Azure RBAC and telemetry propagation before treating missing data as a workload fault. The existing [health access helper](../../scripts/setup-webapp-health-access.ps1) remains available for targeted administrative repair; it is not required after a successful normal deployment.
 
-Remove `-WhatIf` only after reviewing the scope. The helper requires an existing system-assigned app identity, matching tenant, configured authentication, and a backend operator allowlist. It grants **Reader** on this resource group and **Log Analytics Reader** on the two named workspaces, preserves unrelated settings and all agent settings, and enables health only after role setup succeeds. A role failure leaves health disabled. Repeated runs reuse existing exact assignments. The caller needs role-assignment write permission and permission to update this App Service's settings. Allow RBAC propagation before refreshing.
-
-The roles are not subscription-wide, but the shared backend identity can read resource metadata across this lab and logs in the assigned workspaces. The API restricts queries to this resource group and returns only aggregates. This is not delegated browser-user access. No workload start/stop, AI execution, secret access, or authentication change is performed by the helper. Disabling `LabConsole__Health__Enabled` stops future queries but does not revoke roles already granted.
+The shared backend identity can read metadata across this lab and logs in the assigned workspaces. The API fixes the scope and returns only aggregates; this is not delegated browser-user access. Disabling `LabConsole__Health__Enabled` stops future queries but does not revoke existing roles.
 
 ### Configuration And Limits
 
 | Setting | Value |
 |---|---|
-| `LabConsole__Health__Enabled` | `true` to opt in; defaults to `false` |
+| `LabConsole__Health__Enabled` | Set to `true` by deployment; unconfigured/local builds default to `false` |
 | `LabConsole__Health__SubscriptionId` | Expected lab subscription GUID |
 | `LabConsole__Health__TenantId` | Intended Azure CLI tenant for local runs; stored by hosted setup too |
 | `LabConsole__Health__CentralWorkspaceResourceId` | Full ARM ID of the central workspace in this lab resource group |
@@ -59,12 +53,11 @@ The backend uses `Azure.AI.Agents.Persistent` and `Azure.Identity`. Catalog disc
 
 ### Enable Foundry Access
 
-1. Ensure the AI stage and its existing agents are deployed. The resource-discovery helper finds the single Foundry project endpoint and SRE destination in the selected resource group. Multiple projects or SRE agents require explicit configuration rather than an arbitrary choice.
-2. Enable the App Service system-assigned managed identity. Assign **Foundry User** at the Foundry project scope for agent usage. Confirm the assigned role includes the required list/get agent and thread/message/run operations, including cancellation and thread deletion; project policies may require a tailored role. Do not grant subscription-wide Contributor to the app.
-3. Configure **App Service Authentication** with Microsoft Entra ID and restrict access to approved lab users. Set `LabConsole__AllowedPrincipalIds__0` to an approved operator's Entra object ID, with numbered entries for additional operators. The hosted agent endpoints require platform authentication and membership in this allowlist. Both tabs offer Sign In when access is unauthenticated. The [hosted access helper](../../scripts/setup-webapp-agent-access.ps1) can configure both tabs with explicit consent; see [SRE-MCP.md](SRE-MCP.md). Do not trust client-supplied `X-MS-*` headers outside App Service. The helper preserves anonymous demo endpoints for external load generators.
-4. Set `LabConsole__Foundry__Enabled=true` in App Service settings. The project endpoint comes from generated configuration, or override it with `LabConsole__Foundry__ProjectEndpoint`. Regenerate/publish configuration after adding the AI or SRE stages, or configure the new destinations explicitly. The publish helper always defaults agent execution to disabled; environment settings override the generated file.
+Select Stage AI in the lab deployment. The bootstrap discovers its single project and chat deployment, reuses or creates the four matching agents without sending conversations, grants the Web App **Foundry User** at project scope, and enables the tab. Operator sign-in and allowlists are configured automatically. Ambiguous resource targets or failed agent creation stop deployment rather than selecting an arbitrary project or leaving an empty enabled tab.
 
-No role assignment, authentication setting, or Azure deployment is performed by the UI or configuration helper. HTTPS-only public Azure Foundry project endpoints are accepted. The browser never receives credentials. Hosted calls use system-assigned managed identity; local calls use `AzureCliCredential` and require a loopback connection and a localhost/loopback Host header. User-assigned identities, private-cloud endpoint suffixes, and generic self-hosted authentication proxies are not supported by this demo integration.
+Terraform reruns console initialization when the AI stage changes. For a raw staged Bicep deployment, the normal workload completion wrapper publishes the newly selected integrations. No additional Foundry enablement flag or role command is required. The SRE assistant also needs the SRE stage and uses the AI stage's existing host model; see [SRE-MCP.md](SRE-MCP.md).
+
+The UI and resource-discovery helper never create roles or resources; the deployment bootstrap does. HTTPS-only public Foundry endpoints are accepted, and the browser never receives credentials. Hosted calls use system-assigned managed identity; local calls use `AzureCliCredential` and require loopback IP and Host. Generic self-hosted authentication proxies are not supported. Do not trust client-supplied `X-MS-*` headers outside App Service.
 
 For local execution, log into the intended lab tenant with Azure CLI, then set `$env:LabConsole__Foundry__Enabled = 'true'` before starting the app. Alternatively, generate local configuration with the helper's `-EnableFoundryPlayground` switch. Each submitted task still requires explicit billable-usage consent. Tests force execution off and use fake service responses, so they do not spend model tokens.
 
@@ -125,16 +118,20 @@ npm test
 ./tests/webapp-package.Tests.ps1
 ./tests/webapp-access.Tests.ps1
 ./tests/webapp-health-access.Tests.ps1
+../../scripts/tests/lab-operations.Tests.ps1
+../../scripts/tests/lab-operations-execution.Tests.ps1
+../../scripts/tests/console-bootstrap.Tests.ps1
+../../scripts/tests/console-deployment.Tests.ps1
 dotnet test ../webapp.Tests/AmlabHello.Tests.csproj -c Release
 ```
 
-Playwright starts and stops its own app at `http://127.0.0.1:5188`; keep that port free. Tests force health reads and both agent integrations off and mock successful responses, so no paid traffic or Azure changes occur. Coverage includes health snapshots, filters, freshness, partial failures, API guards, W3C correlation, checkout outcomes, traffic completion/stopping, cooldowns, tab navigation, MCP questions and write review, consent/cancellation/error states, safe rendering, and desktop/mobile screenshots with canvas-pixel checks. Configuration and access-helper tests mock all Azure operations. Unit tests cover health thresholds, SDK response handling, scoped pagination, caching, direct-MCP scope validation, ownership, one-time approvals, rejected investigations, bounded tool selection, and the actual model SDK wire format, plus existing Foundry usage/cleanup behavior.
+Playwright starts and stops its own app at `http://127.0.0.1:5188`; keep that port free. Tests force all integrations off and mock service responses, so no jobs, paid traffic, or Azure changes occur. Coverage includes health freshness and failures, API guards, traffic controls, tab navigation, approvals and job status, MCP questions, usage consent, safe rendering, and desktop/mobile screenshots. Unit tests cover scoped ARM requests, pinned job identity/image/inputs, ownership, single-use approvals, persistent journaling, rejected investigations, and the actual model SDK wire format. Bootstrap and deployment tests fake all Azure and Graph calls and exercise failure ordering and automatic configuration.
 
-Commit regenerated `wwwroot` bundles/assets with frontend source changes. `dotnet publish` includes those assets and excludes frontend sources, Node dependencies, tests, and local `lab-console.json`. The deployment helper generates fresh disabled-by-default configuration after publishing. App Service ZIP deployment continues to use `dotnet AmlabHello.dll`.
+Commit regenerated `wwwroot` bundles/assets with frontend source changes. `dotnet publish` includes those assets and excludes frontend sources, Node dependencies, tests, and local `lab-console.json`. Packaging generates disabled configuration first; the deployment bootstrap configures access and enables the selected integrations before ZIP publication. App Service uses `dotnet AmlabHello.dll`.
 
 ## Monitoring Destinations
 
-To update only an existing Web App, without reapplying AKS workloads, use [deploy-webapp.ps1](../../scripts/deploy-webapp.ps1). It publishes the current checkout and uses the same package helper as normal lab deployment:
+To update an existing Web App without reapplying AKS workloads, use [deploy-webapp.ps1](../../scripts/deploy-webapp.ps1). It publishes the current checkout and automatically provisions/configures the console runner, sign-in, and scoped access:
 
 ```powershell
 ../../scripts/deploy-webapp.ps1 `
@@ -142,11 +139,11 @@ To update only an existing Web App, without reapplying AKS workloads, use [deplo
   -ResourceGroup '<lab-resource-group>' -WebAppName '<lab-web-app>' -WhatIf
 ```
 
-Remove `-WhatIf` to deploy after reviewing the target. This does not enable agent execution or grant permissions; existing environment settings are retained. To open the deployed console in the portal, select the App Service and choose **Browse**.
+Remove `-WhatIf` after reviewing the target and infrastructure/access scope. Unrelated app settings are preserved. Existing operators are retained unless replacement IDs are supplied. To open the deployed console, select the App Service and choose **Browse**.
 
-The existing [post-deploy script](../../scripts/post-deploy.ps1), shared by scripted, staged, and Cloud Shell deployments, calls [prepare-webapp-package.ps1](../../scripts/prepare-webapp-package.ps1) before creating the ZIP. It verifies the published console assets, generates fresh configuration through [write-webapp-console-config.ps1](../../scripts/write-webapp-console-config.ps1), and packages the pinned Linux MCP runtime automatically when an SRE Agent is discovered. Discovery uses explicit subscription and resource-group parameters and only reads Azure resources. Packaging fails visibly if a required asset or MCP runtime cannot be prepared.
+The shared [post-deploy script](../../scripts/post-deploy.ps1) runs [prepare-webapp-package.ps1](../../scripts/prepare-webapp-package.ps1) followed by [initialize-webapp-console.ps1](../../scripts/initialize-webapp-console.ps1) before creating the ZIP. Packaging verifies assets, discovers context, and bundles the pinned Linux MCP runtime when SRE exists. Initialization provisions the runner, image, authentication, roles, health, and optional agents. Either failure stops publication. See [deployment prerequisites](LAB-OPERATIONS.md#prerequisites).
 
-The four destinations are Application Insights, the central workspace's Logs view, the lab Health Dashboard/Traffic Lights workbook, and the Grafana endpoint. Missing resources remain unavailable in the UI; no destination is guessed. Opening them uses the signed-in user's Azure permissions, not the app identity. Separately, the opt-in Infrastructure Health tab fetches its read-only snapshot with the backend identity.
+The four destinations are Application Insights, the central workspace's Logs view, the lab Health Dashboard/Traffic Lights workbook, and the Grafana endpoint. Missing resources remain unavailable; no destination is guessed. Opening them uses the signed-in user's Azure permissions. The Infrastructure Health tab separately fetches its read-only snapshot with the backend identity.
 
 For a local preview with links to an existing lab, run from this directory:
 
