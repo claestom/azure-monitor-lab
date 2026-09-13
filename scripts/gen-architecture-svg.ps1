@@ -99,7 +99,7 @@ $nodes = [ordered]@{
 
 # --- edges (source -> target) ---------------------------------------------------------
 $edges = @(
-  @('VM','AMA'), @('VMSS','AMA'), @('AKS','AMA'), @('AKS','AMW'), @('APP','AI'), @('NET','FLOW'), @('FDRY','AI'),
+  @('VM','AMA'), @('VMSS','AMA'), @('AKS','AMA'), @('NET','FLOW'),
   @('AMA','LAW'), @('AMA','AMW'), @('FLOW','PLAT'), @('POL','LAW'), @('LAW','QUERY'), @('AI','LAWAI'), @('PLAT','LAW'),
   @('LAW','WB'), @('LAWAI','WB'), @('AMW','GRAF'), @('LAW','AG'), @('AI','AG'), @('AG','SRE'), @('AG','LOGIC'), @('LAW','SENT'), @('LAW','HEALTH'),
   @('ACR','JOB')
@@ -135,7 +135,6 @@ function AnchorLeft($n)  { $c = ColOf $n; @($c.x, ((NodeTop $n) + $cellH/2)) }
 function AnchorTop($n)   { $c = ColOf $n; @(($c.x + $c.w/2), (NodeTop $n)) }
 function AnchorBottom($n){ $c = ColOf $n; @(($c.x + $c.w/2), ((NodeTop $n) + $cellH)) }
 
-$longRouteIndex = 0
 $lineStyle = "stroke='#7D8590' marker-end='url(#arrow)'"
 foreach ($e in $edges) {
   $s = $nodes[$e[0]]; $t = $nodes[$e[1]]
@@ -145,16 +144,8 @@ foreach ($e in $edges) {
   } else {
     if ((ColOf $s).x -lt (ColOf $t).x) { $a = AnchorRight $s; $b = AnchorLeft $t }
     else { $a = AnchorLeft $s; $b = AnchorRight $t }
-    if ($b[0] - $a[0] -gt 50) {
-      $routeY = 540 + 20 * $longRouteIndex
-      $leftLane = $a[0] + 14 + 4 * $longRouteIndex
-      $rightLane = $b[0] - 14 - 4 * $longRouteIndex
-      $longRouteIndex++
-      [void]$sb.AppendLine("<path id='edge-$($e[0])-$($e[1])' d='M $($a[0]),$($a[1]) H $leftLane V $routeY H $rightLane V $($b[1]) H $($b[0])' fill='none' stroke-width='1.4' $lineStyle/>")
-    } else {
-      $mx = ($a[0] + $b[0]) / 2
-      [void]$sb.AppendLine("<path id='edge-$($e[0])-$($e[1])' d='M $($a[0]),$($a[1]) C $mx,$($a[1]) $mx,$($b[1]) $($b[0]),$($b[1])' fill='none' stroke-width='1.4' $lineStyle/>")
-    }
+    $mx = ($a[0] + $b[0]) / 2
+    [void]$sb.AppendLine("<path id='edge-$($e[0])-$($e[1])' d='M $($a[0]),$($a[1]) C $mx,$($a[1]) $mx,$($b[1]) $($b[0]),$($b[1])' fill='none' stroke-width='1.4' $lineStyle/>")
   }
 }
 

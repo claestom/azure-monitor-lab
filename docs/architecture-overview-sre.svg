@@ -16,10 +16,7 @@
 <path id='edge-VM-AMA' d='M 280,141 C 305,141 305,141 330,141' fill='none' stroke-width='1.4' stroke='#7D8590' marker-end='url(#arrow)'/>
 <path id='edge-VMSS-AMA' d='M 280,225 C 305,225 305,141 330,141' fill='none' stroke-width='1.4' stroke='#7D8590' marker-end='url(#arrow)'/>
 <path id='edge-AKS-AMA' d='M 280,309 C 305,309 305,141 330,141' fill='none' stroke-width='1.4' stroke='#7D8590' marker-end='url(#arrow)'/>
-<path id='edge-AKS-AMW' d='M 280,309 H 294 V 540 H 616 V 477 H 630' fill='none' stroke-width='1.4' stroke='#7D8590' marker-end='url(#arrow)'/>
-<path id='edge-APP-AI' d='M 280,393 H 298 V 560 H 612 V 393 H 630' fill='none' stroke-width='1.4' stroke='#7D8590' marker-end='url(#arrow)'/>
 <path id='edge-NET-FLOW' d='M 280,477 C 305,477 305,225 330,225' fill='none' stroke-width='1.4' stroke='#7D8590' marker-end='url(#arrow)'/>
-<path id='edge-FDRY-AI' d='M 280,561 H 302 V 580 H 608 V 393 H 630' fill='none' stroke-width='1.4' stroke='#7D8590' marker-end='url(#arrow)'/>
 <path id='edge-AMA-LAW' d='M 580,141 C 605,141 605,141 630,141' fill='none' stroke-width='1.4' stroke='#7D8590' marker-end='url(#arrow)'/>
 <path id='edge-AMA-AMW' d='M 580,141 C 605,141 605,477 630,477' fill='none' stroke-width='1.4' stroke='#7D8590' marker-end='url(#arrow)'/>
 <path id='edge-FLOW-PLAT' d='M 580,225 C 605,225 605,561 630,561' fill='none' stroke-width='1.4' stroke='#7D8590' marker-end='url(#arrow)'/>
