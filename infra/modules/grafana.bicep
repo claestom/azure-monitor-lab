@@ -44,6 +44,15 @@ resource roleMonitoringReader 'Microsoft.Authorization/roleAssignments@2022-04-0
   }
 }
 
+resource deployerAdmin 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(grafana.id, deployer().objectId, '22926164-76b3-42b3-bc55-97df8dab3e41')
+  scope: grafana
+  properties: {
+    principalId: deployer().objectId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '22926164-76b3-42b3-bc55-97df8dab3e41')
+  }
+}
+
 output id string = grafana.id
 output name string = grafana.name
 output endpoint string = grafana.properties.endpoint

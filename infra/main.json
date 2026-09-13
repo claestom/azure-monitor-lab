@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.37.4.10188",
-      "templateHash": "9030460785188935230"
+      "templateHash": "5526046591415831900"
     }
   },
   "parameters": {
@@ -3095,7 +3095,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.37.4.10188",
-              "templateHash": "9598521564876409291"
+              "templateHash": "15358153661666517263"
             }
           },
           "parameters": {
@@ -3159,6 +3159,19 @@
                 "principalId": "[reference(resourceId('Microsoft.Dashboard/grafana', parameters('name')), '2024-10-01', 'full').identity.principalId]",
                 "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '43d0d8ad-25c7-4714-9337-8ba259a9fe05')]",
                 "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Dashboard/grafana', parameters('name'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[format('Microsoft.Dashboard/grafana/{0}', parameters('name'))]",
+              "name": "[guid(resourceId('Microsoft.Dashboard/grafana', parameters('name')), deployer().objectId, '22926164-76b3-42b3-bc55-97df8dab3e41')]",
+              "properties": {
+                "principalId": "[deployer().objectId]",
+                "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '22926164-76b3-42b3-bc55-97df8dab3e41')]"
               },
               "dependsOn": [
                 "[resourceId('Microsoft.Dashboard/grafana', parameters('name'))]"
