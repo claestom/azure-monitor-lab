@@ -97,23 +97,8 @@
         <mxCell id="ops-job" parent="1" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=10;verticalLabelPosition=bottom;verticalAlign=top;image=img/lib/azure2/other/Worker_Container_App.svg" value="Container Apps&lt;br&gt;Job" vertex="1">
           <mxGeometry height="52" width="80" x="665" y="510" as="geometry" />
         </mxCell>
-        <mxCell id="ops-start" edge="1" parent="1" source="w5" target="ops-job" value="Approve + start" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;html=1;rounded=0;strokeColor=#0078D4;dashed=1;fontSize=10;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0.5;entryY=0">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points"><mxPoint x="300" y="236" /><mxPoint x="300" y="490" /><mxPoint x="705" y="490" /></Array>
-          </mxGeometry>
-        </mxCell>
         <mxCell id="ops-image" edge="1" parent="1" source="ops-acr" target="ops-job" value="Pinned image" style="endArrow=classic;html=1;rounded=0;strokeColor=#666666;fontSize=10;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5">
           <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="ops-workloads" edge="1" parent="1" source="ops-job" target="zwl" value="Approved operations" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;html=1;rounded=0;strokeColor=#0078D4;dashed=1;fontSize=10;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=1;entryY=0.96">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points"><mxPoint x="770" y="536" /><mxPoint x="770" y="608" /><mxPoint x="430" y="608" /><mxPoint x="430" y="578" /></Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="ops-logs" edge="1" parent="1" source="ops-job" target="b1" value="Runner logs" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;html=1;rounded=0;strokeColor=#666666;fontSize=10;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points"><mxPoint x="770" y="536" /><mxPoint x="770" y="136" /></Array>
-          </mxGeometry>
         </mxCell>
         <mxCell id="b1" parent="1" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=10;verticalLabelPosition=bottom;verticalAlign=top;image=img/lib/azure2/management_governance/Log_Analytics_Workspaces.svg" value="LAW Central" vertex="1">
           <mxGeometry height="52" width="80" x="810" y="110" as="geometry" />
@@ -545,27 +530,8 @@
         <mxCell id="ops-job" parent="1" style="image;aspect=fixed;html=1;points=[];align=center;fontSize=10;verticalLabelPosition=bottom;verticalAlign=top;image=img/lib/azure2/other/Worker_Container_App.svg" value="Container Apps&lt;br&gt;Job" vertex="1">
           <mxGeometry height="52" width="80" x="650" y="860" as="geometry" />
         </mxCell>
-        <mxCell id="ops-start" edge="1" parent="1" source="as1" target="ops-job" value="Approve + start" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;html=1;rounded=0;strokeColor=#0078D4;dashed=1;fontSize=10;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0.5;entryY=0">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points"><mxPoint x="1000" y="426" /><mxPoint x="1000" y="810" /><mxPoint x="690" y="810" /></Array>
-          </mxGeometry>
-        </mxCell>
         <mxCell id="ops-image" edge="1" parent="1" source="ops-acr" target="ops-job" value="Pinned runner image" style="endArrow=classic;html=1;rounded=0;strokeColor=#666666;fontSize=10;labelBackgroundColor=#FFFFFF;exitX=0;exitY=0.5;entryX=1;entryY=0.5">
           <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="ops-vms" edge="1" parent="1" source="ops-job" target="z1" value="Approved VM / VMSS operations" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;html=1;rounded=0;strokeColor=#0078D4;dashed=1;fontSize=10;labelBackgroundColor=#FFFFFF;exitX=0;exitY=0.5;entryX=0;entryY=0.5">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points"><mxPoint x="28" y="886" /><mxPoint x="28" y="210" /></Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="ops-aks" edge="1" parent="1" source="ops-job" target="z2" value="Approved AKS operations" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;html=1;rounded=0;strokeColor=#0078D4;dashed=1;fontSize=10;labelBackgroundColor=#FFFFFF;exitX=0;exitY=0;entryX=0.75;entryY=1">
-          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="640" y="810" /></Array></mxGeometry>
-        </mxCell>
-        <mxCell id="ops-webapp" edge="1" parent="1" source="ops-job" target="as1" value="Approved Web App operations" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;html=1;rounded=0;strokeColor=#0078D4;dashed=1;fontSize=10;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0;entryX=0;entryY=0.5">
-          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="850" y="842" /><mxPoint x="850" y="426" /></Array></mxGeometry>
-        </mxCell>
-        <mxCell id="ops-logs" edge="1" parent="1" source="ops-job" target="lawShared" value="Runner logs" style="edgeStyle=orthogonalEdgeStyle;endArrow=classic;html=1;rounded=0;strokeColor=#666666;fontSize=10;labelBackgroundColor=#FFFFFF;exitX=1;exitY=1;entryX=0.5;entryY=1">
-          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1240" y="940" /><mxPoint x="1240" y="320" /><mxPoint x="1140" y="320" /></Array></mxGeometry>
         </mxCell>
         <mxCell id="modulesnote" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#23272F;strokeColor=#0F1115;fontColor=#FFFFFF;fontSize=10;align=center;verticalAlign=middle;spacing=8" value="&lt;font style=&quot;font-size: 16px;&quot;&gt;Bicep modules: vm-linux · vm-windows · vmss · aks · appservice · availability-test · connection-monitor · flow-logs · foundry · ai-observability · ai-healthmodel / lab-console-platform / lab-console-job&lt;/font&gt;" vertex="1">
           <mxGeometry height="50" width="1540" x="80" y="970" as="geometry" />

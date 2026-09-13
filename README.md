@@ -29,7 +29,7 @@ Everything lands in a single resource group (`rg-azure-monitor-lab`), with telem
 
 The GenAI workload and Azure SRE Agent can also be deployed on the same telemetry backbone.
 
-The App Service Control Center starts approved lab operations in an independent **Azure Container Apps Job**, using a digest-pinned runner image from **Azure Container Registry (ACR)**. Blue dashed arrows show approved operations; grey arrows show telemetry and image supply.
+The App Service Control Center starts approved lab operations in an independent **Azure Container Apps Job**, using a digest-pinned runner image from **Azure Container Registry (ACR)**.
 
 > 📦 For a full, resource-by-resource list of what gets created, see [REFERENCE.md → What gets deployed](docs/REFERENCE.md#what-gets-deployed).
 

@@ -102,8 +102,7 @@ $edges = @(
   @('VM','AMA'), @('VMSS','AMA'), @('AKS','AMA'), @('AKS','AMW'), @('APP','AI'), @('NET','FLOW'), @('FDRY','AI'),
   @('AMA','LAW'), @('AMA','AMW'), @('FLOW','PLAT'), @('POL','LAW'), @('LAW','QUERY'), @('AI','LAWAI'), @('PLAT','LAW'),
   @('LAW','WB'), @('LAWAI','WB'), @('AMW','GRAF'), @('LAW','AG'), @('AI','AG'), @('AG','SRE'), @('AG','LOGIC'), @('LAW','SENT'), @('LAW','HEALTH'),
-  @('APP','JOB','control'), @('ACR','JOB'), @('JOB','VM','control'), @('JOB','VMSS','control'),
-  @('JOB','AKS','control'), @('JOB','APP','control'), @('JOB','LAW')
+  @('ACR','JOB')
 )
 
 # --- geometry -------------------------------------------------------------------------
@@ -117,12 +116,11 @@ function Esc($s)     { $s -replace '&','&amp;' -replace '<','&lt;' -replace '>',
 $sb = New-Object System.Text.StringBuilder
 [void]$sb.AppendLine("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 $W $H' font-family='Segoe UI, Helvetica, Arial, sans-serif' role='img' aria-labelledby='architecture-title architecture-description'>")
 [void]$sb.AppendLine("<title id='architecture-title'>Azure Monitor Lab architecture</title>")
-[void]$sb.AppendLine("<desc id='architecture-description'>Workloads, telemetry collection, dashboards, and response. The App Service Control Center starts approved Container Apps Jobs using a pinned image from Azure Container Registry. Jobs operate on the lab workloads and send logs to the central workspace.</desc>")
+[void]$sb.AppendLine("<desc id='architecture-description'>Workloads, telemetry collection, dashboards, and response. Azure Container Registry supplies a digest-pinned image to the Container Apps Job used for approved lab operations.</desc>")
 [void]$sb.AppendLine("<rect x='0' y='0' width='$W' height='$H' rx='10' fill='#0D1117'/>")
 [void]$sb.AppendLine("<text x='$($W/2)' y='34' fill='#E6EDF3' font-size='20' font-weight='700' text-anchor='middle'>rg-azure-monitor-lab · northeurope</text>")
 [void]$sb.AppendLine("<text x='$($W/2)' y='52' fill='#9DA7B3' font-size='11' text-anchor='middle'>optional GenAI workload (Microsoft Foundry) pinned to swedencentral</text>")
 [void]$sb.AppendLine("<defs><marker id='arrow' viewBox='0 0 10 10' refX='9' refY='5' markerWidth='7' markerHeight='7' orient='auto-start-reverse'><path d='M0,0 L10,5 L0,10 z' fill='#7D8590'/></marker></defs>")
-[void]$sb.AppendLine("<defs><marker id='arrow-control' viewBox='0 0 10 10' refX='9' refY='5' markerWidth='7' markerHeight='7' orient='auto-start-reverse'><path d='M0,0 L10,5 L0,10 z' fill='#4AA3E0'/></marker></defs>")
 
 # group boxes
 foreach ($key in $cols.Keys) {
@@ -138,10 +136,9 @@ function AnchorTop($n)   { $c = ColOf $n; @(($c.x + $c.w/2), (NodeTop $n)) }
 function AnchorBottom($n){ $c = ColOf $n; @(($c.x + $c.w/2), ((NodeTop $n) + $cellH)) }
 
 $longRouteIndex = 0
+$lineStyle = "stroke='#7D8590' marker-end='url(#arrow)'"
 foreach ($e in $edges) {
   $s = $nodes[$e[0]]; $t = $nodes[$e[1]]
-  $control = $e.Count -gt 2 -and $e[2] -eq 'control'
-  $lineStyle = if ($control) { "stroke='#4AA3E0' stroke-dasharray='5 4' marker-end='url(#arrow-control)'" } else { "stroke='#7D8590' marker-end='url(#arrow)'" }
   if ($s.col -eq $t.col) {
     $a = AnchorBottom $s; $b = AnchorTop $t
     [void]$sb.AppendLine("<path id='edge-$($e[0])-$($e[1])' d='M $($a[0]),$($a[1]) L $($b[0]),$($b[1])' fill='none' stroke-width='1.4' $lineStyle/>")
@@ -186,9 +183,6 @@ foreach ($id in $nodes.Keys) {
   }
   [void]$sb.AppendLine('</g>')
 }
-
-[void]$sb.AppendLine("<text id='legend-control' x='346' y='648' fill='#4AA3E0' font-size='10.5'>Blue dashed: approved operations</text>")
-[void]$sb.AppendLine("<text id='legend-data' x='346' y='666' fill='#9DA7B3' font-size='10.5'>Grey: telemetry / image supply</text>")
 
 [void]$sb.AppendLine('</svg>')
 
