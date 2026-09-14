@@ -208,7 +208,7 @@ Write-Host "  kubectl create job --from=cronjob/loadgen loadgen-now -n demo" -Fo
 # 4. Assign Monitoring Metrics Publisher role on the custom-logs DCR
 #    so send-custom-logs.ps1 can ingest data via the Logs Ingestion API.
 Write-Step "Assigning 'Monitoring Metrics Publisher' role for custom log ingestion"
-$logOperators = @($ConsoleOperatorObjectIds)
+$logOperators = @($ConsoleOperatorObjectIds | Where-Object { $null -ne $_ })
 if (-not $logOperators.Count) {
   $currentUser = az rest --method get --url 'https://graph.microsoft.com/v1.0/me?$select=id' --subscription $active.id --output json --only-show-errors | ConvertFrom-Json
   if ($LASTEXITCODE -ne 0 -or -not $currentUser.id) { throw 'Specify console operator IDs for a noninteractive deployment.' }

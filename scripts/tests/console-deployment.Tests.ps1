@@ -7,6 +7,7 @@ $fixture = @{
   Subscription = [guid]::NewGuid(); Tenant = [guid]::NewGuid(); Operator = [guid]::NewGuid()
   Events = [Collections.Generic.List[string]]::new(); FailSetup = $false; BadTenant = $false; Uploads = 0
   OperatorRoles = 0; DeploymentWrites = 0
+  DefaultOperator = $false; CurrentUserLookups = 0; ExistingOperatorRole = $false; CurrentUserUnavailable = $false
 }
 foreach ($name in @('deploy.ps1', 'deploy-webapp.ps1', 'post-staged-deploy.ps1', 'post-cloud-shell-deploy.ps1')) {
   Copy-Item -LiteralPath (Join-Path $source "scripts/$name") -Destination $directory
@@ -20,7 +21,8 @@ $fixture.Events.Add('package')
 '@ | Set-Content (Join-Path $directory 'prepare-webapp-package.ps1')
 @'
 param($SubscriptionId, $TenantId, $ResourceGroup, $WebAppName, $ConsoleConfigPath, $AllowedUserObjectIds)
-if ($SubscriptionId -ne $fixture.Subscription -or $TenantId -ne $fixture.Tenant -or $AllowedUserObjectIds[0] -ne $fixture.Operator -or -not (Test-Path $ConsoleConfigPath)) { throw 'Wrong automatic setup inputs.' }
+$operatorsMatch = if ($fixture.DefaultOperator) { -not $AllowedUserObjectIds } else { $AllowedUserObjectIds[0] -eq $fixture.Operator }
+if ($SubscriptionId -ne $fixture.Subscription -or $TenantId -ne $fixture.Tenant -or -not $operatorsMatch -or -not (Test-Path $ConsoleConfigPath)) { throw 'Wrong automatic setup inputs.' }
 $fixture.Events.Add('initialize')
 if ($fixture.FailSetup) { throw 'Bootstrap failed.' }
 '@ | Set-Content (Join-Path $directory 'initialize-webapp-console.ps1')
@@ -99,10 +101,21 @@ function az {
     'aks get-credentials' { if ($args -notcontains '--subscription') { throw 'Kubernetes discovery lost its subscription.' }; return }
     'role assignment' {
       if ($args -notcontains '--subscription') { throw 'Operator access lost its subscription.' }
-      if ($args[2] -eq 'list') { return '[]' }
+      if ($args[2] -eq 'list') {
+        $assignments = @(@{ principalId = [guid]::NewGuid().ToString(); scope = 'test-dcr' })
+        if ($fixture.ExistingOperatorRole) { $assignments += @{ principalId = $fixture.Operator.ToString(); scope = 'test-dcr' } }
+        return ConvertTo-Json -InputObject $assignments -Compress
+      }
       if ($args[[Array]::IndexOf($args, '--assignee-object-id') + 1] -ne $fixture.Operator.ToString() -or $args -notcontains 'User') { throw 'Operator access targeted the deployment service principal.' }
       $fixture.OperatorRoles++
       return
+    }
+    'rest --method' {
+      if ($args[2] -ne 'get' -or $args -notcontains 'https://graph.microsoft.com/v1.0/me?$select=id' -or $args -notcontains '--subscription') { throw 'Unexpected operator discovery request.' }
+      if ($args[[Array]::IndexOf($args, '--subscription') + 1] -ne $fixture.Subscription.ToString()) { throw 'Operator discovery lost the verified subscription.' }
+      $fixture.CurrentUserLookups++
+      if ($fixture.CurrentUserUnavailable) { $global:LASTEXITCODE = 1; return '{}' }
+      return @{ id = $fixture.Operator.ToString() } | ConvertTo-Json
     }
     default { throw 'Unexpected native Azure call.' }
   }
@@ -156,7 +169,31 @@ if ($SubscriptionId -ne $fixture.Subscription) { throw 'One-shot SLI setup lost 
   $fixture.Events.Clear()
   Copy-Item -LiteralPath (Join-Path $source 'scripts/post-deploy.ps1') -Destination $directory -Force
   & (Join-Path $directory 'post-deploy.ps1') @parameters -AksName aks-amlab -WebAppHost app-amlab-test.azurewebsites.net -CentralLawName law-amlab-central-test | Out-Null
-  if ($fixture.Uploads -ne 2 -or $fixture.OperatorRoles -ne 1) { throw 'Shared deployment did not publish and configure the supplied operator without interactive-user lookup.' }
+  if ($fixture.Uploads -ne 2 -or $fixture.OperatorRoles -ne 1 -or $fixture.CurrentUserLookups) { throw 'Shared deployment did not publish and configure the supplied operator without interactive-user lookup.' }
+  $defaultParameters = $parameters.Clone()
+  $defaultParameters.Remove('ConsoleOperatorObjectIds')
+  $fixture.DefaultOperator = $true
+  foreach ($operatorInput in @(@{}, @{ ConsoleOperatorObjectIds = $null }, @{ ConsoleOperatorObjectIds = @() })) {
+    foreach ($existingOperatorRole in @($false, $true)) {
+      $fixture.ExistingOperatorRole = $existingOperatorRole
+      $fixture.Events.Clear()
+      $fixture.CurrentUserLookups = 0
+      $fixture.OperatorRoles = 0
+      $fixture.DeploymentWrites = 0
+      & (Join-Path $directory 'deploy.ps1') -ResourceGroup test-rg -SkipPreflight @operatorInput | Out-Null
+      $expectedRoleWrites = if ($existingOperatorRole) { 0 } else { 1 }
+      if ($fixture.CurrentUserLookups -ne 1 -or $fixture.OperatorRoles -ne $expectedRoleWrites -or $fixture.DeploymentWrites -ne 3) { throw 'One-shot default operator discovery did not preserve idempotent custom-log access.' }
+    }
+  }
+  $fixture.CurrentUserUnavailable = $true
+  $fixture.Events.Clear()
+  $fixture.CurrentUserLookups = 0
+  $fixture.OperatorRoles = 0
+  $rejected = $false
+  try { & (Join-Path $directory 'post-deploy.ps1') @defaultParameters -AksName aks-amlab -WebAppHost app-amlab-test.azurewebsites.net -CentralLawName law-amlab-central-test | Out-Null }
+  catch { $rejected = $_.Exception.Message -eq 'Specify console operator IDs for a noninteractive deployment.' }
+  if (-not $rejected -or $fixture.OperatorRoles -or $fixture.CurrentUserLookups -ne 1) { throw 'Failed user discovery must stop without assigning custom-log access.' }
+  Write-Output 'PASS: omitted, null, and empty one-shot operator lists resolve the signed-in user; existing roles are reused; failed user discovery stops without role writes.'
   Write-Output 'PASS: one-shot, app, staged, and Cloud Shell handoffs preserve account/operator inputs, bootstrap before publication, and stop on setup failures. No Azure calls.'
 } finally {
   if (Test-Path $root) { Remove-Item -LiteralPath $root -Recurse -Force }
