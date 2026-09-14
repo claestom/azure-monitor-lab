@@ -19,11 +19,13 @@ on:
       - 'scripts/tests/console-deployment.Tests.ps1'
       - 'scripts/tests/ai-traffic.Tests.ps1'
       - 'scripts/tests/staged-guide.Tests.ps1'
+      - 'scripts/tests/sli-setup.Tests.ps1'
       - 'scripts/tests/compiled-templates.Tests.ps1'
       - 'scripts/tests/webapp-publication.Tests.ps1'
       - 'scripts/setup-ai.ps1'
       - 'scripts/setup-ai-cloud-shell.ps1'
       - 'scripts/setup-sre-agent.ps1'
+      - 'scripts/setup-slis.ps1'
       - 'workloads/ai/*.py'
       - 'workloads/ai/tests/**'
       - 'workloads/operations/**'
@@ -85,6 +87,7 @@ jobs:
           ./scripts/tests/webapp-publication.Tests.ps1
           ./scripts/tests/ai-traffic.Tests.ps1
           ./scripts/tests/staged-guide.Tests.ps1
+          ./scripts/tests/sli-setup.Tests.ps1
           ./workloads/webapp/tests/webapp-access.Tests.ps1
       - name: Agent provisioning and background traffic without Azure
         run: python -B -m unittest discover -s workloads/ai/tests -p 'test_*.py' -v
