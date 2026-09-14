@@ -8,8 +8,12 @@ Set these values before running the commands in this guide:
 
 ```powershell
 $subscriptionId = '<subscription-id>'
+$tenantId = '<tenant-id>'
 $resourceGroup = '<resource-group>'
+$namePrefix = 'amlab'
 az account set --subscription $subscriptionId
+$active = az account show --query '{id:id,tenantId:tenantId}' -o json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0 -or $active.id -ne $subscriptionId -or $active.tenantId -ne $tenantId) { throw 'Subscription or tenant mismatch.' }
 ```
 
 ## Portal deployment
@@ -25,7 +29,7 @@ git clone https://github.com/claestom/azure-monitor-lab.git
 cd azure-monitor-lab
 ./scripts/post-cloud-shell-deploy.ps1 `
   -SubscriptionId $subscriptionId `
-  -ResourceGroup $resourceGroup
+  -ResourceGroup $resourceGroup -NamePrefix $namePrefix
 ```
 
 The wrapper:
@@ -37,11 +41,12 @@ The wrapper:
 - Creates the Service Group and its resource-group membership.
 - Uses the Health Model deployed by the portal template and verifies the SLI identity prerequisites.
 - Verifies that the Managed Prometheus source metrics for the SLI examples are flowing.
+- Discovers and validates a deployed SRE Agent and its monitoring connectors. Failed discovery or validation stops completion.
 
 ### Conditional
 
-- **AI stage enabled:** the workload wrapper already prepares the console's demo agents. Run `./scripts/setup-ai-cloud-shell.ps1 -SubscriptionId $subscriptionId -ResourceGroup $resourceGroup` only when generating optional scenario traffic. The models are billable.
-- **SRE Agent stage enabled:** run `./scripts/setup-sre-agent.ps1 -SubscriptionId $subscriptionId -ResourceGroup $resourceGroup`. Then complete the portal authoring steps under [SRE Agent](#sre-agent).
+- **AI stage enabled:** the workload wrapper already prepares the console's demo agents. Run `./scripts/setup-ai-cloud-shell.ps1 -SubscriptionId $subscriptionId -ResourceGroup $resourceGroup -NamePrefix $namePrefix` only when generating optional background scenario traffic. The models are billable.
+- **SRE Agent stage enabled:** the workload wrapper already validates it; no separate validation command is required after success. Complete the portal authoring steps under [SRE Agent](#sre-agent) only for those incident scenarios, not for Control Center MCP use.
 - **AI or SRE Agent stage disabled:** skip its setup. The corresponding scenarios are not available until that stage is enabled and deployed.
 
 Continue with [Manual scenario setup](#manual-scenario-setup).
@@ -64,25 +69,29 @@ Running `./scripts/deploy.ps1` is the most complete deployment path. Do not run 
 
 The one-shot command returns after the traffic worker acknowledges startup, without waiting for all conversations. It prints **Lab setup complete. Agent traffic started in the background.** Required console agents and access are still prepared before app publication; the final AI step does not delay SRE verification.
 
+## Background AI Traffic
+
+All supported AI setup entry points use the same detached worker: one-shot, standalone [AI setup](../scripts/setup-ai.ps1), and the [Cloud Shell helper](../scripts/setup-ai-cloud-shell.ps1). Traffic is always a finite background batch when requested, default 150 conversations. `-SkipTraffic` prepares agents without starting a worker; the legacy `-BackgroundTraffic` switch remains accepted but is unnecessary. Passing it as false does not select foreground mode.
+
 Background traffic runs in a separate Python process on the deployment machine, not in the Web App or an Azure job. The process receives a snapshot of the agent IDs and inherits the configured environment without putting credentials on its command line. Each invocation starts a new finite batch, so avoid overlapping runs unless intended. Model usage remains billable and telemetry can take a few minutes to appear.
 
 The output includes the worker PID and its log/status paths. Files are outside the repository, under `%LOCALAPPDATA%/azure-monitor-lab/ai-traffic` on Windows or `$XDG_STATE_HOME/azure-monitor-lab/ai-traffic` on Linux (default `~/.local/state`). The status records `running`, `completed`, `completed_with_errors`, or `failed`; `running` acknowledges startup, not successful model responses. Use the printed log to inspect progress and the PID to inspect or stop the process. If the process is forcibly stopped, its last status may remain `running`.
 
-Keep the deployment machine and its Azure CLI sign-in available until the batch ends. A suspended laptop, expired sign-in, Cloud Shell session termination, or CI runner shutdown can interrupt traffic; there is no automatic restart. Startup failures or a missing acknowledgment after 30 seconds produce a warning instead of claiming traffic started. Standalone `setup-ai.ps1` still runs traffic in the foreground unless `-BackgroundTraffic` is supplied; `-SkipTraffic` still prepares agents only.
+Keep the deployment machine and its Azure CLI sign-in available until the batch ends. A suspended laptop, expired sign-in, Cloud Shell session termination, or CI runner shutdown can interrupt traffic; there is no automatic restart. Standalone and Cloud Shell setup throw on failed startup or missing acknowledgment after 30 seconds. One-shot deployment catches that optional traffic failure and prints a warning instead of claiming traffic started.
 
 Required console setup failures stop deployment. A later warning about optional AI traffic does not mean agent provisioning was skipped. To generate that scenario telemetry later:
 
 ```powershell
-./scripts/setup-ai.ps1 -ResourceGroup $resourceGroup
+./scripts/setup-ai.ps1 -SubscriptionId $subscriptionId -TenantId $tenantId -ResourceGroup $resourceGroup -NamePrefix $namePrefix
 ```
 
-If SRE Agent was enabled, the deploy script already completed Steps 1 through 3 of the SRE Agent setup. Skip those steps and continue with [Step 4 - Verify Azure Monitor](STAGE-SRE-AGENT.md#4-verify-azure-monitor) before creating the custom investigators and response plans.
+When one-shot SRE validation succeeded, it already completed Steps 1 through 3 of the SRE Agent setup. For portal incident scenarios only, continue with [Step 4 - Verify Azure Monitor](STAGE-SRE-AGENT.md#4-verify-azure-monitor) before authoring custom investigators and response plans. These are not required for the Control Center MCP assistant.
 
 Otherwise, continue with [Manual scenario setup](#manual-scenario-setup).
 
 ## Staged deployment
 
-A staged deployment contains only the stages enabled in `lab.config.json` or `terraform/stages.tfvars`. Complete the instructions in the relevant staged guide before running follow-up scripts:
+Terraform selects stages through its variables, optionally generated from the central config. Raw Bicep selects stages by deploying their dedicated templates. Complete the instructions in the relevant staged guide before running follow-up scripts:
 
 - [Bicep staged deployment](DEPLOY-BICEP-STEP-BY-STEP.md)
 - [Terraform staged deployment](DEPLOY-TERRAFORM-STEP-BY-STEP.md)
@@ -92,16 +101,19 @@ A staged deployment contains only the stages enabled in `lab.config.json` or `te
 Terraform runs the staged wrapper automatically as part of `apply` with Stage B enabled. Do not run it again after a successful apply. Raw Bicep stage deployments remain infrastructure-only; use their normal workload completion wrapper:
 
 ```powershell
-./scripts/post-staged-deploy.ps1 -SubscriptionId $subscriptionId -ResourceGroup $resourceGroup
+./scripts/post-staged-deploy.ps1 -SubscriptionId $subscriptionId -ResourceGroup $resourceGroup -NamePrefix $namePrefix
 ```
 
-The wrapper publishes the application, initializes all baseline console dependencies and selected agent access, configures AKS workloads, and creates the summary rule. Service Group setup and SLI verification run only when Stage E is selected. The wrapper reads `stageToggles.enableStageE` from the central config and defaults to false when it is absent; an explicit `-EnableStageE $true` or `-EnableStageE $false` overrides it. Terraform passes its own selection explicitly. Existing optional resources are not deleted when this setup is skipped. It also validates SRE Agent when selected in the central config.
+The wrapper publishes the application, initializes all baseline console dependencies and selected agent access, configures AKS workloads, and creates the summary rule. Service Group setup and SLI verification run only when Stage E is selected. The wrapper reads `stageToggles.enableStageE` from the central config and defaults to false when it is absent; an explicit `-EnableStageE $true` or `-EnableStageE $false` overrides it. Terraform passes its own selection explicitly. Existing optional resources are not deleted when this setup is skipped.
+
+Both staged and portal completion discover deployed SRE resources for validation unless `-EnableStageSreAgent $true` or `-EnableStageSreAgent $false` is explicitly supplied. Terraform always passes its own SRE flag, independent of central config. An explicit false skips validation without deleting or disabling an existing agent. Terraform with SRE but no B runs a separate standalone validation hook; it does not publish a Web App.
 
 ### Conditional
 
-- **Stage AI enabled:** the console bootstrap prepares the agents automatically. Run `./scripts/setup-ai.ps1 -ResourceGroup $resourceGroup` only for optional scenario traffic, or for an AI-only lab with no Stage B/Web App.
-- **Stage SRE Agent enabled:** if the staged wrapper did not validate it, run `./scripts/setup-sre-agent.ps1 -SubscriptionId $subscriptionId -ResourceGroup $resourceGroup`. Then complete [SRE Agent](#sre-agent).
-- **Stage E enabled after the wrapper ran:** run `./scripts/setup-slis.ps1 -SubscriptionId $subscriptionId -ResourceGroup $resourceGroup` to verify the newly deployed SLI identity, permissions, and source metrics.
+- **Stage AI enabled:** console bootstrap prepares the agents without traffic. Run the account-scoped AI command above only for optional background traffic, or for an AI-only lab with no B/Web App. Add `-SkipTraffic` to prepare standalone agents without traffic.
+- **AI or SRE added after Stage B:** Terraform apply refreshes the console automatically. Raw Bicep users must complete the conditional Web App refresh in the [staged Bicep guide](DEPLOY-BICEP-STEP-BY-STEP.md#stage-ai-deploy-optional) before optional traffic or MCP use; deploying the new template alone does not refresh app inventory/access.
+- **Stage SRE without Stage B:** Terraform validates it during apply. Raw Bicep uses `./scripts/setup-sre-agent.ps1 -SubscriptionId $subscriptionId -ResourceGroup $resourceGroup`; do not call a wrapper that requires Web App and AKS. Portal investigators and response plans remain optional scenario setup.
+- **Stage E enabled after the wrapper ran:** Terraform handles completion during apply. For raw Bicep, rerun the staged wrapper with `-EnableStageE $true` to configure the Service Group and verify SLI prerequisites.
 - **Stage E disabled:** Health Model, SLI, Sentinel, and the other optional advanced resources from that stage are unavailable. Skip their follow-up steps.
 - **Earlier stage disabled:** skip scenarios that depend on resources from that stage.
 

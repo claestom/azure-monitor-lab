@@ -28,6 +28,7 @@ locals {
       "scripts/initialize-webapp-console.ps1",
       "scripts/setup-webapp-agent-access.ps1",
       "scripts/setup-ai.ps1",
+      "scripts/setup-sre-agent.ps1",
       "scripts/install-sre-mcp.ps1",
       "scripts/invoke-lab-operation.ps1",
       "scripts/start-the-lab.ps1",
@@ -65,14 +66,41 @@ resource "terraform_data" "console_ready" {
 
   provisioner "local-exec" {
     interpreter = ["pwsh", "-NoProfile", "-NonInteractive", "-Command"]
-    command     = "& (Join-Path $env:LAB_REPOSITORY_ROOT 'scripts/post-staged-deploy.ps1') -SubscriptionId $env:LAB_SUBSCRIPTION_ID -ResourceGroup $env:LAB_RESOURCE_GROUP -NamePrefix $env:LAB_NAME_PREFIX -ConsoleOperatorObjectIds @($env:LAB_OPERATOR_IDS | ConvertFrom-Json) -EnableStageE ([bool]::Parse($env:LAB_ENABLE_STAGE_E))"
+    command     = "& (Join-Path $env:LAB_REPOSITORY_ROOT 'scripts/post-staged-deploy.ps1') -SubscriptionId $env:LAB_SUBSCRIPTION_ID -ResourceGroup $env:LAB_RESOURCE_GROUP -NamePrefix $env:LAB_NAME_PREFIX -ConsoleOperatorObjectIds @($env:LAB_OPERATOR_IDS | ConvertFrom-Json) -EnableStageE ([bool]::Parse($env:LAB_ENABLE_STAGE_E)) -EnableStageSreAgent ([bool]::Parse($env:LAB_ENABLE_STAGE_SRE_AGENT))"
+    environment = {
+      LAB_REPOSITORY_ROOT        = abspath("${path.module}/..")
+      LAB_SUBSCRIPTION_ID        = var.subscription_id
+      LAB_RESOURCE_GROUP         = var.resource_group_name
+      LAB_NAME_PREFIX            = var.name_prefix
+      LAB_OPERATOR_IDS           = jsonencode(var.console_operator_object_ids)
+      LAB_ENABLE_STAGE_E         = tostring(var.enable_stage_e)
+      LAB_ENABLE_STAGE_SRE_AGENT = tostring(var.enable_stage_sre_agent)
+    }
+  }
+}
+
+resource "terraform_data" "sre_ready" {
+  count = var.enable_stage_sre_agent && !var.enable_stage_b ? 1 : 0
+
+  triggers_replace = {
+    resource_group = data.azurerm_resource_group.lab.id
+    validator      = filesha256("${path.module}/../scripts/setup-sre-agent.ps1")
+    template       = filesha256("${path.module}/../infra/stages/60-sre-agent.json")
+  }
+
+  depends_on = [azapi_resource.stage_sre_agent]
+
+  lifecycle {
+    replace_triggered_by = [azapi_resource.stage_sre_agent]
+  }
+
+  provisioner "local-exec" {
+    interpreter = ["pwsh", "-NoProfile", "-NonInteractive", "-Command"]
+    command     = "& (Join-Path $env:LAB_REPOSITORY_ROOT 'scripts/setup-sre-agent.ps1') -SubscriptionId $env:LAB_SUBSCRIPTION_ID -ResourceGroup $env:LAB_RESOURCE_GROUP"
     environment = {
       LAB_REPOSITORY_ROOT = abspath("${path.module}/..")
       LAB_SUBSCRIPTION_ID = var.subscription_id
       LAB_RESOURCE_GROUP  = var.resource_group_name
-      LAB_NAME_PREFIX     = var.name_prefix
-      LAB_OPERATOR_IDS    = jsonencode(var.console_operator_object_ids)
-      LAB_ENABLE_STAGE_E  = tostring(var.enable_stage_e)
     }
   }
 }

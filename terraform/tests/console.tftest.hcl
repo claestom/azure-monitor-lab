@@ -32,6 +32,11 @@ run "foundation_without_console" {
     condition     = length(terraform_data.console_ready) == 0
     error_message = "Stage A alone must not publish or provision the Web App console."
   }
+
+  assert {
+    condition     = length(terraform_data.sre_ready) == 0
+    error_message = "Stage A alone must not run SRE validation."
+  }
 }
 
 run "workloads_include_console" {
@@ -83,6 +88,29 @@ run "optional_agents_refresh_console" {
   assert {
     condition     = jsondecode(terraform_data.console_ready[0].triggers_replace.integrations).ai && jsondecode(terraform_data.console_ready[0].triggers_replace.integrations).sre
     error_message = "Changes to both optional agent stages must refresh console setup."
+  }
+
+  assert {
+    condition     = length(terraform_data.sre_ready) == 0
+    error_message = "The console completion path must not duplicate standalone SRE validation."
+  }
+}
+
+run "sre_without_workloads_is_validated" {
+  command = plan
+
+  variables {
+    enable_stage_sre_agent = true
+  }
+
+  assert {
+    condition     = length(terraform_data.console_ready) == 0 && length(terraform_data.sre_ready) == 1
+    error_message = "SRE without Stage B must validate the agent without publishing a Web App."
+  }
+
+  assert {
+    condition     = terraform_data.sre_ready[0].triggers_replace.resource_group == data.azurerm_resource_group.lab.id
+    error_message = "Standalone SRE validation must target the selected resource group."
   }
 }
 

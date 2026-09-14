@@ -12,21 +12,29 @@ on:
       - 'scripts/deploy-webapp.ps1'
       - 'scripts/post-deploy.ps1'
       - 'scripts/post-staged-deploy.ps1'
+      - 'scripts/post-cloud-shell-deploy.ps1'
       - 'scripts/wait-webapp-publication.ps1'
       - 'scripts/setup-webapp-agent-access.ps1'
       - 'scripts/tests/console-bootstrap.Tests.ps1'
       - 'scripts/tests/console-deployment.Tests.ps1'
       - 'scripts/tests/ai-traffic.Tests.ps1'
+      - 'scripts/tests/staged-guide.Tests.ps1'
       - 'scripts/tests/compiled-templates.Tests.ps1'
       - 'scripts/tests/webapp-publication.Tests.ps1'
       - 'scripts/setup-ai.ps1'
+      - 'scripts/setup-ai-cloud-shell.ps1'
+      - 'scripts/setup-sre-agent.ps1'
       - 'workloads/ai/*.py'
       - 'workloads/ai/tests/**'
       - 'workloads/operations/**'
       - 'infra/modules/lab-console*'
       - 'infra/modules/appservice*'
       - 'infra/main.*'
-      - 'infra/stages/10-workloads*'
+      - 'infra/stages/*'
+      - 'docs/DEPLOY-*-STEP-BY-STEP.md'
+      - 'docs/POST-DEPLOYMENT.md'
+      - 'docs/STAGE-AI.md'
+      - 'scripts/README.md'
       - 'terraform/**'
       - 'scripts/tests/lab-operations*.Tests.ps1'
       - 'scripts/start-the-lab.ps1'
@@ -47,7 +55,10 @@ on:
       - 'infra/modules/lab-console*'
       - 'infra/modules/appservice*'
       - 'infra/main.*'
-      - 'infra/stages/10-workloads*'
+      - 'infra/stages/*'
+      - 'docs/DEPLOY-*-STEP-BY-STEP.md'
+      - 'docs/POST-DEPLOYMENT.md'
+      - 'docs/STAGE-AI.md'
       - 'terraform/**'
       - '.github/workflows/lab-operations*.yml'
 
@@ -73,6 +84,7 @@ jobs:
           ./scripts/tests/console-deployment.Tests.ps1
           ./scripts/tests/webapp-publication.Tests.ps1
           ./scripts/tests/ai-traffic.Tests.ps1
+          ./scripts/tests/staged-guide.Tests.ps1
           ./workloads/webapp/tests/webapp-access.Tests.ps1
       - name: Agent provisioning and background traffic without Azure
         run: python -B -m unittest discover -s workloads/ai/tests -p 'test_*.py' -v

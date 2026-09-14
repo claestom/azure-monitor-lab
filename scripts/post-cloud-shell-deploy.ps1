@@ -5,7 +5,11 @@
 .DESCRIPTION
   Pins and verifies the selected subscription, discovers the portal-deployed lab
   resources, resolves Application Insights through the core ARM CLI surface, and
-  runs the same workload, Health Model, and SLI helpers used by deploy.ps1.
+  runs the same workload, Health Model, SLI, and SRE validation helpers used by deploy.ps1.
+
+.PARAMETER EnableStageSreAgent
+  Validate SRE Agent when true. When omitted, detect the deployed SRE resource.
+  Explicit false skips validation without deleting or disabling the agent.
 
 .EXAMPLE
   ./scripts/post-cloud-shell-deploy.ps1 -SubscriptionId <subscription-id> -ResourceGroup rg-azure-monitor-lab
@@ -15,7 +19,8 @@ param(
   [Parameter(Mandatory)] [string] $SubscriptionId,
   [Parameter(Mandatory)] [string] $ResourceGroup,
   [string] $NamePrefix = 'amlab',
-  [guid[]] $ConsoleOperatorObjectIds
+  [guid[]] $ConsoleOperatorObjectIds,
+  [bool] $EnableStageSreAgent = $false
 )
 
 $ErrorActionPreference = 'Stop'
@@ -34,7 +39,11 @@ Write-Info "Resource group: $ResourceGroup"
 Write-Info "Name prefix: $NamePrefix"
 
 Write-Step "Discovering portal deployment resources"
-$resources = az resource list -g $ResourceGroup -o json | ConvertFrom-Json
+$resources = @(az resource list --subscription $active.id -g $ResourceGroup -o json | ConvertFrom-Json)
+if ($LASTEXITCODE -ne 0) { throw 'Portal resource discovery failed.' }
+if (-not $PSBoundParameters.ContainsKey('EnableStageSreAgent')) {
+  $EnableStageSreAgent = @($resources | Where-Object { $_.type -ieq 'Microsoft.App/agents' }).Count -gt 0
+}
 $webApp = @($resources | Where-Object {
   $_.type -ieq 'Microsoft.Web/sites' -and $_.name -like "app-$NamePrefix-*"
 }) | Select-Object -First 1
@@ -85,6 +94,11 @@ Write-Step "Provisioning service group and health model prerequisites"
 
 Write-Step "Verifying demo SLI prerequisites and source metrics"
 & (Join-Path $PSScriptRoot 'setup-slis.ps1') -SubscriptionId $SubscriptionId -ResourceGroup $ResourceGroup
+
+if ($EnableStageSreAgent) {
+  Write-Step 'Validating the deployed SRE Agent and monitoring connectors'
+  & (Join-Path $PSScriptRoot 'setup-sre-agent.ps1') -SubscriptionId $SubscriptionId -ResourceGroup $ResourceGroup
+}
 
 Write-Host @"
 

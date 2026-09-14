@@ -11,6 +11,7 @@ $fixture = @{
   AiSetupFails = $false; SreSetupFails = $false
   StageEResources = $false; ServiceGroupCalls = 0; SliCalls = 0
   DeploymentId = ''; VersionChecks = 0
+  SreResources = $false; ResourceDiscoveryFails = $false
 }
 foreach ($name in @('deploy.ps1', 'deploy-webapp.ps1', 'post-staged-deploy.ps1', 'post-cloud-shell-deploy.ps1', 'wait-webapp-publication.ps1')) {
   Copy-Item -LiteralPath (Join-Path $source "scripts/$name") -Destination $directory
@@ -34,6 +35,12 @@ param([guid]$SubscriptionId, [guid]$TenantId, $ResourceGroup, $WebAppName, $AksN
 if ($SubscriptionId -ne $fixture.Subscription -or $TenantId -ne $fixture.Tenant -or $ConsoleOperatorObjectIds[0] -ne $fixture.Operator) { throw 'Deployment wrapper lost the verified target or operator inputs.' }
 $fixture.Events.Add('post-deploy')
 '@ | Set-Content (Join-Path $directory 'post-deploy.ps1')
+@'
+param([guid]$SubscriptionId, $ResourceGroup)
+if ($SubscriptionId -ne $fixture.Subscription -or $ResourceGroup -ne 'test-rg') { throw 'SRE setup lost the verified target.' }
+$fixture.Events.Add('sre')
+if ($fixture.SreSetupFails) { throw 'SRE verification failed.' }
+'@ | Set-Content (Join-Path $directory 'setup-sre-agent.ps1')
 @'
 param($ResourceGroup, $SubscriptionId)
 $fixture.ServiceGroupCalls++
@@ -105,6 +112,7 @@ function az {
       return
     }
     'resource list' {
+      if ($fixture.ResourceDiscoveryFails) { $global:LASTEXITCODE = 1; return '[]' }
       if ($args -contains 'Microsoft.Insights/dataCollectionRules') { return '[{"id":"test-dcr","name":"dcr-amlab-customlogs"}]' }
       if ($args -contains '[0].id') { return 'test-component' }
       $resources = @(
@@ -114,6 +122,7 @@ function az {
         @{ name = 'appi-amlab'; id = 'test-component'; type = 'Microsoft.Insights/components' }
       )
       if ($fixture.StageEResources) { $resources += @{ name = 'id-sli-amlab'; type = 'Microsoft.ManagedIdentity/userAssignedIdentities' } }
+      if ($fixture.SreResources) { $resources += @{ name = 'sre-amlab-test'; type = 'Microsoft.App/agents' } }
       return ConvertTo-Json -InputObject $resources
     }
     'resource show' { return 'offline-connection' }
@@ -174,6 +183,36 @@ try {
     $expectedServiceGroups = if ($name -eq 'post-staged-deploy.ps1') { 0 } else { 1 }
     if ($fixture.ServiceGroupCalls -ne $expectedServiceGroups) { throw 'Staged deployment must not enable Service Group setup implicitly.' }
   }
+  foreach ($name in @('post-staged-deploy.ps1', 'post-cloud-shell-deploy.ps1')) {
+    foreach ($selection in @(
+      @{ Resources = $false; Config = $true; Explicit = @{}; Expected = 'post-deploy' },
+      @{ Resources = $true; Config = $false; Explicit = @{}; Expected = 'post-deploy,sre' },
+      @{ Resources = $true; Config = $true; Explicit = @{ EnableStageSreAgent = $false }; Expected = 'post-deploy' },
+      @{ Resources = $true; Config = $false; Explicit = @{ EnableStageSreAgent = $true }; Expected = 'post-deploy,sre' }
+    )) {
+      @{ stageToggles = @{ enableStageSreAgent = $selection.Config } } | ConvertTo-Json -Depth 3 | Set-Content (Join-Path $root 'lab.config.json')
+      $fixture.SreResources = $selection.Resources
+      $fixture.Events.Clear()
+      $selectionArguments = $selection.Explicit
+      & (Join-Path $directory $name) -SubscriptionId $fixture.Subscription -ResourceGroup test-rg -ConsoleOperatorObjectIds @($fixture.Operator) @selectionArguments | Out-Null
+      if (($fixture.Events -join ',') -ne $selection.Expected) { throw "$name must follow explicit SRE selection or deployed resources, not stale config." }
+    }
+    $fixture.SreSetupFails = $true
+    $rejected = $false
+    try { & (Join-Path $directory $name) -SubscriptionId $fixture.Subscription -ResourceGroup test-rg -ConsoleOperatorObjectIds @($fixture.Operator) | Out-Null }
+    catch { $rejected = $_.Exception.Message -eq 'SRE verification failed.' }
+    if (-not $rejected) { throw "$name hid a failed SRE validation." }
+    $fixture.SreSetupFails = $false
+    $fixture.ResourceDiscoveryFails = $true
+    $fixture.Events.Clear()
+    $rejected = $false
+    try { & (Join-Path $directory $name) -SubscriptionId $fixture.Subscription -ResourceGroup test-rg -ConsoleOperatorObjectIds @($fixture.Operator) | Out-Null }
+    catch { $rejected = $_.Exception.Message -like '*resource discovery failed.' }
+    if (-not $rejected -or $fixture.Events.Count) { throw "$name must stop before completion when resource discovery fails." }
+    $fixture.ResourceDiscoveryFails = $false
+  }
+  $fixture.SreResources = $false
+  Remove-Item -LiteralPath (Join-Path $root 'lab.config.json')
   foreach ($selection in @(
     @{ Config = $false; Explicit = @{}; Expected = 0 },
     @{ Config = $true; Explicit = @{}; Expected = 1 },
@@ -194,8 +233,10 @@ try {
   $terraformConsole = Get-Content -LiteralPath (Join-Path $source 'terraform/console.tf') -Raw
   if ($terraformConsole -notmatch 'LAB_ENABLE_STAGE_E\s*=\s*tostring\(var\.enable_stage_e\)' -or
       $terraformConsole -notmatch '-EnableStageE \(\[bool\]::Parse\(\$env:LAB_ENABLE_STAGE_E\)\)' -or
+      $terraformConsole -notmatch 'LAB_ENABLE_STAGE_SRE_AGENT\s*=\s*tostring\(var\.enable_stage_sre_agent\)' -or
+      $terraformConsole -notmatch '-EnableStageSreAgent \(\[bool\]::Parse\(\$env:LAB_ENABLE_STAGE_SRE_AGENT\)\)' -or
       $terraformConsole -notmatch 'scripts/wait-webapp-publication\.ps1') {
-    throw 'Terraform must explicitly pass its Stage E selection and track publication-verifier changes.'
+    throw 'Terraform must explicitly pass its Stage E/SRE selections and track publication-verifier changes.'
   }
   @{ expectedSubscriptionId = $fixture.Subscription; expectedTenantId = $fixture.Tenant } | ConvertTo-Json | Set-Content (Join-Path $root '.azure-target.json')
   @'
@@ -218,12 +259,6 @@ if ($SubscriptionId -ne $fixture.Subscription) { throw 'One-shot SLI setup lost 
   if (-not $rejected -or $fixture.DeploymentWrites -or $fixture.Events.Count) { throw 'One-shot account mismatch did not stop before deployment.' }
   $fixture.BadTenant = $false
   'param()' | Set-Content (Join-Path $directory 'sync-config.ps1')
-  @'
-param([guid]$SubscriptionId, $ResourceGroup)
-if ($SubscriptionId -ne $fixture.Subscription -or $ResourceGroup -ne 'test-rg') { throw 'SRE setup lost the verified target.' }
-$fixture.Events.Add('sre')
-if ($fixture.SreSetupFails) { throw 'SRE verification failed.' }
-'@ | Set-Content (Join-Path $directory 'setup-sre-agent.ps1')
   @'
 param([guid]$SubscriptionId, [guid]$TenantId, $ResourceGroup, [switch]$BackgroundTraffic)
 if ($SubscriptionId -ne $fixture.Subscription -or $TenantId -ne $fixture.Tenant -or $ResourceGroup -ne 'test-rg') { throw 'AI setup lost the verified target.' }

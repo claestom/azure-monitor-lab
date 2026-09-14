@@ -4,19 +4,14 @@ This guide shows how to deploy the lab in controlled stages so you can enable sc
 
 ## 1) What you have today
 
-The current repo deploys the full lab from:
-- infra/main.bicep
-- scripts/deploy.ps1
-
-That is still the fastest path for internal demo prep. For customer-facing step-by-step delivery, use the stage model below.
+The repository already has seven dedicated [stage templates](../infra/stages). This guide uses those templates, with the same boundaries as Terraform. [The one-shot script](../scripts/deploy.ps1) continues to use [the full-lab template](../infra/main.bicep); it is a separate deployment path, not a foundation-only deployment.
 
 ## 2) Guardrails (must-do)
 
-1. Pin subscription before every write:
-   - az account set --subscription <your-subscription-id>
-   - az account show --query "{name:name,id:id,tenantId:tenantId}" -o table
-2. Keep using scripts/deploy.ps1 subscription guardrails (.azure-target.json).
-3. Use az deployment what-if before each stage.
+1. Select and verify the expected subscription and tenant before every write. The helper below does this before preview and again before deployment.
+2. Pass the resource group and subscription explicitly; local config is not automatically consumed by raw Azure CLI commands.
+3. Review each stage's what-if before confirming it. Use incremental mode. Reapplying a stage is not a teardown of stages omitted from that template.
+4. Use PowerShell 7 and Azure CLI with Bicep support. Stage B completion also needs the [.NET, workload-tool, Azure RBAC, and tenant permissions](../workloads/webapp/LAB-OPERATIONS.md#prerequisites) required for the Control Center. AI needs Python; optional SRE packaging also needs npm/tar.
 
 ### Planning aid
 
@@ -51,12 +46,12 @@ Use this as the workshop script: each stage adds a bounded set of capabilities a
 
 | Stage | High-level scenario goals | Scenario IDs (from DEMO-SCENARIOS.md) | Azure services/resources deployed |
 |---|---|---|---|
-| Stage A - Core observability foundation | Establish the telemetry backbone and governance baseline. | 1, 5, 6, 9 (foundation portions) | Resource group, central LAW + AppInsights LAW, Application Insights (workspace-based), Azure Monitor Workspace, Data Collection Endpoint, VNet/NSG baseline, baseline diagnostic settings and policy wiring, shared storage and Event Hub foundations. |
-| Stage B - Workload telemetry and dashboards | Onboard compute and app workloads into the monitoring plane and expose dashboards. | 2, 3, 4, 22, 28, 29, 30, 31, 32, 34, 35, 36, 42 | Linux/Windows VMs + AMA/DCR association, AKS + Container Insights + Managed Prometheus, Managed Grafana, App Service plan/web app + App Insights connection, workbook(s), saved queries, KQL functions, availability test, connection monitor, flow logs, key vault/storage insights surfaces. |
+| Stage A - Core observability foundation | Establish the telemetry backbone and governance baseline. | 1, 5, 6, 9 (foundation portions) | Central LAW + AppInsights LAW, workspace-based App Insights, Azure Monitor Workspace, DCE, VNet/NSG, shared storage/Event Hub/Key Vault, VM Insights and workspace-transform DCRs, diagnostic policy, saved queries, KQL functions, traffic-lights and cost workbooks. Create the resource group separately. No VMs, AKS, or Web App yet. |
+| Stage B - Workload telemetry and dashboards | Onboard compute and app workloads into the monitoring plane and expose dashboards. | 2, 3, 4, 22, 28, 29, 30, 31, 32, 34, 35, 36, 42 | Optional Linux/Windows VMs + AMA/DCR associations, AKS + Container Insights + Managed Prometheus, Managed Grafana, App Service plan/web app + App Insights, console registry/job platform and custom-log ingestion, connection monitor, flow logs. The completion script publishes workloads and configures console sign-in, access, and the runner image. |
 | Stage C - Alerts and response | Add actionable detection and automated response controls. | 7, 8, 12, 15, 17, 19, 23, 37 | Action Group, metric alerts, scheduled query alerts, activity log alerts (service/resource health), AMBA baseline alerts, dynamic thresholds, VMSS predictive autoscale assets, alert processing rules, auto-mitigation Logic App webhook path. |
 | Stage D - Security posture (Azure Monitor native) | Build non-SIEM security posture detections directly in Azure Monitor. | 27, 47, 48, 49 | Log Analytics RBAC model (workspace/table/row scope), AzureActivity routing prerequisite, scheduled query alerts for control-plane drift, role assignment changes, and exfil early-warning correlation, alert routing via existing Action Group. |
-| Stage E - Optional advanced/security add-ons | Layer advanced SOC and reliability preview capabilities. | 43, 44, 45, 46 | Optional Sentinel onboarding + analytics rule, search job/restore script workflow enablement, health model resources, SLI identity prerequisites and helper scripts, optional service-group/SLI setup flow. |
-| Stage AI - Optional GenAI workload | Add a Microsoft Foundry workload emitting token/trace/cost telemetry, with AI FinOps observability. Off by default (billable models, region-limited). | - | Foundry (AI Services) account + project pinned to swedencentral, four model deployments (gpt-5-mini, text-embedding-3-small, gpt-5.4, model-router), App Insights connection, token anomaly + spike metric alerts, AI FinOps query pack + workbook, and an AI tier folded into the workload health model. Agents + traffic via scripts/setup-ai.ps1. |
+| Stage E - Optional advanced/security add-ons | Layer advanced SOC and reliability preview capabilities. | 43, 44, 45, 46 | Optional Sentinel onboarding + analytics rule, Heartbeat data export, Managed Prometheus rule group, availability test, workload health model, SLI identity prerequisites, and optional platform-logs/metrics-export DCRs. Completion configures the Service Group and verifies SLI prerequisites; preview SLIs remain a portal step. |
+| Stage AI - Optional GenAI workload | Add a Microsoft Foundry workload emitting token/trace/cost telemetry, with AI FinOps observability. Off by default (billable models, region-limited). | - | Foundry account + project in swedencentral by default, four model deployments (gpt-5-mini, text-embedding-3-small, gpt-5.4, model-router), App Insights connection, token alerts, AI FinOps query pack + workbook. Stage E can add the AI health tier after AI is deployed; a standalone AI health model is separately opt-in. Agent setup starts a finite background traffic batch unless skipped. |
 | Stage SRE Agent - Optional incident investigation | Add Azure SRE Agent investigation and Review-mode response workflows. Off by default (preview and billable). | 54, 55, 56, 57, 58 | Azure SRE Agent hard pinned to swedencentral, system-assigned and user-assigned managed identities, Azure Monitor, Application Insights, and Log Analytics connectors, resource-group reader roles, and subscription-scope Monitoring Contributor. |
 
 ### Stage dependency chain
@@ -65,14 +60,16 @@ Use this as the workshop script: each stage adds a bounded set of capabilities a
 2. Stage B depends on Stage A outputs (workspaces/network/monitor workspace).
 3. Stage C depends on Stage B resources for alert scopes.
 4. Stage D depends on Stage A ingestion and Stage C action routing.
-5. Stage E depends on prior stages, especially LAW and monitoring identities.
+5. Stage E depends on A, B, and C. Its AI health tier additionally requires Stage AI to have been deployed.
 6. Stage AI depends only on Stage A (it connects to `appi-amlab`); deploy it any time after Stage A.
 7. Stage SRE Agent depends only on Stage A (Application Insights and central LAW); deploy it any time after Stage A.
 
+The Control Center requires Stage B. Its Foundry Playground additionally requires AI; its SRE MCP Assistant requires both AI and SRE. An A+AI or A+SRE lab is valid without a Web App. Portal investigators and response plans are separate scenarios, not prerequisites for the MCP assistant.
+
 ### Stage acceptance criteria (high level)
 
-1. Stage A done: data lands in LAW and baseline diagnostics/policy are visible.
-2. Stage B done: VM/AKS/App Service telemetry and workbook panels render.
+1. Stage A done: the shared monitoring/network resources, DCRs, workbooks, and policy are present. Workload telemetry is not expected before workloads exist.
+2. Stage B done: the completion script verifies the new app publication, approved console sign-in/access work, and enabled VM/AKS/App Service telemetry reaches the monitoring plane.
 3. Stage C done: at least one alert test reaches the Action Group.
 4. Stage D done: scenario 47/48/49 queries return data and alert rules evaluate.
 5. Stage E done: optional feature endpoints/blades become accessible and testable.
@@ -81,133 +78,188 @@ Use this as the workshop script: each stage adds a bounded set of capabilities a
 
 ## 5) Practical deployment commands (stage-by-stage)
 
-This section uses the existing main template with targeted parameter toggles where possible, then overlays scenario-specific resources.
+Run these examples from the repository root in the same PowerShell 7 session. Each call previews one dedicated stage and asks for confirmation before deployment. Raw Bicep is infrastructure-only until the documented completion step succeeds.
 
 ### Step 0 - Bootstrap inputs (recommended)
 
-The `--parameters @infra/main.parameters.json` files referenced below are **generated** from a single central [`lab.config.json`](../lab.config.json.example) (gitignored). From the repo root:
+Create a private config from [the example](../lab.config.json.example), fill in the subscription, tenant, resource group, prefix, region, notification address, and VM credentials, then generate the local inputs. Do not overwrite an existing config:
 
 ```powershell
-Copy-Item lab.config.json.example lab.config.json
-notepad lab.config.json   # fill in subscriptionId, tenantId, alertEmail, vmAdminPassword, ...
-./scripts/sync-config.ps1 # regenerates infra/main.parameters.json + .azure-target.json + terraform/stages.tfvars
+if (-not (Test-Path ./lab.config.json)) { Copy-Item ./lab.config.json.example ./lab.config.json }
 ```
 
-Alternatively, hand-edit `infra/main.parameters.json` directly (also gitignored; see `infra/main.parameters.json.template` for the shape). Either way, the rest of this guide assumes `infra/main.parameters.json` exists.
+After editing the config, run:
 
-> **Why `-g $rg` on every command below?** `lab.config.json`'s `resourceGroup` field only feeds the **one-shot** `deploy.ps1` path and the **Terraform** `resource_group_name` variable — it is not read by these raw `az deployment group create/what-if` calls. The target resource group for an ARM/Bicep deployment is a CLI/API-level scope (`-g`), not a template parameter, so it must be passed explicitly on every command. Set `$rg` once below to match whatever you put in `lab.config.json` (or your own name), then reuse it throughout.
+```powershell
+./scripts/sync-config.ps1
+$ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $true
+$config = Get-Content ./lab.config.json -Raw | ConvertFrom-Json
+$sub = [guid]$config.subscriptionId
+$tenant = [guid]$config.tenantId
+$rg = $config.resourceGroup
+$sourceParameters = (Get-Content ./infra/main.parameters.json -Raw | ConvertFrom-Json -AsHashtable).parameters
+$prefix = $sourceParameters.namePrefix.value
+$location = $sourceParameters.location.value
+
+function Assert-LabAccount {
+   az account set --subscription $sub
+   if ($LASTEXITCODE -ne 0) { throw 'Could not select the lab subscription.' }
+   $account = az account show --query '{id:id,tenantId:tenantId}' -o json | ConvertFrom-Json
+   if ($LASTEXITCODE -ne 0 -or $account.id -ne $sub.ToString() -or $account.tenantId -ne $tenant.ToString()) {
+      throw 'Subscription or tenant mismatch. Stop before deploying.'
+   }
+}
+
+function Invoke-LabStage {
+   param(
+      [ValidateSet('00-foundation', '10-workloads', '20-alerting', '30-security-posture', '40-optional-advanced', '50-ai', '60-sre-agent')]
+      [string] $Stage,
+      [hashtable] $Overrides = @{}
+   )
+   $schema = Get-Content "./infra/stages/$Stage.json" -Raw | ConvertFrom-Json -AsHashtable
+   $parameters = @{}
+   foreach ($name in $schema.parameters.Keys) {
+      if ($sourceParameters.ContainsKey($name)) { $parameters[$name] = $sourceParameters[$name] }
+   }
+   foreach ($name in $Overrides.Keys) {
+      if (-not $schema.parameters.ContainsKey($name)) { throw "Unknown parameter '$name' for $Stage." }
+      if ($schema.parameters[$name].type -like 'secure*') { throw 'Supply secure inputs through the private parameters file, not Overrides.' }
+      $parameters[$name] = @{ value = $Overrides[$name] }
+   }
+   foreach ($name in $schema.parameters.Keys) {
+      if (-not $parameters.ContainsKey($name) -and -not $schema.parameters[$name].ContainsKey('defaultValue')) {
+         throw "Missing required parameter '$name' for $Stage."
+      }
+   }
+   $parameterFile = New-TemporaryFile
+   try {
+      if (-not $IsWindows) {
+         [IO.File]::SetUnixFileMode($parameterFile.FullName, [IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite)
+      }
+      @{ '$schema' = 'https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#'; contentVersion = '1.0.0.0'; parameters = $parameters } |
+         ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $parameterFile.FullName
+      $deploymentArguments = @('--subscription', $sub.ToString(), '--resource-group', $rg,
+         '--name', "stage-$Stage", '--template-file', "infra/stages/$Stage.bicep",
+         '--parameters', "@$($parameterFile.FullName)", '--mode', 'Incremental')
+      Assert-LabAccount
+      az deployment group what-if @deploymentArguments
+      if ($LASTEXITCODE -ne 0) { throw "Preview failed for $Stage." }
+      if ((Read-Host 'Deploy this stage? Type yes to continue') -ne 'yes') { throw 'Stage deployment cancelled.' }
+      Assert-LabAccount
+      az deployment group create @deploymentArguments --output none
+      if ($LASTEXITCODE -ne 0) { throw "Deployment failed for $Stage." }
+   } finally {
+      Remove-Item -LiteralPath $parameterFile.FullName -Force
+   }
+}
+
+Assert-LabAccount
+az group create --subscription $sub --name $rg --location $location --output none
+```
+
+The helper reads each shipped compiled template's parameter schema, copies only matching inputs from the generated main parameters, and preserves secure values or ARM Key Vault references. It passes a temporary parameters-file path to Azure CLI, never the VM password itself, restricts that file to its owner on Linux, and removes it in `finally`. On Windows, use your private user temp directory. Keep the config and generated files private; do not commit them or paste secrets into `-Overrides`.
+
+Stage-specific inputs can be supplied with `-Overrides`, for example `@{ routerModelVersion = '<available-version>' }` for AI. Inputs not supplied use that stage's defaults. Do not pass the complete main parameters file directly to a stage template. If editing Bicep, rebuild the corresponding JSON schema too, as described in [the Terraform guide](DEPLOY-TERRAFORM-STEP-BY-STEP.md#regenerating-stage-templates-from-bicep).
+
+Config stage toggles select one-shot/Terraform stages; they do not execute these Bicep stage calls. Run only the stages you want. Rerun the bootstrap block after changing shared config. Keep the same resource group, prefix, and VM-enable settings across dependent stages.
 
 ### Stage A deploy
 
-1. Validate:
-
 ```powershell
-$sub='<your-subscription-id>'
-$rg='rg-azure-monitor-lab'   # match lab.config.json 'resourceGroup', or use your own name
-az account set --subscription $sub
-az account show --query "{name:name,id:id,tenantId:tenantId}" -o table
-az group create -n $rg -l northeurope
-az deployment group what-if -g $rg --template-file infra/main.bicep --parameters @infra/main.parameters.json deployLinuxVm=false deployWindowsVm=false aksNodeCount=1 enableSentinel=false
+Invoke-LabStage -Stage '00-foundation'
 ```
 
-2. Deploy:
-
-```powershell
-az deployment group create -g $rg --name stage-a-foundation --template-file infra/main.bicep --parameters @infra/main.parameters.json deployLinuxVm=false deployWindowsVm=false aksNodeCount=1 enableSentinel=false
-```
-
-Notes:
-- The current main.bicep still contains resources beyond foundation. For strict staging, create dedicated stage templates under infra/stages and move resources there over time.
-- `aksNodeCount` cannot be `0`: the AKS system node pool requires at least 1 node, so the minimum footprint for this monolithic template is 1 node even when treating this as a "foundation-only" pass.
+This deploys [foundation only](../infra/stages/00-foundation.bicep). There is no AKS node pool or Web App in Stage A.
 
 ### Stage B deploy
 
 ```powershell
-az deployment group create -g $rg --name stage-b-workloads --template-file infra/main.bicep --parameters @infra/main.parameters.json deployLinuxVm=true deployWindowsVm=true aksNodeCount=1 enableSentinel=false
+Invoke-LabStage -Stage '10-workloads'
+./scripts/post-staged-deploy.ps1 -SubscriptionId $sub -ResourceGroup $rg -NamePrefix $prefix -EnableStageE $false
 ```
 
-After Stage B, run the local post-deployment setup. This publishes the sample App Service, applies the AKS demo workloads, creates the summary rule, and provisions the health model and SLI prerequisites. The script discovers the suffixed resource names automatically:
-
-```powershell
-./scripts/post-staged-deploy.ps1 -ResourceGroup $rg
-```
+Completion publishes and verifies the App Service, initializes the Control Center and approved operator access, applies AKS workloads, and creates the summary rule. It prepares available AI agents without traffic and validates any deployed SRE Agent. Stage E is explicitly off here because it has not been deployed yet. For noninteractive setup, pass approved user IDs through `-ConsoleOperatorObjectIds`; otherwise existing operators or the signed-in user are used.
 
 ### Stage C deploy
 
 ```powershell
-az deployment group create -g $rg --name stage-c-alerts --template-file infra/main.bicep --parameters @infra/main.parameters.json enableSentinel=false
+Invoke-LabStage -Stage '20-alerting'
 ```
+
+This stage requires the VMSS administrator password and notification email from the private inputs, even when the optional standalone VMs are disabled.
 
 ### Stage D deploy
 
-1. Ensure AzureActivity is routed to lab LAW:
+Ensure AzureActivity is routed to the actual suffixed central LAW before validating the security scenarios:
 
 ```powershell
-# The central LAW name gets a per-deployment suffix (law-<prefix>-central-<hash>), so look it
-# up from the Stage A deployment output rather than guessing the name.
-$lawArmId = az deployment group show -g $rg -n stage-a-foundation --query properties.outputs.centralLawId.value -o tsv
+Assert-LabAccount
+$workspaces = az monitor log-analytics workspace list --subscription $sub -g $rg -o json | ConvertFrom-Json
+$centralLaw = $workspaces | Where-Object { $_.name -like "law-$prefix-central-*" } | Select-Object -First 1
+if (-not $centralLaw.id) { throw 'Central workspace not found.' }
 $logs = '[{"category":"Administrative","enabled":true},{"category":"Security","enabled":true},{"category":"ServiceHealth","enabled":true},{"category":"Alert","enabled":true},{"category":"Recommendation","enabled":true},{"category":"Policy","enabled":true},{"category":"Autoscale","enabled":true},{"category":"ResourceHealth","enabled":true}]'
-az monitor diagnostic-settings subscription create --name amlab-activity-to-law --location global --workspace $lawArmId --logs $logs
+az monitor diagnostic-settings subscription create --subscription $sub --name "$prefix-activity-to-law" --location global --workspace $centralLaw.id --logs $logs
+Invoke-LabStage -Stage '30-security-posture'
 ```
 
-2. Apply scenario 27/47/48/49 (granular LAW RBAC + control-plane drift / privilege escalation / exfil query alerts). `main.bicep` doesn't include these — deploy the dedicated stage template directly against the same `$rg`, which finds the Stage A LAW and Stage C action group as `existing` resources:
-
-```powershell
-az deployment group create -g $rg --name stage-d-security-alerts --template-file infra/stages/30-security-posture.bicep --parameters namePrefix=amlab
-```
+The security template reuses the Stage A LAW and Stage C action group. It does not deploy workloads or enable a SIEM.
 
 ### Stage E deploy
 
 ```powershell
-az deployment group create -g $rg --name stage-e-optional --template-file infra/main.bicep --parameters @infra/main.parameters.json enableSentinel=true
+Invoke-LabStage -Stage '40-optional-advanced' -Overrides @{ enableAi = $false }
+./scripts/post-staged-deploy.ps1 -SubscriptionId $sub -ResourceGroup $rg -NamePrefix $prefix -EnableStageE $true
 ```
+
+Use `enableAi = $true` only when Stage AI already exists. Sentinel and the optional DCRs follow the supplied parameters or stage defaults; review the preview and billing implications. Completion configures the Service Group and verifies SLI prerequisites. Create the preview SLIs in the portal using the printed handoff.
 
 ### Stage AI deploy (optional)
 
-Deploys the Foundry GenAI workload (pinned to swedencentral) directly from the stage template, then creates the demo agents and simulates traffic. Verify the Model Router version for your region first with `az cognitiveservices account list-models`.
+Deploy after Stage A. Verify Model Router version availability for `aiLocation` before opting in; the default is `swedencentral`. If Stage B already exists, refresh its package, inventory, and agent permissions before starting optional traffic:
 
 ```powershell
-az deployment group create -g $rg --name stage-ai-foundry --template-file infra/stages/50-ai.bicep --parameters namePrefix=amlab alertEmail=your.alias@example.com
-./scripts/setup-ai.ps1 -g $rg   # pip install + create agents + simulate traffic
+Invoke-LabStage -Stage '50-ai'
+$apps = az webapp list --subscription $sub --resource-group $rg -o json | ConvertFrom-Json
+$webApp = $apps | Where-Object { $_.name -like "app-$prefix-*" } | Select-Object -First 1
+if ($webApp) {
+   ./scripts/deploy-webapp.ps1 -SubscriptionId $sub -TenantId $tenant -ResourceGroup $rg -WebAppName $webApp.name
+}
+./scripts/setup-ai.ps1 -SubscriptionId $sub -TenantId $tenant -ResourceGroup $rg -NamePrefix $prefix
 ```
 
-`setup-ai.ps1` pip-installs the packages listed in [`workloads/ai/requirements.txt`](../workloads/ai/requirements.txt) before creating the agents and simulating traffic.
+The refresh uses [the existing app deployment helper](../scripts/deploy-webapp.ps1), which configures console access and verifies the new publication without reapplying AKS workloads. Its bootstrap prepares agents with `-SkipTraffic`. The final [AI setup](../scripts/setup-ai.ps1) reuses those agents and always starts a finite background batch, default 150 conversations. Add `-SkipTraffic` there to prepare agents without model traffic. The [Cloud Shell AI wrapper](../scripts/setup-ai-cloud-shell.ps1) offers the same background behavior with core ARM discovery.
 
-Stage AI depends only on Stage A and can be deployed before or after Stages B to E. If you are using the central config workflow, set `stageToggles.enableStageAI` to `true` in `lab.config.json`, run `./scripts/sync-config.ps1`, and deploy the generated parameters with the same Stage AI template. The stage is off by default because the model deployments are billable.
+Without Stage B, the refresh is skipped and the standalone AI scenario still works. Adding Stage B later initializes its console normally. To add the AI tier to an existing Stage E health model, rerun Stage E with `-Overrides @{ enableAi = $true }`; do not deploy Stage E solely for an A+AI lab. A separate AI health model can instead be requested with Stage AI's `enableHealthModel` override.
+
+The worker prints its PID and log/status paths. Keep the deployment host and Azure CLI sign-in available until it finishes; Cloud Shell/CI termination can stop it. Startup is not evidence of successful model responses. See [background traffic details](POST-DEPLOYMENT.md#background-ai-traffic).
 
 ### Stage SRE Agent deploy (optional)
 
-This stage depends on Stage A. Set `stageToggles.enableStageSreAgent` to `true` in `lab.config.json`, then deploy the dedicated stage template:
+Deploy after Stage A. The template creates the `swedencentral` agent, managed identities, monitoring connectors, and RBAC. Subscription-scope role-assignment permission is required. Validate the deployed resource before refreshing any existing console:
 
 ```powershell
-az deployment group create -g $rg --name stage-sre-agent --template-file infra/stages/60-sre-agent.bicep --parameters namePrefix=amlab
+Invoke-LabStage -Stage '60-sre-agent'
+./scripts/setup-sre-agent.ps1 -SubscriptionId $sub -ResourceGroup $rg
+$apps = az webapp list --subscription $sub --resource-group $rg -o json | ConvertFrom-Json
+$webApp = $apps | Where-Object { $_.name -like "app-$prefix-*" } | Select-Object -First 1
+if ($webApp) {
+   ./scripts/deploy-webapp.ps1 -SubscriptionId $sub -TenantId $tenant -ResourceGroup $rg -WebAppName $webApp.name
+}
 ```
 
-The template creates the agent in `swedencentral`, its identities and RBAC, and the Azure Monitor, Application Insights, and Log Analytics connectors. Then run the normal staged post-deployment command to validate the agent and print its portal URL:
+An A+SRE deployment needs no Web App or AKS, so it uses [the standalone validator](../scripts/setup-sre-agent.ps1), not the Stage B completion wrapper. With B and AI present, the refresh enables the Control Center's SRE MCP Assistant. The validator is read-only unless explicitly asked to grant missing roles; it does not start an investigation.
 
-```powershell
-./scripts/post-staged-deploy.ps1 -ResourceGroup $rg
-```
+Follow [Stage SRE Agent](STAGE-SRE-AGENT.md) only when demonstrating the separate portal investigator and Review-mode response-plan scenarios. Those are not required for Control Center MCP questions and approved operations.
 
-For the one-shot Bicep path, the toggle emits `enableSreAgent=true` and `main.bicep` creates the same resources. Follow [STAGE-SRE-AGENT.md](STAGE-SRE-AGENT.md) to add the custom investigators and response plans.
+## 6) Stage boundaries and reruns
 
-## 6) Recommended repo evolution for clean staging
-
-For a cleaner customer story, split orchestration into:
-- infra/stages/00-foundation.bicep
-- infra/stages/10-workloads.bicep
-- infra/stages/20-alerting.bicep
-- infra/stages/30-security-posture.bicep
-- infra/stages/40-optional-advanced.bicep
-- infra/stages/50-ai.bicep
-- infra/stages/60-sre-agent.bicep
-
-Each stage should accept prior-stage outputs as parameters and be deployable idempotently.
+The stage templates resolve prior-stage resources using the resource group and shared prefix. They do not accept the full-lab parameter set or redeploy earlier workloads. Keep shared naming and VM-enable settings consistent. When rerunning an earlier stage, inspect its what-if and rerun its documented completion step if app configuration or workloads changed. Incremental deployment does not remove resources just because a stage or optional parameter is omitted.
 
 ## 7) Validation checklist per stage
 
 After each stage:
-1. az deployment group show -g $rg -n <stage-name>
+1. Inspect the deployment named `stage-<template-stem>`, for example `stage-00-foundation`, in the selected resource group.
 2. Verify expected resources exist.
 3. Run at least one saved query relevant to that stage.
 4. For security stage, run:

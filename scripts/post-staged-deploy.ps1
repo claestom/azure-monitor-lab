@@ -16,6 +16,10 @@
   Run the optional Service Group and SLI setup. Explicit values override the
   central config; when omitted, use stageToggles.enableStageE or default false.
 
+.PARAMETER EnableStageSreAgent
+  Validate SRE Agent when true. When omitted, detect the deployed SRE resource.
+  Explicit false skips validation without deleting or disabling the agent.
+
 .EXAMPLE
   ./scripts/post-staged-deploy.ps1 -ResourceGroup rg-azure-monitor-lab
 
@@ -28,7 +32,8 @@ param(
   [string] $NamePrefix = 'amlab',
   [string] $SubscriptionId,
   [guid[]] $ConsoleOperatorObjectIds,
-  [bool] $EnableStageE = $false
+  [bool] $EnableStageE = $false,
+  [bool] $EnableStageSreAgent = $false
 )
 
 $ErrorActionPreference = 'Stop'
@@ -67,7 +72,11 @@ Write-Info "Resource group: $ResourceGroup"
 Write-Info "Name prefix: $NamePrefix"
 
 Write-Step "Discovering staged deployment resources"
-$resources = az resource list -g $ResourceGroup -o json | ConvertFrom-Json
+$resources = @(az resource list --subscription $active.id -g $ResourceGroup -o json | ConvertFrom-Json)
+if ($LASTEXITCODE -ne 0) { throw 'Staged resource discovery failed.' }
+if (-not $PSBoundParameters.ContainsKey('EnableStageSreAgent')) {
+  $EnableStageSreAgent = @($resources | Where-Object { $_.type -ieq 'Microsoft.App/agents' }).Count -gt 0
+}
 $webApp = @($resources | Where-Object {
   $_.type -ieq 'Microsoft.Web/sites' -and $_.name -like "app-$NamePrefix-*"
 }) | Select-Object -First 1
@@ -123,13 +132,7 @@ if ($EnableStageE) {
   Write-Info 'Stage E is disabled. Skipping Service Group and SLI setup; existing optional resources are unchanged.'
 }
 
-$sreAgentEnabled = $false
-if ($null -ne $labConfig) {
-  if ($null -ne $labConfig.stageToggles -and $null -ne $labConfig.stageToggles.enableStageSreAgent) {
-    $sreAgentEnabled = [bool]$labConfig.stageToggles.enableStageSreAgent
-  }
-}
-if ($sreAgentEnabled) {
+if ($EnableStageSreAgent) {
   Write-Step "SRE Agent stage enabled - validating readiness and printing the swedencentral trial setup handoff"
   & (Join-Path $PSScriptRoot 'setup-sre-agent.ps1') `
     -SubscriptionId $active.id `
