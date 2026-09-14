@@ -2,7 +2,7 @@ name: grafana-access
 
 on:
   push:
-    branches: [dev, master]
+    branches: [dev, integration, master]
     paths:
       - 'infra/**'
       - 'terraform/**'

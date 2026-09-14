@@ -2,7 +2,7 @@ name: Lab Operations Tests
 
 on:
   push:
-    branches: [dev, master]
+    branches: [dev, integration, master]
     paths:
       - 'workloads/webapp/**'
       - 'workloads/webapp.Tests/**'
