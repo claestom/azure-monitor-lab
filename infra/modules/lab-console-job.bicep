@@ -9,6 +9,9 @@ param runnerClientId string
 param image string
 param tags object = {}
 
+@description('Existing runner tags indexed by resource name, captured before bootstrap updates.')
+param existingResourceTags object = {}
+
 resource site 'Microsoft.Web/sites@2023-12-01' existing = {
   name: webAppName
 }
@@ -65,7 +68,7 @@ module job 'br/public:avm/res/app/job:0.7.2' = {
         ]
       }
     ]
-    tags: union(tags, { 'amlab-component': 'console-job' })
+    tags: union(existingResourceTags[?name] ?? {}, tags, { 'amlab-component': 'console-job' })
     roleAssignments: [
       {
         roleDefinitionIdOrName: launcherRole.id

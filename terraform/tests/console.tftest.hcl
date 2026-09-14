@@ -50,6 +50,25 @@ run "workloads_include_console" {
     condition     = terraform_data.console_ready[0].triggers_replace.resource_group == data.azurerm_resource_group.lab.id
     error_message = "Console completion must target the selected lab resource group."
   }
+
+  assert {
+    condition     = !jsondecode(terraform_data.console_ready[0].triggers_replace.integrations).stage_e
+    error_message = "Stage A+B must keep optional Stage E completion disabled."
+  }
+}
+
+run "stage_e_refreshes_optional_completion" {
+  command = plan
+
+  variables {
+    enable_stage_b = true
+    enable_stage_e = true
+  }
+
+  assert {
+    condition     = jsondecode(terraform_data.console_ready[0].triggers_replace.integrations).stage_e
+    error_message = "Changing Stage E must refresh the selected optional completion work."
+  }
 }
 
 run "optional_agents_refresh_console" {

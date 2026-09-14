@@ -8,15 +8,24 @@ on:
       - 'workloads/webapp.Tests/**'
       - 'scripts/invoke-lab-operation.ps1'
       - 'scripts/initialize-webapp-console.ps1'
+      - 'scripts/deploy.ps1'
+      - 'scripts/deploy-webapp.ps1'
+      - 'scripts/post-deploy.ps1'
+      - 'scripts/post-staged-deploy.ps1'
+      - 'scripts/wait-webapp-publication.ps1'
       - 'scripts/setup-webapp-agent-access.ps1'
       - 'scripts/tests/console-bootstrap.Tests.ps1'
       - 'scripts/tests/console-deployment.Tests.ps1'
       - 'scripts/tests/ai-traffic.Tests.ps1'
+      - 'scripts/tests/compiled-templates.Tests.ps1'
+      - 'scripts/tests/webapp-publication.Tests.ps1'
       - 'scripts/setup-ai.ps1'
       - 'workloads/ai/*.py'
       - 'workloads/ai/tests/**'
       - 'workloads/operations/**'
       - 'infra/modules/lab-console*'
+      - 'infra/modules/appservice*'
+      - 'infra/main.*'
       - 'infra/stages/10-workloads*'
       - 'terraform/**'
       - 'scripts/tests/lab-operations*.Tests.ps1'
@@ -36,6 +45,8 @@ on:
       - 'workloads/ai/*.py'
       - 'workloads/ai/tests/**'
       - 'infra/modules/lab-console*'
+      - 'infra/modules/appservice*'
+      - 'infra/main.*'
       - 'infra/stages/10-workloads*'
       - 'terraform/**'
       - '.github/workflows/lab-operations*.yml'
@@ -60,6 +71,7 @@ jobs:
           ./scripts/tests/lab-operations-execution.Tests.ps1
           ./scripts/tests/console-bootstrap.Tests.ps1
           ./scripts/tests/console-deployment.Tests.ps1
+          ./scripts/tests/webapp-publication.Tests.ps1
           ./scripts/tests/ai-traffic.Tests.ps1
           ./workloads/webapp/tests/webapp-access.Tests.ps1
       - name: Agent provisioning and background traffic without Azure
@@ -83,6 +95,14 @@ jobs:
         with:
           terraform_version: '1.15.8'
           terraform_wrapper: false
+      - name: Install the pinned Bicep compiler
+        run: az bicep install --version v0.37.4
+      - name: Verify generated templates and Grafana access
+        shell: pwsh
+        run: |
+          ./scripts/tests/compiled-templates.Tests.ps1
+          ./scripts/tests/grafana-access.Tests.ps1
+          ./scripts/tests/grafana-config.Tests.ps1
       - name: Validate console completion with mocked Azure providers
         working-directory: terraform
         run: |

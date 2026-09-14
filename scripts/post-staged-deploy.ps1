@@ -12,6 +12,10 @@
 .PARAMETER NamePrefix
   Resource name prefix used by the deployment. Defaults to 'amlab'.
 
+.PARAMETER EnableStageE
+  Run the optional Service Group and SLI setup. Explicit values override the
+  central config; when omitted, use stageToggles.enableStageE or default false.
+
 .EXAMPLE
   ./scripts/post-staged-deploy.ps1 -ResourceGroup rg-azure-monitor-lab
 
@@ -23,12 +27,23 @@ param(
   [Parameter(Mandatory)] [string] $ResourceGroup,
   [string] $NamePrefix = 'amlab',
   [string] $SubscriptionId,
-  [guid[]] $ConsoleOperatorObjectIds
+  [guid[]] $ConsoleOperatorObjectIds,
+  [bool] $EnableStageE = $false
 )
 
 $ErrorActionPreference = 'Stop'
 function Write-Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
 function Write-Info($msg) { Write-Host "    $msg" -ForegroundColor DarkGray }
+
+$labConfigPath = Join-Path $PSScriptRoot '..' 'lab.config.json'
+$labConfig = $null
+if (Test-Path $labConfigPath) {
+  $labConfig = Get-Content -Raw $labConfigPath | ConvertFrom-Json
+  if (-not $PSBoundParameters.ContainsKey('EnableStageE') -and $null -ne $labConfig.stageToggles.enableStageE) {
+    if ($labConfig.stageToggles.enableStageE -isnot [bool]) { throw 'stageToggles.enableStageE must be a JSON boolean.' }
+    $EnableStageE = $labConfig.stageToggles.enableStageE
+  }
+}
 
 # Honor the generated subscription and tenant guardrail when available.
 $targetFile = Join-Path $PSScriptRoot '..' '.azure-target.json'
@@ -89,25 +104,27 @@ $postDeploy = Join-Path $PSScriptRoot 'post-deploy.ps1'
   -CentralLawName $centralLaw.name `
   -ConsoleOperatorObjectIds $ConsoleOperatorObjectIds
 
-Write-Step "Provisioning service group and health model prerequisites"
-$setupHm = Join-Path $PSScriptRoot 'setup-health-model.ps1'
-& $setupHm -ResourceGroup $ResourceGroup
+if ($EnableStageE) {
+  Write-Step "Provisioning service group and health model prerequisites"
+  $setupHm = Join-Path $PSScriptRoot 'setup-health-model.ps1'
+  & $setupHm -ResourceGroup $ResourceGroup
 
-$sliIdentity = @($resources | Where-Object {
-  $_.type -ieq 'Microsoft.ManagedIdentity/userAssignedIdentities' -and $_.name -ieq "id-sli-$NamePrefix"
-}) | Select-Object -First 1
-if ($sliIdentity) {
-  Write-Step "Verifying demo SLI prerequisites and source metrics"
-  $setupSli = Join-Path $PSScriptRoot 'setup-slis.ps1'
-  & $setupSli -SubscriptionId $active.id -ResourceGroup $ResourceGroup
+  $sliIdentity = @($resources | Where-Object {
+    $_.type -ieq 'Microsoft.ManagedIdentity/userAssignedIdentities' -and $_.name -ieq "id-sli-$NamePrefix"
+  }) | Select-Object -First 1
+  if ($sliIdentity) {
+    Write-Step "Verifying demo SLI prerequisites and source metrics"
+    $setupSli = Join-Path $PSScriptRoot 'setup-slis.ps1'
+    & $setupSli -SubscriptionId $active.id -ResourceGroup $ResourceGroup
+  } else {
+    Write-Info "SLI identity id-sli-$NamePrefix is not deployed. Complete Stage E before SLI verification."
+  }
 } else {
-  Write-Info "SLI identity id-sli-$NamePrefix is not deployed. Skipping SLI verification until Stage E is enabled."
+  Write-Info 'Stage E is disabled. Skipping Service Group and SLI setup; existing optional resources are unchanged.'
 }
 
-$labConfigPath = Join-Path $PSScriptRoot '..' 'lab.config.json'
 $sreAgentEnabled = $false
-if (Test-Path $labConfigPath) {
-  $labConfig = Get-Content -Raw $labConfigPath | ConvertFrom-Json
+if ($null -ne $labConfig) {
   if ($null -ne $labConfig.stageToggles -and $null -ne $labConfig.stageToggles.enableStageSreAgent) {
     $sreAgentEnabled = [bool]$labConfig.stageToggles.enableStageSreAgent
   }

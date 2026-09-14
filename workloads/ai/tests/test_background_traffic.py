@@ -100,6 +100,42 @@ class BackgroundTrafficTests(unittest.TestCase):
             background.launch(150, self.root, self.root / "state")
         process.terminate.assert_not_called()
 
+    def test_status_replace_recovers_from_a_sharing_conflict(self):
+        replace = Path.replace
+        attempts = 0
+
+        def sharing_conflict(source, target):
+            nonlocal attempts
+            attempts += 1
+            if attempts < 3:
+                raise PermissionError("Test file-sharing conflict.")
+            return replace(source, target)
+
+        with (
+            patch.object(Path, "replace", sharing_conflict),
+            patch.object(background.time, "sleep") as delay,
+        ):
+            background.write_status(self.root, "running")
+        self.assertEqual(3, attempts)
+        self.assertEqual(2, delay.call_count)
+        status = json.loads((self.root / "status.json").read_text())
+        self.assertEqual("running", status["state"])
+
+    def test_status_replace_failure_is_bounded_and_keeps_old_status(self):
+        background.write_status(self.root, "starting")
+        with (
+            patch.object(
+                Path, "replace", side_effect=PermissionError("Test lock.")
+            ) as replace,
+            patch.object(background.time, "sleep") as delay,
+            self.assertRaises(PermissionError),
+        ):
+            background.write_status(self.root, "running")
+        self.assertEqual(20, replace.call_count)
+        self.assertEqual(19, delay.call_count)
+        status = json.loads((self.root / "status.json").read_text())
+        self.assertEqual("starting", status["state"])
+
     def test_real_worker_continues_after_launcher_returns(self):
         shutil.copyfile(SOURCE, self.root / "background_traffic.py")
         (self.root / "simulate_traffic.py").write_text(
@@ -141,6 +177,12 @@ class BackgroundTrafficTests(unittest.TestCase):
             self.assertEqual("completed", status["state"])
             self.assertEqual(2, status["conversations"])
             self.assertEqual(2, status["successfulRuns"])
+        except RuntimeError:
+            logs = [
+                path.read_text(encoding="utf-8", errors="replace")
+                for path in self.root.glob("state/run-*/traffic.log")
+            ]
+            self.fail("Fake worker startup failed:\n" + "\n".join(logs))
         finally:
             for process in processes:
                 if process.poll() is None:

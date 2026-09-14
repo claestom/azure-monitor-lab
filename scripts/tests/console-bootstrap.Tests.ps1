@@ -1,7 +1,37 @@
 $ErrorActionPreference = 'Stop'
 $root = Join-Path ([IO.Path]::GetTempPath()) ('console-bootstrap-test-' + [guid]::NewGuid().ToString('N'))
 $source = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+foreach ($templatePath in @('infra/main.json', 'infra/stages/10-workloads.json')) {
+  $template = Get-Content -LiteralPath (Join-Path $source $templatePath) -Raw | ConvertFrom-Json
+  $appModule = @($template.resources | Where-Object { $_.type -eq 'Microsoft.Resources/deployments' -and $_.name -eq 'appservice' })
+  if ($appModule.Count -ne 1) { throw "$templatePath must contain one App Service module." }
+  $appTemplate = $appModule[0].properties.template
+  $site = @($appTemplate.resources | Where-Object type -eq 'Microsoft.Web/sites')
+  if ($site.Count -ne 1 -or $site[0].properties.siteConfig.PSObject.Properties.Name -contains 'appSettings') {
+    throw "$templatePath must not replace existing authentication or console settings inline."
+  }
+  $settingsModule = @($appTemplate.resources | Where-Object { $_.type -eq 'Microsoft.Resources/deployments' -and $_.name -eq 'app-settings' })
+  $siteDependency = "[resourceId('Microsoft.Web/sites', parameters('webAppName'))]"
+  if ($settingsModule.Count -ne 1 -or $settingsModule[0].dependsOn -notcontains $siteDependency) { throw "$templatePath must wait for the site before reading its settings, including on first deployment." }
+  $settingsTemplate = $settingsModule[0].properties.template
+  if ($settingsTemplate.parameters.appSettings.type -ne 'secureObject' -or $settingsTemplate.outputs) { throw 'App settings must be secure inputs and must not be exposed as deployment outputs.' }
+  $settingsResource = @($settingsTemplate.resources | Where-Object type -eq 'Microsoft.Web/sites/config')
+  if ($settingsResource.Count -ne 1 -or $settingsResource[0].properties -notmatch "^\[union\(list\(.+/config/appsettings.+\.properties, parameters\('appSettings'\)\)\]$") {
+    throw "$templatePath must merge existing app settings with the intended telemetry settings."
+  }
+  $intendedSettings = $settingsModule[0].properties.parameters.appSettings.value
+  if ($intendedSettings.PSObject.Properties.Name -match '^LabConsole__|^MICROSOFT_PROVIDER_AUTHENTICATION_SECRET$') { throw 'Infrastructure must not replace runtime-owned console or sign-in values.' }
+}
 $platformTemplate = Get-Content -LiteralPath (Join-Path $source 'infra/modules/lab-console-platform.json') -Raw | ConvertFrom-Json
+foreach ($templatePath in @('infra/modules/lab-console-platform.json', 'infra/modules/lab-console-job.json')) {
+  $runnerTemplate = Get-Content -LiteralPath (Join-Path $source $templatePath) -Raw | ConvertFrom-Json
+  foreach ($runnerModule in @($runnerTemplate.resources | Where-Object { $_.name -in @('console-runner-identity', 'console-runner-registry', 'console-runner-environment', 'console-runner-job') })) {
+    $tagExpression = $runnerModule.properties.parameters.tags.value
+    if ($tagExpression -notmatch '^\[union\(' -or $tagExpression -notmatch "parameters\('existingResourceTags'\)" -or $tagExpression -notmatch "parameters\('tags'\)") {
+      throw "$templatePath must preserve existing runner tags and apply the selected lab tags."
+    }
+  }
+}
 $environmentModule = @($platformTemplate.resources | Where-Object { $_.name -eq 'console-runner-environment' })
 if ($environmentModule.Count -ne 1 -or $environmentModule[0].properties.parameters.zoneRedundant.value -ne $false) {
   throw 'The runner environment must explicitly disable zone redundancy when no infrastructure subnet is configured.'
@@ -40,6 +70,7 @@ $fixture = @{
   Settings = @{ Existing = 'preserve-me' }; Writes = @(); Calls = @(); Roles = @(); Definitions = @{}; AuthCalls = 0; FailAuth = $false; FailBuild = $false; BadTenant = $false; MissingLogs = $false; LogsDeployments = 0
   WithAi = $false; FailAi = $false; AiCalls = 0
   DeletePreview = $false; LastPreview = ''; Deployments = 0
+  ExistingTags = $true; FailTagRead = $false
 }
 $scope = "/subscriptions/$($fixture.Subscription)/resourceGroups/test-rg"
 $fixture.ResourceBase = $scope
@@ -61,6 +92,14 @@ function az {
     'provider register' { if ($args -notcontains '--wait') { throw 'Provider registration was not awaited.' }; return }
     'deployment group' {
       $deploymentName = $args[[Array]::IndexOf($args, '--name') + 1]
+      if ($deploymentName -in @('lab-console-platform', 'lab-console-job')) {
+        $parameterFiles = @($args | Where-Object { $_ -is [string] -and $_.StartsWith('@') })
+        if ($parameterFiles.Count -ne 1) { throw 'Runner deployments must carry explicit tag parameters.' }
+        $tagParameters = (Get-Content -LiteralPath $parameterFiles[0].Substring(1) -Raw | ConvertFrom-Json -AsHashtable).parameters
+        if ($tagParameters.tags.value.owner -ne 'lab-owner' -or $tagParameters.tags.value.costCenter -ne 'test-center') { throw 'Runner deployment lost lab tags.' }
+        if ($fixture.ExistingTags -and $tagParameters.existingResourceTags.value.acrlabtest.custom -ne 'keep-me') { throw 'Runner deployment lost resource-specific tags.' }
+        if (-not $fixture.ExistingTags -and $tagParameters.existingResourceTags.value.Count) { throw 'First-time setup invented existing tags.' }
+      }
       if ($args[2] -eq 'what-if') {
         $fixture.LastPreview = $deploymentName
         return @{ status = 'Succeeded'; changes = @(@{ changeType = $(if ($fixture.DeletePreview) { 'Delete' } else { 'Create' }) }) } | ConvertTo-Json -Depth 5
@@ -77,8 +116,12 @@ function az {
     'identity show' { return @{ id = "$scope/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-test"; principalId = $fixture.RunnerIdentity; clientId = $fixture.Client } | ConvertTo-Json }
     'resource show' { return '{"location":"westeurope"}' }
     'resource list' {
-      if ($fixture.MissingLogs) { return '[]' }
-      $resources = @(@{ type = 'Microsoft.Insights/dataCollectionRules'; name = 'dcr-customlogs'; id = "$scope/providers/Microsoft.Insights/dataCollectionRules/dcr-customlogs" })
+      if ($fixture.FailTagRead) { $global:LASTEXITCODE = 1; return '[]' }
+      $resources = @()
+      if ($fixture.ExistingTags) {
+        $resources += @{ type = 'Microsoft.ContainerRegistry/registries'; name = 'acrlabtest'; id = "$scope/providers/Microsoft.ContainerRegistry/registries/acrlabtest"; tags = @{ custom = 'keep-me'; owner = 'old-owner' } }
+      }
+      if (-not $fixture.MissingLogs) { $resources += @{ type = 'Microsoft.Insights/dataCollectionRules'; name = 'dcr-customlogs'; id = "$scope/providers/Microsoft.Insights/dataCollectionRules/dcr-customlogs" } }
       if ($fixture.WithAi) {
         $resources += @{ type = 'Microsoft.CognitiveServices/accounts/projects'; id = "$scope/providers/Microsoft.CognitiveServices/accounts/testfoundry/projects/amlab-ai-proj" }
         $resources += @{ type = 'Microsoft.Insights/components'; id = "$scope/providers/Microsoft.Insights/components/appi-test" }
@@ -124,7 +167,7 @@ function Invoke-RestMethod {
     $fixture.Writes += $fixture.Settings.Clone()
     return @{}
   }
-  return @{ location = 'westeurope'; identity = @{ principalId = $fixture.AppIdentity } }
+  return @{ location = 'westeurope'; identity = @{ principalId = $fixture.AppIdentity }; tags = @{ owner = 'lab-owner'; purpose = 'azure-monitor-lab'; costCenter = 'test-center' } }
 }
 try {
   Reset-Configuration
@@ -137,6 +180,10 @@ try {
   if ($fixture.AuthCalls -ne 1 -or $fixture.Settings.Existing -ne 'preserve-me' -or $fixture.Roles.Count -ne 2) { throw 'Automatic access setup or settings preservation failed.' }
   if ($fixture.Writes[0]['LabConsole__Operations__Enabled'] -ne 'false' -or $fixture.Writes[-1]['LabConsole__Operations__Enabled'] -ne 'True') { throw 'Operations enablement is not gated on setup completion.' }
   Reset-Configuration
+  $fixture.ExistingTags = $false
+  & (Join-Path $scriptDirectory 'initialize-webapp-console.ps1') @parameters | Out-Null
+  $fixture.ExistingTags = $true
+  Reset-Configuration
   $fixture.MissingLogs = $true
   & (Join-Path $scriptDirectory 'initialize-webapp-console.ps1') @parameters | Out-Null
   if ($fixture.LogsDeployments -ne 1 -or $fixture.MissingLogs) { throw 'Existing labs did not automatically acquire missing custom-log prerequisites.' }
@@ -144,7 +191,7 @@ try {
   $fixture.WithAi = $true
   & (Join-Path $scriptDirectory 'initialize-webapp-console.ps1') @parameters | Out-Null
   if ($fixture.AiCalls -ne 1 -or $fixture.Settings['LabConsole__Foundry__Enabled'] -ne 'True') { throw 'Optional Foundry setup was not automatic.' }
-  foreach ($failure in @('FailAuth', 'FailBuild', 'BadTenant', 'FailAi', 'DeletePreview')) {
+  foreach ($failure in @('FailAuth', 'FailBuild', 'BadTenant', 'FailAi', 'DeletePreview', 'FailTagRead')) {
     Reset-Configuration
     $fixture[$failure] = $true
     $before = $fixture.Writes.Count
@@ -155,6 +202,7 @@ try {
     if ($failure -eq 'BadTenant') { if ($fixture.Writes.Count -ne $before) { throw 'Tenant mismatch caused writes.' } }
     elseif ($fixture.Settings['LabConsole__Operations__Enabled'] -ne 'false') { throw 'Setup failure left operations enabled.' }
     if ($failure -eq 'DeletePreview' -and $fixture.Deployments -ne $beforeDeployments) { throw 'A destructive preview did not block deployment.' }
+    if ($failure -eq 'FailTagRead' -and $fixture.Deployments -ne $beforeDeployments) { throw 'Failed tag discovery must stop before redeploying runner resources.' }
     $fixture[$failure] = $false
   }
   Write-Output 'PASS: automatic sign-in, isolated cloud build, digest pinning, scoped access, ordered enablement, and fail-closed deployment. No live Azure calls.'

@@ -97,6 +97,16 @@ if ($fixture.Auth.identityProviders.azureActiveDirectory.validation.defaultAutho
 if ($fixture.SettingsWrites[0]['LabConsole__Sre__Enabled'] -ne 'false' -or $fixture.SettingsWrites[-1]['LabConsole__Sre__Enabled'] -ne 'true') { throw 'Agent enablement was not gated on completed access setup.' }
 & $helper @parameters | Out-Null
 if ($fixture.AddedCredentials -ne 1 -or $fixture.Roles.Count -ne 4) { throw 'Repeated setup recreated a credential or role.' }
+$previousCulture = [Threading.Thread]::CurrentThread.CurrentCulture
+$expectedExpiry = [DateTimeOffset]::new([DateTimeOffset]::UtcNow.Year + 2, 3, 13, 12, 0, 0, [TimeSpan]::Zero)
+try {
+  foreach ($culture in @('en-US', 'en-BE')) {
+    [Threading.Thread]::CurrentThread.CurrentCulture = [Globalization.CultureInfo]::GetCultureInfo($culture)
+    $fixture.Settings['LabConsole__SignInCredentialExpiresAt'] = $expectedExpiry.ToString('o')
+    & $helper @parameters | Out-Null
+    if ($fixture.AddedCredentials -ne 1 -or [DateTimeOffset]$fixture.Settings['LabConsole__SignInCredentialExpiresAt'] -ne $expectedExpiry) { throw "Credential expiry parsing depends on locale: $culture" }
+  }
+} finally { [Threading.Thread]::CurrentThread.CurrentCulture = $previousCulture }
 if ($fixture.RegistrationUpdates -ne 0) { throw 'A compatible registration was unnecessarily modified.' }
 $fixture.Applications[0].web.redirectUris += 'https://test-webapp.azurewebsites.net/extra-callback'
 $fixture.Applications[0].web.implicitGrantSettings.enableIdTokenIssuance = $false

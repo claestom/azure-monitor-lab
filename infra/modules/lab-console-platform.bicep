@@ -9,6 +9,9 @@ param location string
 
 param tags object = {}
 
+@description('Existing runner tags indexed by resource name, captured before bootstrap updates.')
+param existingResourceTags object = {}
+
 var suffix = uniqueString(resourceGroup().id, webAppName)
 var registryName = 'acrlabops${take(suffix, 12)}'
 var environmentName = 'cae-labops-${take(suffix, 8)}'
@@ -24,7 +27,7 @@ module identity 'br/public:avm/res/managed-identity/user-assigned-identity:0.6.0
   params: {
     name: identityName
     location: location
-    tags: tags
+    tags: union(existingResourceTags[?identityName] ?? {}, tags)
     enableTelemetry: false
   }
 }
@@ -41,7 +44,7 @@ module registry 'br/public:avm/res/container-registry/registry:0.13.0' = {
     networkRuleSetDefaultAction: 'Allow'
     azureADAuthenticationAsArmPolicyStatus: 'enabled'
     enableTelemetry: false
-    tags: union(tags, { 'amlab-component': 'console-registry' })
+    tags: union(existingResourceTags[?registryName] ?? {}, tags, { 'amlab-component': 'console-registry' })
     roleAssignments: [
       {
         roleDefinitionIdOrName: 'AcrPull'
@@ -59,7 +62,7 @@ module environment 'br/public:avm/res/app/managed-environment:0.16.0' = {
     location: location
     enableTelemetry: false
     zoneRedundant: false
-    tags: union(tags, { 'amlab-component': 'console-environment' })
+    tags: union(existingResourceTags[?environmentName] ?? {}, tags, { 'amlab-component': 'console-environment' })
     workloadProfiles: [
       { name: 'Consumption', workloadProfileType: 'Consumption' }
     ]

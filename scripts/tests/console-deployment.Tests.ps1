@@ -9,8 +9,10 @@ $fixture = @{
   OperatorRoles = 0; DeploymentWrites = 0
   DefaultOperator = $false; CurrentUserLookups = 0; ExistingOperatorRole = $false; CurrentUserUnavailable = $false
   AiSetupFails = $false; SreSetupFails = $false
+  StageEResources = $false; ServiceGroupCalls = 0; SliCalls = 0
+  DeploymentId = ''; VersionChecks = 0
 }
-foreach ($name in @('deploy.ps1', 'deploy-webapp.ps1', 'post-staged-deploy.ps1', 'post-cloud-shell-deploy.ps1')) {
+foreach ($name in @('deploy.ps1', 'deploy-webapp.ps1', 'post-staged-deploy.ps1', 'post-cloud-shell-deploy.ps1', 'wait-webapp-publication.ps1')) {
   Copy-Item -LiteralPath (Join-Path $source "scripts/$name") -Destination $directory
 }
 @{ expectedSubscriptionId = [guid]::NewGuid(); expectedTenantId = [guid]::NewGuid() } | ConvertTo-Json | Set-Content (Join-Path $root '.azure-target.json')
@@ -32,9 +34,14 @@ param([guid]$SubscriptionId, [guid]$TenantId, $ResourceGroup, $WebAppName, $AksN
 if ($SubscriptionId -ne $fixture.Subscription -or $TenantId -ne $fixture.Tenant -or $ConsoleOperatorObjectIds[0] -ne $fixture.Operator) { throw 'Deployment wrapper lost the verified target or operator inputs.' }
 $fixture.Events.Add('post-deploy')
 '@ | Set-Content (Join-Path $directory 'post-deploy.ps1')
-foreach ($name in @('setup-health-model.ps1', 'setup-slis.ps1')) {
-  'param($ResourceGroup, $SubscriptionId)' | Set-Content (Join-Path $directory $name)
-}
+@'
+param($ResourceGroup, $SubscriptionId)
+$fixture.ServiceGroupCalls++
+'@ | Set-Content (Join-Path $directory 'setup-health-model.ps1')
+@'
+param($ResourceGroup, $SubscriptionId)
+$fixture.SliCalls++
+'@ | Set-Content (Join-Path $directory 'setup-slis.ps1')
 foreach ($name in @('create-summary-rule.ps1', 'send-release-annotation.ps1')) {
   'param($ResourceGroup, $WorkspaceName, $Name, $Category)' | Set-Content (Join-Path $directory $name)
 }
@@ -44,6 +51,10 @@ Copy-Item -LiteralPath (Join-Path $source 'workloads/k8s') -Destination (Join-Pa
 function dotnet {
   $global:LASTEXITCODE = 0
   if ($args[0] -ne 'publish') { throw 'Unexpected dotnet command.' }
+  $versionArgument = @($args | Where-Object { $_ -match '^-p:InformationalVersion=[a-f0-9]{32}$' })
+  if ($versionArgument.Count -ne 1 -or $args -notcontains '-p:IncludeSourceRevisionInInformationalVersion=false') { throw 'Publishing must embed a unique application version.' }
+  $fixture.DeploymentId = $versionArgument[0].Split('=', 2)[1]
+  $fixture.VersionChecks = 0
   $publish = $args[[Array]::IndexOf($args, '-o') + 1]
   $null = New-Item -ItemType Directory -Path (Join-Path $publish 'wwwroot') -Force
   'offline-package' | Set-Content (Join-Path $publish 'AmlabHello.dll')
@@ -96,7 +107,14 @@ function az {
     'resource list' {
       if ($args -contains 'Microsoft.Insights/dataCollectionRules') { return '[{"id":"test-dcr","name":"dcr-amlab-customlogs"}]' }
       if ($args -contains '[0].id') { return 'test-component' }
-      return '[{"name":"app-amlab-test","type":"Microsoft.Web/sites"},{"name":"aks-amlab","type":"Microsoft.ContainerService/managedClusters"},{"name":"law-amlab-central-test","type":"Microsoft.OperationalInsights/workspaces"},{"name":"appi-amlab","id":"test-component","type":"Microsoft.Insights/components"}]'
+      $resources = @(
+        @{ name = 'app-amlab-test'; type = 'Microsoft.Web/sites' },
+        @{ name = 'aks-amlab'; type = 'Microsoft.ContainerService/managedClusters' },
+        @{ name = 'law-amlab-central-test'; type = 'Microsoft.OperationalInsights/workspaces' },
+        @{ name = 'appi-amlab'; id = 'test-component'; type = 'Microsoft.Insights/components' }
+      )
+      if ($fixture.StageEResources) { $resources += @{ name = 'id-sli-amlab'; type = 'Microsoft.ManagedIdentity/userAssignedIdentities' } }
+      return ConvertTo-Json -InputObject $resources
     }
     'resource show' { return 'offline-connection' }
     'aks get-credentials' { if ($args -notcontains '--subscription') { throw 'Kubernetes discovery lost its subscription.' }; return }
@@ -123,7 +141,15 @@ function az {
 }
 
 function Start-Sleep { }
-function Invoke-WebRequest { param($Uri, [switch]$UseBasicParsing, $TimeoutSec); return @{ StatusCode = 200 } }
+function Invoke-WebRequest {
+  param($Uri, [switch]$UseBasicParsing, $TimeoutSec, $Headers, $MaximumRedirection)
+  if ($Uri -like '*/api/console/version*') {
+    $fixture.VersionChecks++
+    $version = if ($fixture.VersionChecks -eq 1) { 'old-version' } else { $fixture.DeploymentId }
+    return @{ StatusCode = 200; Content = (@{ deploymentId = $version } | ConvertTo-Json -Compress) }
+  }
+  return @{ StatusCode = 200 }
+}
 function kubectl { $global:LASTEXITCODE = 0; if ($args[0] -eq 'get') { return '203.0.113.10' } }
 
 try {
@@ -131,7 +157,7 @@ try {
   & (Join-Path $directory 'deploy-webapp.ps1') @parameters -WhatIf
   if ($fixture.Events.Count -or $fixture.Uploads) { throw 'WhatIf performed deployment work.' }
   & (Join-Path $directory 'deploy-webapp.ps1') @parameters | Out-Null
-  if ($fixture.Uploads -ne 1) { throw 'Successful app deployment did not upload its package.' }
+  if ($fixture.Uploads -ne 1 -or $fixture.VersionChecks -ne 2) { throw 'Successful app deployment did not upload and verify the new package.' }
   foreach ($failure in @('FailSetup', 'BadTenant')) {
     $fixture.Events.Clear()
     $fixture[$failure] = $true
@@ -142,8 +168,34 @@ try {
   }
   foreach ($name in @('post-staged-deploy.ps1', 'post-cloud-shell-deploy.ps1')) {
     $fixture.Events.Clear()
+    $fixture.ServiceGroupCalls = 0
     & (Join-Path $directory $name) -SubscriptionId $fixture.Subscription -ResourceGroup test-rg -ConsoleOperatorObjectIds @($fixture.Operator) | Out-Null
     if (($fixture.Events -join ',') -ne 'post-deploy') { throw 'Deployment completion did not invoke the shared console path exactly once.' }
+    $expectedServiceGroups = if ($name -eq 'post-staged-deploy.ps1') { 0 } else { 1 }
+    if ($fixture.ServiceGroupCalls -ne $expectedServiceGroups) { throw 'Staged deployment must not enable Service Group setup implicitly.' }
+  }
+  foreach ($selection in @(
+    @{ Config = $false; Explicit = @{}; Expected = 0 },
+    @{ Config = $true; Explicit = @{}; Expected = 1 },
+    @{ Config = $true; Explicit = @{ EnableStageE = $false }; Expected = 0 },
+    @{ Config = $false; Explicit = @{ EnableStageE = $true }; Expected = 1 }
+  )) {
+    @{ stageToggles = @{ enableStageE = $selection.Config } } | ConvertTo-Json -Depth 3 | Set-Content (Join-Path $root 'lab.config.json')
+    $fixture.StageEResources = $true
+    $fixture.Events.Clear()
+    $fixture.ServiceGroupCalls = 0
+    $fixture.SliCalls = 0
+    $selectionArguments = $selection.Explicit
+    & (Join-Path $directory 'post-staged-deploy.ps1') -SubscriptionId $fixture.Subscription -ResourceGroup test-rg -ConsoleOperatorObjectIds @($fixture.Operator) @selectionArguments | Out-Null
+    if ($fixture.ServiceGroupCalls -ne $selection.Expected -or $fixture.SliCalls -ne $selection.Expected) { throw 'Stage E selection or explicit override was not respected.' }
+  }
+  $fixture.StageEResources = $false
+  Remove-Item -LiteralPath (Join-Path $root 'lab.config.json')
+  $terraformConsole = Get-Content -LiteralPath (Join-Path $source 'terraform/console.tf') -Raw
+  if ($terraformConsole -notmatch 'LAB_ENABLE_STAGE_E\s*=\s*tostring\(var\.enable_stage_e\)' -or
+      $terraformConsole -notmatch '-EnableStageE \(\[bool\]::Parse\(\$env:LAB_ENABLE_STAGE_E\)\)' -or
+      $terraformConsole -notmatch 'scripts/wait-webapp-publication\.ps1') {
+    throw 'Terraform must explicitly pass its Stage E selection and track publication-verifier changes.'
   }
   @{ expectedSubscriptionId = $fixture.Subscription; expectedTenantId = $fixture.Tenant } | ConvertTo-Json | Set-Content (Join-Path $root '.azure-target.json')
   @'
@@ -218,7 +270,7 @@ if ($fixture.AiSetupFails) { throw 'Traffic startup failed.' }
   $fixture.Events.Clear()
   Copy-Item -LiteralPath (Join-Path $source 'scripts/post-deploy.ps1') -Destination $directory -Force
   & (Join-Path $directory 'post-deploy.ps1') @parameters -AksName aks-amlab -WebAppHost app-amlab-test.azurewebsites.net -CentralLawName law-amlab-central-test | Out-Null
-  if ($fixture.Uploads -ne 2 -or $fixture.OperatorRoles -ne 1 -or $fixture.CurrentUserLookups) { throw 'Shared deployment did not publish and configure the supplied operator without interactive-user lookup.' }
+  if ($fixture.Uploads -ne 2 -or $fixture.VersionChecks -ne 2 -or $fixture.OperatorRoles -ne 1 -or $fixture.CurrentUserLookups) { throw 'Shared deployment did not verify its publication and configure the supplied operator without interactive-user lookup.' }
   $defaultParameters = $parameters.Clone()
   $defaultParameters.Remove('ConsoleOperatorObjectIds')
   $fixture.DefaultOperator = $true

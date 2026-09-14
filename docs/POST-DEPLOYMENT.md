@@ -95,7 +95,7 @@ Terraform runs the staged wrapper automatically as part of `apply` with Stage B 
 ./scripts/post-staged-deploy.ps1 -SubscriptionId $subscriptionId -ResourceGroup $resourceGroup
 ```
 
-The wrapper publishes the application, initializes all baseline console dependencies and selected agent access, configures AKS workloads, and creates the summary rule and Service Group. It verifies SLI prerequisites only when the Stage E identity is present. Stage B therefore does not require optional Stage E resources. It also validates SRE Agent when selected in the central config.
+The wrapper publishes the application, initializes all baseline console dependencies and selected agent access, configures AKS workloads, and creates the summary rule. Service Group setup and SLI verification run only when Stage E is selected. The wrapper reads `stageToggles.enableStageE` from the central config and defaults to false when it is absent; an explicit `-EnableStageE $true` or `-EnableStageE $false` overrides it. Terraform passes its own selection explicitly. Existing optional resources are not deleted when this setup is skipped. It also validates SRE Agent when selected in the central config.
 
 ### Conditional
 
@@ -106,6 +106,18 @@ The wrapper publishes the application, initializes all baseline console dependen
 - **Earlier stage disabled:** skip scenarios that depend on resources from that stage.
 
 Continue with [Manual scenario setup](#manual-scenario-setup).
+
+## Redeployment Checks
+
+App Service infrastructure merges its telemetry settings with the app's existing settings after site creation. Existing sign-in credentials, approved-operator IDs, and console configuration are retained; those values are not template outputs. Console bootstrap still deliberately disables health/operations while required setup runs and enables them after success. A deployment that stops during bootstrap must be completed before using those controls.
+
+Bootstrap passes the Web App's lab tags to the runner registry, environment, identity, and job and merges in resource-specific tags found before that bootstrap update. Lab-owned and component tags take precedence. This preserves custom tags present at bootstrap time; it does not recover tags already removed by an earlier infrastructure deployment or an external process.
+
+Both Web App publishing paths embed a unique publication ID in the assembly. After ZIP upload they verify `/api/console/version` returns that exact ID, rather than accepting an older app's reachable homepage. Compression, upload, version waiting, and cleanup have explicit progress messages. An unverified version stops the deployment without submitting a second upload from the verification step; inspect App Service deployment status before retrying.
+
+Before promoting deployment changes, test a fresh lab and a rerun with the same approved operators, then test A+B with Stage E off and on. Confirm new app-version verification, fresh operator sign-in, rejection of unapproved users, health/runner readiness, and expected tags. Offline tests do not prove tenant permissions, role propagation, regional capacity, or every live deployment path.
+
+Resource-group deletion removes the console registry, environment, job, and runner identity. The single-tenant sign-in registration and tenant-level Service Group are separate: verify ownership and check for other consumers before deleting either. Do not delete a shared registration or Service Group as an automatic consequence of disabling a stage.
 
 ## Grafana access
 

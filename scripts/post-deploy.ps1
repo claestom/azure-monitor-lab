@@ -61,12 +61,13 @@ if ($LASTEXITCODE -ne 0) { throw 'Could not configure the app startup command.' 
 Start-Sleep -Seconds 30
 
 Write-Step "Publishing AmlabHello (workloads/webapp) and zip-deploying"
+$deploymentId = [guid]::NewGuid().ToString('N')
 $pub = Join-Path $tempDirectory "amlab-pub-$([guid]::NewGuid().ToString('N'))"
 $csproj = Join-Path $PSScriptRoot '..' 'workloads' 'webapp' 'AmlabHello.csproj'
 $previousWorkloadIntegrityCheck = $env:DOTNET_SKIP_WORKLOAD_INTEGRITY_CHECK
 $env:DOTNET_SKIP_WORKLOAD_INTEGRITY_CHECK = '1'
 try {
-  dotnet publish $csproj -c Release -o $pub --nologo --verbosity quiet
+  dotnet publish $csproj -c Release -o $pub --nologo --verbosity quiet "-p:InformationalVersion=$deploymentId" '-p:IncludeSourceRevisionInInformationalVersion=false'
   $publishExitCode = $LASTEXITCODE
 } finally {
   if ($null -eq $previousWorkloadIntegrityCheck) {
@@ -93,7 +94,9 @@ if ($SreTenantId -and $SreTenantId -ne $consoleAccount.tenantId) { throw 'SRE te
 & (Join-Path $PSScriptRoot 'initialize-webapp-console.ps1') -SubscriptionId $consoleAccount.id -TenantId $consoleAccount.tenantId `
   -ResourceGroup $ResourceGroup -WebAppName $WebAppName -ConsoleConfigPath (Join-Path $pub 'lab-console.json') -AllowedUserObjectIds $ConsoleOperatorObjectIds
 $zip = "$pub.zip"
+Write-Step 'Compressing the Web App package (including the bundled MCP runtime)'
 Compress-Archive -Path (Join-Path $pub '*') -DestinationPath $zip -Force
+Write-Step "Uploading Web App package ($([Math]::Round((Get-Item -LiteralPath $zip).Length / 1MB, 1)) MiB)"
 $deployOutput = ''
 $deployExitCode = 1
 $scmRestartRetries = 0
@@ -118,27 +121,12 @@ do {
   }
 } while ($true)
 
-# Async deployment avoids Kudu's unreliable long startup poll. Wait quietly for the
-# public endpoint before applying workloads that depend on the App Service URL.
 if ($deployExitCode -ne 0) {
   throw "App Service ZIP upload failed. Details:`n$deployOutput"
 }
 
-$siteReachable = $false
-for ($i = 0; $i -lt 36; $i++) {
-  try {
-    $response = Invoke-WebRequest -Uri "https://$WebAppHost/" -UseBasicParsing -TimeoutSec 15
-    if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) {
-      $siteReachable = $true
-      break
-    }
-  } catch { }
-  Start-Sleep -Seconds 10
-}
-if (-not $siteReachable) {
-  throw "App Service ZIP upload was accepted, but the site did not become reachable within 6 minutes. Check the App Service runtime logs."
-}
-Write-Host "   App Service ZIP upload accepted and the site is reachable." -ForegroundColor Green
+& (Join-Path $PSScriptRoot 'wait-webapp-publication.ps1') -WebAppHost $WebAppHost -DeploymentId $deploymentId
+Write-Step 'Cleaning up local Web App package files'
 Remove-Item -Recurse -Force $pub
 Remove-Item -Force $zip
 

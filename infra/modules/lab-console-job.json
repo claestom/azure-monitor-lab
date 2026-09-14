@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.37.4.10188",
-      "templateHash": "8878687814187992784"
+      "templateHash": "5351355873177201771"
     }
   },
   "parameters": {
@@ -39,6 +39,13 @@
     "tags": {
       "type": "object",
       "defaultValue": {}
+    },
+    "existingResourceTags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Existing runner tags indexed by resource name, captured before bootstrap updates."
+      }
     }
   },
   "resources": [
@@ -165,7 +172,7 @@
             ]
           },
           "tags": {
-            "value": "[union(parameters('tags'), createObject('amlab-component', 'console-job'))]"
+            "value": "[union(coalesce(tryGet(parameters('existingResourceTags'), parameters('name')), createObject()), parameters('tags'), createObject('amlab-component', 'console-job'))]"
           },
           "roleAssignments": {
             "value": [

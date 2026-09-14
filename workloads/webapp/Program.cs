@@ -17,6 +17,7 @@
 
 using Microsoft.ApplicationInsights;
 using System.Diagnostics;
+using System.Reflection;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
 
@@ -188,6 +189,10 @@ app.MapGet("/api/console/config", (IConfiguration configuration) =>
     return Results.Json(new { links, performanceCooldownSeconds = 30 });
 });
 app.MapGet("/healthz", () => Results.Text("OK"));
+app.MapGet("/api/console/version", () => Results.Json(new
+{
+    deploymentId = typeof(AgentAccess).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown"
+}));
 app.MapGet("/api/infra/health", (InfrastructureHealthService service, CancellationToken cancellationToken) => service.CheckAsync(cancellationToken))
     .RequireRateLimiting("infrastructure-health");
 

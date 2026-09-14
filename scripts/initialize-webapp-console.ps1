@@ -86,8 +86,24 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'A console resource provider could not be registered.' }
   }
   if (-not $config.LabConsole.Health.CentralWorkspaceResourceId) { throw 'The lab central health workspace was not found.' }
+  $tagInventory = @(az resource list --subscription $SubscriptionId --resource-group $ResourceGroup --output json --only-show-errors | ConvertFrom-Json)
+  if ($LASTEXITCODE -ne 0) { throw 'Runner tag discovery failed. No runner deployment was submitted.' }
+  $existingResourceTags = @{}
+  foreach ($resource in @($tagInventory | Where-Object { $_.type -in @('Microsoft.ContainerRegistry/registries', 'Microsoft.App/managedEnvironments', 'Microsoft.ManagedIdentity/userAssignedIdentities', 'Microsoft.App/jobs') })) {
+    if (-not $resource.id.StartsWith("$resourceBase/providers/", [StringComparison]::OrdinalIgnoreCase)) { throw 'Runner tag discovery returned a resource outside the lab.' }
+    $existingResourceTags[$resource.name] = $resource.tags ?? @{}
+  }
+  $tagParametersPath = Join-Path $temporary 'runner-tags.parameters.json'
+  @{
+    '$schema' = 'https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#'
+    contentVersion = '1.0.0.0'
+    parameters = @{
+      tags = @{ value = $web.tags ?? @{} }
+      existingResourceTags = @{ value = $existingResourceTags }
+    }
+  } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $tagParametersPath -Encoding utf8
   $platform = Invoke-ConsoleDeployment 'lab-console-platform' (Join-Path $root 'infra/modules/lab-console-platform.json') @(
-    "webAppName=$WebAppName", "centralLawId=$($config.LabConsole.Health.CentralWorkspaceResourceId)", "location=$($web.location)"
+    "webAppName=$WebAppName", "centralLawId=$($config.LabConsole.Health.CentralWorkspaceResourceId)", "location=$($web.location)", "@$tagParametersPath"
   )
   if ($LASTEXITCODE -ne 0 -or -not $platform.registryName.value -or -not $platform.environmentId.value -or -not $platform.runnerIdentityId.value) { throw 'The workload template did not provision the console runner platform.' }
   foreach ($id in @($platform.registryId.value, $platform.environmentId.value, $platform.runnerIdentityId.value)) {
@@ -120,7 +136,7 @@ try {
   $phase = 'runner job provisioning'
   $job = Invoke-ConsoleDeployment 'lab-console-job' (Join-Path $root 'infra/modules/lab-console-job.json') @(
     "name=$($platform.jobName.value)", "location=$($environment.location)", "webAppName=$WebAppName", "environmentId=$($platform.environmentId.value)",
-    "registryServer=$server", "runnerIdentityId=$($identity.id)", "runnerClientId=$($identity.clientId)", "image=$image"
+    "registryServer=$server", "runnerIdentityId=$($identity.id)", "runnerClientId=$($identity.clientId)", "image=$image", "@$tagParametersPath"
   )
   if ($LASTEXITCODE -ne 0 -or -not $job.jobId.value) { throw 'Runner job deployment failed.' }
   $inventory = @(az resource list --subscription $SubscriptionId --resource-group $ResourceGroup --output json --only-show-errors | ConvertFrom-Json)

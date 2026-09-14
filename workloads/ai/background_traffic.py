@@ -20,7 +20,14 @@ def write_status(directory, state, **details):
     }
     temporary = directory / "status.tmp"
     temporary.write_text(json.dumps(status, indent=2), encoding="utf-8")
-    temporary.replace(directory / "status.json")
+    for attempt in range(20):
+        try:
+            temporary.replace(directory / "status.json")
+            break
+        except PermissionError:
+            if attempt == 19:
+                raise
+            time.sleep(0.05)
     return status
 
 

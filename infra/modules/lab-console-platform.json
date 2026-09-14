@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.37.4.10188",
-      "templateHash": "16817979412497972067"
+      "templateHash": "7168125476521454539"
     }
   },
   "parameters": {
@@ -30,6 +30,13 @@
     "tags": {
       "type": "object",
       "defaultValue": {}
+    },
+    "existingResourceTags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Existing runner tags indexed by resource name, captured before bootstrap updates."
+      }
     }
   },
   "variables": {
@@ -117,7 +124,7 @@
             "value": "[parameters('location')]"
           },
           "tags": {
-            "value": "[parameters('tags')]"
+            "value": "[union(coalesce(tryGet(parameters('existingResourceTags'), variables('identityName')), createObject()), parameters('tags'))]"
           },
           "enableTelemetry": {
             "value": false
@@ -673,7 +680,7 @@
             "value": false
           },
           "tags": {
-            "value": "[union(parameters('tags'), createObject('amlab-component', 'console-registry'))]"
+            "value": "[union(coalesce(tryGet(parameters('existingResourceTags'), variables('registryName')), createObject()), parameters('tags'), createObject('amlab-component', 'console-registry'))]"
           },
           "roleAssignments": {
             "value": [
@@ -4526,7 +4533,7 @@
             "value": false
           },
           "tags": {
-            "value": "[union(parameters('tags'), createObject('amlab-component', 'console-environment'))]"
+            "value": "[union(coalesce(tryGet(parameters('existingResourceTags'), variables('environmentName')), createObject()), parameters('tags'), createObject('amlab-component', 'console-environment'))]"
           },
           "workloadProfiles": {
             "value": [

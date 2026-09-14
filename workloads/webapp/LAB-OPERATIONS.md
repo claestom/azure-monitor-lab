@@ -38,6 +38,8 @@ Status refresh runs every ten seconds only while the tab and browser document ar
 
 After successful deployment, open the Web App and sign in. The default operator is the signed-in Azure CLI user, or existing operators on an upgrade. Noninteractive deployments supply user object IDs using `-ConsoleOperatorObjectIds` or Terraform's `console_operator_object_ids`. These are deployment inputs, not a separate setup step.
 
+Infrastructure updates preserve runtime-owned sign-in and console app settings through a secure settings merge. Bootstrap retains the selected lab tags and any runner-specific tags present when bootstrap starts. Both publishing paths wait for the exact new assembly's publication ID, so a reachable older app cannot satisfy deployment completion. See [redeployment checks](../../docs/POST-DEPLOYMENT.md#redeployment-checks) for the live verification criteria and cleanup boundaries.
+
 ### Prerequisites
 
 The deployment machine needs PowerShell 7, Azure CLI, the .NET 8 SDK, and the existing lab workload tools. Optional AI setup needs Python 3.10+; SRE packaging needs npm and tar. Local Docker is not required: ACR Tasks builds an isolated ten-file context containing only the scripts, manifests, and Dockerfile.

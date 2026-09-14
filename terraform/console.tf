@@ -23,6 +23,7 @@ locals {
       "scripts/post-staged-deploy.ps1",
       "scripts/post-deploy.ps1",
       "scripts/prepare-webapp-package.ps1",
+      "scripts/wait-webapp-publication.ps1",
       "scripts/write-webapp-console-config.ps1",
       "scripts/initialize-webapp-console.ps1",
       "scripts/setup-webapp-agent-access.ps1",
@@ -52,7 +53,7 @@ resource "terraform_data" "console_ready" {
     resource_group = data.azurerm_resource_group.lab.id
     prefix         = var.name_prefix
     sources        = sha256(join("", [for name in local.console_sources : filesha256("${path.module}/../${name}")]))
-    integrations   = jsonencode({ ai = var.enable_stage_ai, sre = var.enable_stage_sre_agent, ai_location = var.ai_location, router_model_version = var.router_model_version })
+    integrations   = jsonencode({ ai = var.enable_stage_ai, sre = var.enable_stage_sre_agent, stage_e = var.enable_stage_e, ai_location = var.ai_location, router_model_version = var.router_model_version })
     operators      = jsonencode(var.console_operator_object_ids)
   }
 
@@ -64,13 +65,14 @@ resource "terraform_data" "console_ready" {
 
   provisioner "local-exec" {
     interpreter = ["pwsh", "-NoProfile", "-NonInteractive", "-Command"]
-    command     = "& (Join-Path $env:LAB_REPOSITORY_ROOT 'scripts/post-staged-deploy.ps1') -SubscriptionId $env:LAB_SUBSCRIPTION_ID -ResourceGroup $env:LAB_RESOURCE_GROUP -NamePrefix $env:LAB_NAME_PREFIX -ConsoleOperatorObjectIds @($env:LAB_OPERATOR_IDS | ConvertFrom-Json)"
+    command     = "& (Join-Path $env:LAB_REPOSITORY_ROOT 'scripts/post-staged-deploy.ps1') -SubscriptionId $env:LAB_SUBSCRIPTION_ID -ResourceGroup $env:LAB_RESOURCE_GROUP -NamePrefix $env:LAB_NAME_PREFIX -ConsoleOperatorObjectIds @($env:LAB_OPERATOR_IDS | ConvertFrom-Json) -EnableStageE ([bool]::Parse($env:LAB_ENABLE_STAGE_E))"
     environment = {
       LAB_REPOSITORY_ROOT = abspath("${path.module}/..")
       LAB_SUBSCRIPTION_ID = var.subscription_id
       LAB_RESOURCE_GROUP  = var.resource_group_name
       LAB_NAME_PREFIX     = var.name_prefix
       LAB_OPERATOR_IDS    = jsonencode(var.console_operator_object_ids)
+      LAB_ENABLE_STAGE_E  = tostring(var.enable_stage_e)
     }
   }
 }

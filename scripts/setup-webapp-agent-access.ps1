@@ -136,7 +136,14 @@ try {
 
   $phase = 'sign-in credential transfer'
   $credentialExpiry = [DateTimeOffset]::MinValue
-  $expiryKnown = [DateTimeOffset]::TryParse($settings['LabConsole__SignInCredentialExpiresAt'], [ref]$credentialExpiry)
+  $expiryValue = $settings['LabConsole__SignInCredentialExpiresAt']
+  $expiryKnown = if ($expiryValue -is [DateTime] -or $expiryValue -is [DateTimeOffset]) {
+    $credentialExpiry = [DateTimeOffset]$expiryValue
+    $true
+  } else {
+    [DateTimeOffset]::TryParse([string]$expiryValue, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$credentialExpiry)
+  }
+  if ($expiryKnown) { $settings['LabConsole__SignInCredentialExpiresAt'] = $credentialExpiry.ToString('o') }
   if (-not $settings[$secretSetting] -or -not $expiryKnown -or $credentialExpiry -le [DateTimeOffset]::UtcNow.AddDays(30)) {
     $expiry = [DateTimeOffset]::UtcNow.AddDays(180).ToString('o')
     $credential = Invoke-SetupRequest POST "https://graph.microsoft.com/v1.0/applications/$($registration.id)/addPassword" @{

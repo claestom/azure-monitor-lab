@@ -12,6 +12,11 @@ test('API contracts, no-store, W3C correlation, and deterministic checkout', asy
   expect(await health.text()).toBe('OK');
   expect(health.headers()['x-amlab-trace-id']).toBe(traceId);
   expect(health.headers()['cache-control']).toBe('no-store');
+  const version = await request.get('/api/console/version');
+  expect(version.status()).toBe(200);
+  expect(version.headers()['cache-control']).toBe('no-store');
+  expect(await version.json()).toEqual({ deploymentId: expect.any(String) });
+  expect((await version.json()).deploymentId.length).toBeGreaterThan(0);
   const failure = await request.get('/api/explode', { headers: { traceparent: `00-${traceId}-0123456789abcdef-01` } });
   expect(failure.status()).toBe(500);
   expect(failure.headers()['x-amlab-trace-id']).toBe(traceId);
