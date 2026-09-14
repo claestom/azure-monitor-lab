@@ -8,6 +8,7 @@ $fixture = @{
   Events = [Collections.Generic.List[string]]::new(); FailSetup = $false; BadTenant = $false; Uploads = 0
   OperatorRoles = 0; DeploymentWrites = 0
   DefaultOperator = $false; CurrentUserLookups = 0; ExistingOperatorRole = $false; CurrentUserUnavailable = $false
+  AiSetupFails = $false; SreSetupFails = $false
 }
 foreach ($name in @('deploy.ps1', 'deploy-webapp.ps1', 'post-staged-deploy.ps1', 'post-cloud-shell-deploy.ps1')) {
   Copy-Item -LiteralPath (Join-Path $source "scripts/$name") -Destination $directory
@@ -164,6 +165,54 @@ if ($SubscriptionId -ne $fixture.Subscription) { throw 'One-shot SLI setup lost 
   catch { $rejected = $_.Exception.Message -like 'BLOCKED:*' }
   if (-not $rejected -or $fixture.DeploymentWrites -or $fixture.Events.Count) { throw 'One-shot account mismatch did not stop before deployment.' }
   $fixture.BadTenant = $false
+  'param()' | Set-Content (Join-Path $directory 'sync-config.ps1')
+  @'
+param([guid]$SubscriptionId, $ResourceGroup)
+if ($SubscriptionId -ne $fixture.Subscription -or $ResourceGroup -ne 'test-rg') { throw 'SRE setup lost the verified target.' }
+$fixture.Events.Add('sre')
+if ($fixture.SreSetupFails) { throw 'SRE verification failed.' }
+'@ | Set-Content (Join-Path $directory 'setup-sre-agent.ps1')
+  @'
+param([guid]$SubscriptionId, [guid]$TenantId, $ResourceGroup, [switch]$BackgroundTraffic)
+if ($SubscriptionId -ne $fixture.Subscription -or $TenantId -ne $fixture.Tenant -or $ResourceGroup -ne 'test-rg') { throw 'AI setup lost the verified target.' }
+if (-not $BackgroundTraffic) { throw 'AI traffic must not block one-shot deployment.' }
+$fixture.Events.Add('ai')
+if ($fixture.AiSetupFails) { throw 'Traffic startup failed.' }
+'@ | Set-Content (Join-Path $directory 'setup-ai.ps1')
+  @{
+    subscriptionId = $fixture.Subscription
+    stageToggles = @{ enableStageAI = $true; enableStageSreAgent = $true }
+  } | ConvertTo-Json -Depth 3 | Set-Content (Join-Path $root 'lab.config.json')
+  foreach ($aiSetupFails in @($false, $true)) {
+    $fixture.AiSetupFails = $aiSetupFails
+    $fixture.Events.Clear()
+    $messages = & (Join-Path $directory 'deploy.ps1') -ResourceGroup test-rg -SkipPreflight -ConsoleOperatorObjectIds @($fixture.Operator) 6>&1 | Out-String
+    if (($fixture.Events -join ',') -ne 'post-deploy,sre,ai') { throw 'AI setup must run last, after SRE verification.' }
+    if ($messages -notmatch 'Lab setup complete\.') { throw 'One-shot deployment did not report setup completion.' }
+    if (($messages -match 'Agent traffic started in the background\.') -eq $aiSetupFails) { throw 'Traffic startup reporting did not reflect whether launch succeeded.' }
+  }
+  $fixture.AiSetupFails = $false
+  $fixture.SreSetupFails = $true
+  $fixture.Events.Clear()
+  $rejected = $false
+  try { & (Join-Path $directory 'deploy.ps1') -ResourceGroup test-rg -SkipPreflight -ConsoleOperatorObjectIds @($fixture.Operator) | Out-Null }
+  catch { $rejected = $_.Exception.Message -eq 'SRE verification failed.' }
+  if (-not $rejected -or ($fixture.Events -join ',') -ne 'post-deploy,sre') { throw 'AI traffic must not start after failed SRE verification.' }
+  $fixture.SreSetupFails = $false
+  foreach ($selection in @(
+    @{ Ai = $false; Sre = $true; Events = 'post-deploy,sre' },
+    @{ Ai = $true; Sre = $false; Events = 'post-deploy,ai' },
+    @{ Ai = $false; Sre = $false; Events = 'post-deploy' }
+  )) {
+    @{
+      subscriptionId = $fixture.Subscription
+      stageToggles = @{ enableStageAI = $selection.Ai; enableStageSreAgent = $selection.Sre }
+    } | ConvertTo-Json -Depth 3 | Set-Content (Join-Path $root 'lab.config.json')
+    $fixture.Events.Clear()
+    $messages = & (Join-Path $directory 'deploy.ps1') -ResourceGroup test-rg -SkipPreflight -ConsoleOperatorObjectIds @($fixture.Operator) 6>&1 | Out-String
+    if (($fixture.Events -join ',') -ne $selection.Events -or ($messages -match 'Agent traffic started in the background\.') -ne $selection.Ai) { throw 'Optional AI/SRE selection was not respected.' }
+  }
+  Remove-Item -LiteralPath (Join-Path $root 'lab.config.json')
   $postDeploy = Get-Content -LiteralPath (Join-Path $source 'scripts/post-deploy.ps1') -Raw
   if ($postDeploy.IndexOf("'initialize-webapp-console.ps1'") -lt 0 -or $postDeploy.IndexOf("'initialize-webapp-console.ps1'") -gt $postDeploy.IndexOf('Compress-Archive')) { throw 'Shared publication does not wait for automatic console setup.' }
   $fixture.Events.Clear()

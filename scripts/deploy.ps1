@@ -323,24 +323,7 @@ Write-Step "Verifying demo SLI prerequisites and source metrics (scenario 46)"
 $setupSli = Join-Path $PSScriptRoot 'setup-slis.ps1'
 & $setupSli -SubscriptionId $active.id -ResourceGroup $ResourceGroup
 
-# 6. Optional AI feature — create the demo agents + simulate GenAI traffic, but only
-#    when lab.config.json enabled it (stageToggles.enableStageAI -> Bicep enableAi).
-$aiEnabled = $false
-if ($null -ne $labCfg -and $null -ne $labCfg.stageToggles -and $null -ne $labCfg.stageToggles.enableStageAI) {
-  $aiEnabled = [bool]$labCfg.stageToggles.enableStageAI
-}
-if ($aiEnabled) {
-  Write-Step "AI feature enabled — creating agents + simulating traffic (scripts/setup-ai.ps1)"
-  $setupAi = Join-Path $PSScriptRoot 'setup-ai.ps1'
-  try {
-    & $setupAi -ResourceGroup $ResourceGroup -SubscriptionId $active.id -TenantId $active.tenantId
-  } catch {
-    Write-Host "  Optional AI traffic generation failed: $($_.Exception.Message)" -ForegroundColor Yellow
-    Write-Host '  Console agent provisioning completed earlier. This warning concerns optional demo traffic.' -ForegroundColor Yellow
-  }
-}
-
-# 7. Optional SRE Agent stage. Bicep creates the agent and Azure Monitor connectors;
+# 6. Optional SRE Agent stage. Bicep creates the agent and Azure Monitor connectors;
 #    this verifies the deployed resource and prints the portal URL.
 $sreAgentEnabled = $false
 if ($null -ne $labCfg -and $null -ne $labCfg.stageToggles -and $null -ne $labCfg.stageToggles.enableStageSreAgent) {
@@ -349,7 +332,28 @@ if ($null -ne $labCfg -and $null -ne $labCfg.stageToggles -and $null -ne $labCfg
 if ($sreAgentEnabled) {
   Write-Step "SRE Agent stage enabled - verifying the deployed agent and Azure Monitor connectors"
   $setupSreAgent = Join-Path $PSScriptRoot 'setup-sre-agent.ps1'
-  & $setupSreAgent -SubscriptionId $labCfg.subscriptionId -ResourceGroup $ResourceGroup
+  & $setupSreAgent -SubscriptionId $active.id -ResourceGroup $ResourceGroup
 }
 
-Write-Host "`n✅ Lab is up. See README.md for the demo flow." -ForegroundColor Green
+# 7. Optional AI feature - create the demo agents + simulate GenAI traffic, but only
+#    when lab.config.json enabled it (stageToggles.enableStageAI -> Bicep enableAi).
+$aiEnabled = $false
+$aiTrafficStarted = $false
+if ($null -ne $labCfg -and $null -ne $labCfg.stageToggles -and $null -ne $labCfg.stageToggles.enableStageAI) {
+  $aiEnabled = [bool]$labCfg.stageToggles.enableStageAI
+}
+if ($aiEnabled) {
+  Write-Step "AI feature enabled - preparing agents and starting background traffic"
+  $setupAi = Join-Path $PSScriptRoot 'setup-ai.ps1'
+  try {
+    & $setupAi -ResourceGroup $ResourceGroup -SubscriptionId $active.id -TenantId $active.tenantId -BackgroundTraffic
+    $aiTrafficStarted = $true
+  } catch {
+    Write-Host "  Optional AI traffic could not start: $($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host '  Console agent provisioning completed earlier. This warning concerns optional demo traffic.' -ForegroundColor Yellow
+  }
+}
+
+$completionMessage = 'Lab setup complete.'
+if ($aiTrafficStarted) { $completionMessage += ' Agent traffic started in the background.' }
+Write-Host "`n$completionMessage" -ForegroundColor Green

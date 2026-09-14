@@ -11,8 +11,9 @@ on:
       - 'scripts/setup-webapp-agent-access.ps1'
       - 'scripts/tests/console-bootstrap.Tests.ps1'
       - 'scripts/tests/console-deployment.Tests.ps1'
+      - 'scripts/tests/ai-traffic.Tests.ps1'
       - 'scripts/setup-ai.ps1'
-      - 'workloads/ai/create_agents.py'
+      - 'workloads/ai/*.py'
       - 'workloads/ai/tests/**'
       - 'workloads/operations/**'
       - 'infra/modules/lab-console*'
@@ -32,7 +33,7 @@ on:
       - 'workloads/webapp.Tests/**'
       - 'scripts/**'
       - 'workloads/operations/**'
-      - 'workloads/ai/create_agents.py'
+      - 'workloads/ai/*.py'
       - 'workloads/ai/tests/**'
       - 'infra/modules/lab-console*'
       - 'infra/stages/10-workloads*'
@@ -59,9 +60,10 @@ jobs:
           ./scripts/tests/lab-operations-execution.Tests.ps1
           ./scripts/tests/console-bootstrap.Tests.ps1
           ./scripts/tests/console-deployment.Tests.ps1
+          ./scripts/tests/ai-traffic.Tests.ps1
           ./workloads/webapp/tests/webapp-access.Tests.ps1
-      - name: Repeatable agent provisioning without Azure
-        run: python -m unittest discover -s workloads/ai/tests -p 'test_create_agents.py' -v
+      - name: Agent provisioning and background traffic without Azure
+        run: python -B -m unittest discover -s workloads/ai/tests -p 'test_*.py' -v
       - name: Browser regressions without live integrations
         working-directory: workloads/webapp
         run: |

@@ -36,6 +36,10 @@
 .PARAMETER SkipTraffic
   Create the agents but do not simulate traffic.
 
+.PARAMETER BackgroundTraffic
+  Start a finite traffic batch in a separate process on the deployment machine.
+  Return after startup, with a process ID and paths to its log and status files.
+
 .EXAMPLE
   ./scripts/setup-ai.ps1
 
@@ -54,8 +58,9 @@ param(
   [string] $AppInsightsConnectionString,
   [string] $ChatDeployment   = 'gpt-5-mini',
   [string] $RouterDeployment = 'model-router',
-  [int]    $Conversations    = 150,
+  [ValidateRange(1, 2147483647)] [int] $Conversations = 150,
   [switch] $SkipTraffic,
+  [switch] $BackgroundTraffic,
   [guid] $SubscriptionId,
   [guid] $TenantId
 )
@@ -63,6 +68,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $true
 function Write-Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
+if ($SkipTraffic -and $BackgroundTraffic) { throw 'Choose SkipTraffic or BackgroundTraffic, not both.' }
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 
@@ -150,10 +156,23 @@ if ($LASTEXITCODE -ne 0) { throw 'AI demo agents could not be prepared.' }
 if ($SkipTraffic) {
   Write-Step "Skipping traffic simulation (-SkipTraffic). Run it later with:"
   Write-Host "   python workloads/ai/simulate_traffic.py --conversations $Conversations --loop" -ForegroundColor Yellow
+} elseif ($BackgroundTraffic) {
+  Write-Step "Starting $Conversations conversations in the background (token/trace/cost telemetry)"
+  $launchJson = & $python (Join-Path $aiDir 'background_traffic.py') --conversations $Conversations
+  if ($LASTEXITCODE -ne 0 -or -not $launchJson) { throw 'AI background traffic could not be started.' }
+  $traffic = $launchJson | ConvertFrom-Json
+  if ($traffic.state -notin @('running', 'completed', 'completed_with_errors') -or $traffic.processId -lt 1 -or -not $traffic.logPath -or -not $traffic.statusPath) {
+    throw 'AI background traffic startup was not acknowledged.'
+  }
+  Write-Host "   Process: $($traffic.processId)" -ForegroundColor DarkGray
+  Write-Host "   Status : $($traffic.statusPath)" -ForegroundColor DarkGray
+  Write-Host "   Log    : $($traffic.logPath)" -ForegroundColor DarkGray
 } else {
   Write-Step "Simulating $Conversations conversations (token/trace/cost telemetry)"
   & $python (Join-Path $aiDir 'simulate_traffic.py') --conversations $Conversations
   if ($LASTEXITCODE -ne 0) { throw 'AI traffic simulation failed.' }
 }
 
-Write-Host "`n✅ AI stage ready. Explore the Foundry project Observability/Tracing tab and Monitor > Alerts." -ForegroundColor Green
+if (-not $BackgroundTraffic) {
+  Write-Host "`nAI stage ready. Explore the Foundry project Observability/Tracing tab and Monitor > Alerts." -ForegroundColor Green
+}

@@ -59,8 +59,16 @@ Running `./scripts/deploy.ps1` is the most complete deployment path. Do not run 
 - Assigns the signed-in user permission to send custom logs.
 - Creates the Service Group and its resource-group membership.
 - Deploys the Health Model and verifies the SLI identity permissions and source metrics.
-- Runs `setup-ai.ps1` when `stageToggles.enableStageAI` is enabled.
 - Runs SRE Agent validation when `stageToggles.enableStageSreAgent` is enabled.
+- Runs AI setup last when `stageToggles.enableStageAI` is enabled, then starts its finite 150-conversation traffic batch in the background.
+
+The one-shot command returns after the traffic worker acknowledges startup, without waiting for all conversations. It prints **Lab setup complete. Agent traffic started in the background.** Required console agents and access are still prepared before app publication; the final AI step does not delay SRE verification.
+
+Background traffic runs in a separate Python process on the deployment machine, not in the Web App or an Azure job. The process receives a snapshot of the agent IDs and inherits the configured environment without putting credentials on its command line. Each invocation starts a new finite batch, so avoid overlapping runs unless intended. Model usage remains billable and telemetry can take a few minutes to appear.
+
+The output includes the worker PID and its log/status paths. Files are outside the repository, under `%LOCALAPPDATA%/azure-monitor-lab/ai-traffic` on Windows or `$XDG_STATE_HOME/azure-monitor-lab/ai-traffic` on Linux (default `~/.local/state`). The status records `running`, `completed`, `completed_with_errors`, or `failed`; `running` acknowledges startup, not successful model responses. Use the printed log to inspect progress and the PID to inspect or stop the process. If the process is forcibly stopped, its last status may remain `running`.
+
+Keep the deployment machine and its Azure CLI sign-in available until the batch ends. A suspended laptop, expired sign-in, Cloud Shell session termination, or CI runner shutdown can interrupt traffic; there is no automatic restart. Startup failures or a missing acknowledgment after 30 seconds produce a warning instead of claiming traffic started. Standalone `setup-ai.ps1` still runs traffic in the foreground unless `-BackgroundTraffic` is supplied; `-SkipTraffic` still prepares agents only.
 
 Required console setup failures stop deployment. A later warning about optional AI traffic does not mean agent provisioning was skipped. To generate that scenario telemetry later:
 
