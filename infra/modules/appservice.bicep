@@ -59,23 +59,28 @@ resource site 'Microsoft.Web/sites@2023-12-01' = {
       minTlsVersion: '1.2'
       http20Enabled: true
       healthCheckPath: '/'
-      appSettings: [
-        { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsightsConnectionString }
-        { name: 'APPINSIGHTS_INSTRUMENTATIONKEY',        value: appInsightsInstrumentationKey }
-        { name: 'ApplicationInsightsAgent_EXTENSION_VERSION', value: '~3' }
-        { name: 'XDT_MicrosoftApplicationInsights_Mode',  value: 'recommended' }
-        { name: 'XDT_MicrosoftApplicationInsights_PreemptSdk', value: '1' }
-        { name: 'InstrumentationEngine_EXTENSION_VERSION', value: 'disabled' }
-        { name: 'XDT_MicrosoftApplicationInsightsJava',  value: '0' }
-        // FEATURE — App Insights Profiler (.NET)
-        { name: 'APPINSIGHTS_PROFILERFEATURE_VERSION',    value: '1.0.0' }
-        { name: 'DiagnosticServices_EXTENSION_VERSION',   value: '~3' }
-        // FEATURE — App Insights Snapshot Debugger (.NET)
-        { name: 'APPINSIGHTS_SNAPSHOTFEATURE_VERSION',    value: '1.0.0' }
-        { name: 'SnapshotDebugger_EXTENSION_VERSION',     value: '~1' }
-        { name: 'SCM_DO_BUILD_DURING_DEPLOYMENT',         value: 'true' }
-        { name: 'WEBSITE_HTTPLOGGING_RETENTION_DAYS',     value: '3' }
-      ]
+    }
+  }
+}
+
+module appSettings './appservice-settings.bicep' = {
+  name: 'app-settings'
+  params: {
+    webAppName: site.name
+    appSettings: {
+      APPLICATIONINSIGHTS_CONNECTION_STRING: appInsightsConnectionString
+      APPINSIGHTS_INSTRUMENTATIONKEY: appInsightsInstrumentationKey
+      ApplicationInsightsAgent_EXTENSION_VERSION: '~3'
+      XDT_MicrosoftApplicationInsights_Mode: 'recommended'
+      XDT_MicrosoftApplicationInsights_PreemptSdk: '1'
+      InstrumentationEngine_EXTENSION_VERSION: 'disabled'
+      XDT_MicrosoftApplicationInsightsJava: '0'
+      APPINSIGHTS_PROFILERFEATURE_VERSION: '1.0.0'
+      DiagnosticServices_EXTENSION_VERSION: '~3'
+      APPINSIGHTS_SNAPSHOTFEATURE_VERSION: '1.0.0'
+      SnapshotDebugger_EXTENSION_VERSION: '~1'
+      SCM_DO_BUILD_DURING_DEPLOYMENT: 'true'
+      WEBSITE_HTTPLOGGING_RETENTION_DAYS: '3'
     }
   }
 }

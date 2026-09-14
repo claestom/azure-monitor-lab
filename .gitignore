@@ -36,6 +36,9 @@ infra/*.terraform-test.json
 # Editor / IDE
 .vscode/
 
+# Personal Lab Feature Check agent and checklist
+/.github/agents/lab-feature-check.agent.md
+
 # Ad-hoc scratch scripts (not for source control)
 scripts/temp.ps1
 

@@ -14,7 +14,8 @@
 param(
   [Parameter(Mandatory)] [string] $SubscriptionId,
   [Parameter(Mandatory)] [string] $ResourceGroup,
-  [string] $NamePrefix = 'amlab'
+  [string] $NamePrefix = 'amlab',
+  [guid[]] $ConsoleOperatorObjectIds
 )
 
 $ErrorActionPreference = 'Stop'
@@ -70,12 +71,14 @@ if ([string]::IsNullOrWhiteSpace($appInsightsConnectionString)) {
 
 Write-Step "Running App Service and AKS post-deployment setup"
 & (Join-Path $PSScriptRoot 'post-deploy.ps1') `
+  -SubscriptionId $active.id -TenantId $active.tenantId `
   -ResourceGroup $ResourceGroup `
   -WebAppName $webApp.name `
   -AksName $aks.name `
   -WebAppHost $webAppHost `
   -CentralLawName $centralLaw.name `
-  -AppInsightsConnectionString $appInsightsConnectionString
+  -AppInsightsConnectionString $appInsightsConnectionString `
+  -ConsoleOperatorObjectIds $ConsoleOperatorObjectIds
 
 Write-Step "Provisioning service group and health model prerequisites"
 & (Join-Path $PSScriptRoot 'setup-health-model.ps1') -ResourceGroup $ResourceGroup

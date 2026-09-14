@@ -11,6 +11,7 @@
     "deployLinuxVm": { "value": true },
     "dailyCapGb": { "value": 1 },
     "aksNodeCount": { "value": 2 },
+    "grafanaAdminObjectId": { "value": "" },
     "enablePlatformLogsDcr": { "value": false },
     "enableMetricsExportDcr": { "value": false },
     "enableSreAgent": { "value": false }

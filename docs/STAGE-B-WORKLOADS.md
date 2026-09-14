@@ -13,10 +13,13 @@
 | AKS cluster | `aks-amlab` (1× Standard_B2s system node) | Container Insights enabled (writes to `law-amlab-central`). Managed Prometheus is on (writes metrics to `amw-amlab` via `dcr-amlab-prometheus`). DCE attached. |
 | Managed Grafana | `amg-amlab-<suffix>` | Connected to `amw-amlab`. Default Azure dashboards (Node Exporter, Kubelet, K8s/Compute resources, etc.) appear automatically. |
 | App Service | `plan-amlab` + `app-amlab-<suffix>` | Linux App Service plan + web app. Auto-instrumented with `appi-amlab` (connection string baked in). Diagnostic settings send `AppServiceHTTPLogs` to `law-amlab-central`, `storage`, and event hub. |
+| Control Center runner | Basic `acrlabops<suffix>` registry, `cae-labops-<suffix>` Consumption environment, `id-labops-<suffix>` identity, and `job-labops-<suffix>` manual job | The workload template provisions the platform; completion builds the image, creates the digest-pinned job, and configures operator sign-in and scoped roles. Runner logs use the central workspace. Resources follow the Web App region. |
 | Connection Monitor | `cm-amlab-*` (in `NetworkWatcherRG`) | Probes between the two VMs and the web app's default hostname. Populates `NetworkMonitoring` table. |
 | Flow Logs + Traffic Analytics | `fl-amlab` against `vnet-amlab`; flow logs storage = `st<amlab><suffix>`; analytics workspace = `law-amlab-central` | Network-layer telemetry for security/exfil scenarios in Stage D and reliability scenarios in Stage E. |
 
 > Cross-stage references (no module-to-module wiring): `law-amlab-central`, `law-amlab-appinsights`, `appi-amlab`, `amw-amlab`, `dce-amlab`, `dcr-amlab-vminsights`, `vnet-amlab`/`snet-workload`, `st<amlab><suffix>`, `evhns-amlab-<suffix>` are all `existing` references from Stage A.
+
+Console completion requires permission to manage its Entra sign-in registration and scoped Azure roles, plus ACR Tasks availability. The registry has ongoing charges; image builds, job execution, and logs add usage charges. Stage B does not enable the optional Stage E Service Group or SLI setup. See [deployment prerequisites and rerun checks](POST-DEPLOYMENT.md#redeployment-checks).
 
 ## 2) Speaker notes
 
@@ -92,3 +95,5 @@ If `Heartbeat` returns zero rows, wait 3–5 min for AMA to handshake; if still 
 3. `amw-amlab` returns data from a Prometheus query (`up{}` ≥ 1 series).
 4. Web app responds at `https://<webAppName>.azurewebsites.net` and `AppRequests` rows appear in the LAW.
 5. Traffic-Lights workbook shows green rows for VMs, AKS, App Service, App Insights — same workbook you opened during Stage A. Visual proof of value.
+6. The expected Web App publication ID is verified, an approved operator can sign in to Infra Health and Lab Operations, and unapproved users cannot use protected endpoints.
+7. The runner registry, environment, identity, and digest-pinned job exist with the expected lab tags. With Stage E disabled, completion makes no Service Group or SLI setup calls.

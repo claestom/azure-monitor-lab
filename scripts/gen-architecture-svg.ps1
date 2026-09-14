@@ -1,6 +1,6 @@
-# Generates docs/architecture-overview-sre.svg — a self-contained, dark-mode architecture
-# diagram that uses the official Azure service icons (from the draw.io azure2 library)
-# and preserves the exact groups + relationships shown in the README Mermaid diagram.
+# Generates docs/architecture-overview-sre.svg, the self-contained README architecture
+# diagram with Azure service icons from the draw.io azure2 library.
+# Keep the corresponding overview in docs/architecture.drawio in sync.
 #
 # Icons are downloaded from the jgraph/drawio public library and base64-embedded into a
 # single SVG so the result renders on GitHub with no external dependencies.
@@ -16,6 +16,8 @@ $iconPaths = @{
   vmss     = 'compute/VM_Scale_Sets.svg'
   aks      = 'compute/Kubernetes_Services.svg'
   app      = 'compute/App_Services.svg'
+  acr      = 'containers/Container_Registries.svg'
+  job      = 'other/Worker_Container_App.svg'
   net      = 'networking/Virtual_Networks.svg'
   ama      = 'general/Input_Output.svg'
   flow     = 'networking/Network_Watcher.svg'
@@ -59,7 +61,7 @@ foreach ($k in $iconPaths.Keys) {
 # --- tiers (columns) ------------------------------------------------------------------
 $cols = [ordered]@{
   WL   = @{ x = 30;   w = 250; title = 'Workloads';                fill = '#0E2438'; stroke = '#4AA3E0'; text = '#D6EBFB' }
-  COL  = @{ x = 330;  w = 250; title = 'Collection';               fill = '#0E2615'; stroke = '#57B96A'; text = '#D8F3DE' }
+  COL  = @{ x = 330;  w = 250; title = 'Collection & lab operations'; fill = '#0E2615'; stroke = '#57B96A'; text = '#D8F3DE' }
   DATA = @{ x = 630;  w = 310; title = 'Telemetry backplane';      fill = '#2A1E08'; stroke = '#D9A441'; text = '#F7E6C4' }
   USE  = @{ x = 990;  w = 300; title = 'Consumption & response';   fill = '#1F1430'; stroke = '#A877D6'; text = '#EADDF7' }
 }
@@ -69,13 +71,15 @@ $nodes = [ordered]@{
   VM    = @{ col = 'WL';   i = 0; lines = @('Linux & Windows VMs');            icons = @('vm') }
   VMSS  = @{ col = 'WL';   i = 1; lines = @('Linux VMSS','predictive autoscale'); icons = @('vmss') }
   AKS   = @{ col = 'WL';   i = 2; lines = @('AKS','Container Insights');       icons = @('aks') }
-  APP   = @{ col = 'WL';   i = 3; lines = @('.NET 8 App Service','auto-instrumented'); icons = @('app') }
+  APP   = @{ col = 'WL';   i = 3; lines = @('.NET 8 App Service','Control Center + telemetry'); icons = @('app') }
   NET   = @{ col = 'WL';   i = 4; lines = @('VNet / NSG','Connection Monitor'); icons = @('net') }
   FDRY  = @{ col = 'WL';   i = 5; lines = @('GenAI · Foundry + agents','chat/embed/router · optional'); icons = @('foundry','agents','router') }
 
   AMA   = @{ col = 'COL';  i = 0; lines = @('Azure Monitor Agent','DCRs · DCE'); icons = @('ama') }
   FLOW  = @{ col = 'COL';  i = 1; lines = @('NSG Flow Logs');                   icons = @('flow') }
   POL   = @{ col = 'COL';  i = 2; lines = @('Diag Settings via','Policy (DINE)'); icons = @('pol') }
+  ACR   = @{ col = 'COL';  i = 3; lines = @('Container Registry (ACR)','digest-pinned runner image'); icons = @('acr') }
+  JOB   = @{ col = 'COL';  i = 4; lines = @('Container Apps Job','approved lab operations'); icons = @('job') }
 
   LAW   = @{ col = 'DATA'; i = 0; lines = @('Log Analytics','central');         icons = @('law') }
   LAWAI  = @{ col = 'DATA'; i = 1; lines = @('Log Analytics','App Insights');     icons = @('law') }
@@ -95,9 +99,10 @@ $nodes = [ordered]@{
 
 # --- edges (source -> target) ---------------------------------------------------------
 $edges = @(
-  @('VM','AMA'), @('VMSS','AMA'), @('AKS','AMA'), @('AKS','AMW'), @('APP','AI'), @('NET','FLOW'), @('FDRY','AI'),
+  @('VM','AMA'), @('VMSS','AMA'), @('AKS','AMA'), @('NET','FLOW'),
   @('AMA','LAW'), @('AMA','AMW'), @('FLOW','PLAT'), @('POL','LAW'), @('LAW','QUERY'), @('AI','LAWAI'), @('PLAT','LAW'),
-  @('LAW','WB'), @('LAWAI','WB'), @('AMW','GRAF'), @('LAW','AG'), @('AI','AG'), @('AG','SRE'), @('AG','LOGIC'), @('LAW','SENT'), @('LAW','HEALTH')
+  @('LAW','WB'), @('LAWAI','WB'), @('AMW','GRAF'), @('LAW','AG'), @('AI','AG'), @('AG','SRE'), @('AG','LOGIC'), @('LAW','SENT'), @('LAW','HEALTH'),
+  @('ACR','JOB')
 )
 
 # --- geometry -------------------------------------------------------------------------
@@ -109,7 +114,9 @@ function ColOf($n)   { $cols[$n.col] }
 function Esc($s)     { $s -replace '&','&amp;' -replace '<','&lt;' -replace '>','&gt;' }
 
 $sb = New-Object System.Text.StringBuilder
-[void]$sb.AppendLine("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 $W $H' font-family='Segoe UI, Helvetica, Arial, sans-serif'>")
+[void]$sb.AppendLine("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 $W $H' font-family='Segoe UI, Helvetica, Arial, sans-serif' role='img' aria-labelledby='architecture-title architecture-description'>")
+[void]$sb.AppendLine("<title id='architecture-title'>Azure Monitor Lab architecture</title>")
+[void]$sb.AppendLine("<desc id='architecture-description'>Workloads, telemetry collection, dashboards, and response. Azure Container Registry supplies a digest-pinned image to the Container Apps Job used for approved lab operations.</desc>")
 [void]$sb.AppendLine("<rect x='0' y='0' width='$W' height='$H' rx='10' fill='#0D1117'/>")
 [void]$sb.AppendLine("<text x='$($W/2)' y='34' fill='#E6EDF3' font-size='20' font-weight='700' text-anchor='middle'>rg-azure-monitor-lab · northeurope</text>")
 [void]$sb.AppendLine("<text x='$($W/2)' y='52' fill='#9DA7B3' font-size='11' text-anchor='middle'>optional GenAI workload (Microsoft Foundry) pinned to swedencentral</text>")
@@ -128,21 +135,24 @@ function AnchorLeft($n)  { $c = ColOf $n; @($c.x, ((NodeTop $n) + $cellH/2)) }
 function AnchorTop($n)   { $c = ColOf $n; @(($c.x + $c.w/2), (NodeTop $n)) }
 function AnchorBottom($n){ $c = ColOf $n; @(($c.x + $c.w/2), ((NodeTop $n) + $cellH)) }
 
+$lineStyle = "stroke='#7D8590' marker-end='url(#arrow)'"
 foreach ($e in $edges) {
   $s = $nodes[$e[0]]; $t = $nodes[$e[1]]
   if ($s.col -eq $t.col) {
     $a = AnchorBottom $s; $b = AnchorTop $t
-    [void]$sb.AppendLine("<path d='M $($a[0]),$($a[1]) L $($b[0]),$($b[1])' fill='none' stroke='#7D8590' stroke-width='1.4' marker-end='url(#arrow)'/>")
+    [void]$sb.AppendLine("<path id='edge-$($e[0])-$($e[1])' d='M $($a[0]),$($a[1]) L $($b[0]),$($b[1])' fill='none' stroke-width='1.4' $lineStyle/>")
   } else {
-    $a = AnchorRight $s; $b = AnchorLeft $t
+    if ((ColOf $s).x -lt (ColOf $t).x) { $a = AnchorRight $s; $b = AnchorLeft $t }
+    else { $a = AnchorLeft $s; $b = AnchorRight $t }
     $mx = ($a[0] + $b[0]) / 2
-    [void]$sb.AppendLine("<path d='M $($a[0]),$($a[1]) C $mx,$($a[1]) $mx,$($b[1]) $($b[0]),$($b[1])' fill='none' stroke='#7D8590' stroke-width='1.4' marker-end='url(#arrow)'/>")
+    [void]$sb.AppendLine("<path id='edge-$($e[0])-$($e[1])' d='M $($a[0]),$($a[1]) C $mx,$($a[1]) $mx,$($b[1]) $($b[0]),$($b[1])' fill='none' stroke-width='1.4' $lineStyle/>")
   }
 }
 
 # nodes
 foreach ($id in $nodes.Keys) {
   $n = $nodes[$id]; $c = ColOf $n; $top = NodeTop $n
+  [void]$sb.AppendLine("<g id='node-$id'>")
   [void]$sb.AppendLine("<rect x='$($c.x+8)' y='$top' width='$($c.w-16)' height='$cellH' rx='8' fill='#161B22' stroke='$($c.stroke)' stroke-opacity='0.5' stroke-width='1'/>")
   $ic = $n.icons
   if ($ic.Count -eq 1) {
@@ -162,6 +172,7 @@ foreach ($id in $nodes.Keys) {
     [void]$sb.AppendLine("<text x='$lx' y='$($top+28)' fill='$($c.text)' font-size='12.5' font-weight='600'>$(Esc $lines[0])</text>")
     [void]$sb.AppendLine("<text x='$lx' y='$($top+44)' fill='$($c.text)' font-size='10.5' opacity='0.85'>$(Esc $lines[1])</text>")
   }
+  [void]$sb.AppendLine('</g>')
 }
 
 [void]$sb.AppendLine('</svg>')

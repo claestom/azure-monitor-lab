@@ -2,6 +2,8 @@
 
 Use the section for your deployment method first. Then complete only the conditional or scenario-specific steps that apply to the features you enabled and the demonstrations you plan to run.
 
+**The Control Center needs no separate setup after successful normal deployment.** Scripted deployment and Terraform with Stage B automatically publish the app and configure its sign-in, health access, Azure job runner/image, and selected optional agents. Portal/raw templates remain infrastructure-only; their normal workload wrapper performs the same console initialization. See [console deployment prerequisites](../workloads/webapp/LAB-OPERATIONS.md#prerequisites), including tenant registration permission and ACR Tasks availability.
+
 Set these values before running the commands in this guide:
 
 ```powershell
@@ -29,6 +31,7 @@ cd azure-monitor-lab
 The wrapper:
 
 - Publishes the .NET sample to App Service.
+- Automatically configures console operator sign-in, health access, the six-operation Azure job runner, and available optional agent integrations.
 - Applies the AKS frontend, load generator, and OpenTelemetry workloads.
 - Creates the hourly summary rule.
 - Creates the Service Group and its resource-group membership.
@@ -37,7 +40,7 @@ The wrapper:
 
 ### Conditional
 
-- **AI stage enabled:** run `./scripts/setup-ai-cloud-shell.ps1 -SubscriptionId $subscriptionId -ResourceGroup $resourceGroup`. This creates the demo agents and generates AI telemetry. The models are billable.
+- **AI stage enabled:** the workload wrapper already prepares the console's demo agents. Run `./scripts/setup-ai-cloud-shell.ps1 -SubscriptionId $subscriptionId -ResourceGroup $resourceGroup` only when generating optional scenario traffic. The models are billable.
 - **SRE Agent stage enabled:** run `./scripts/setup-sre-agent.ps1 -SubscriptionId $subscriptionId -ResourceGroup $resourceGroup`. Then complete the portal authoring steps under [SRE Agent](#sre-agent).
 - **AI or SRE Agent stage disabled:** skip its setup. The corresponding scenarios are not available until that stage is enabled and deployed.
 
@@ -51,14 +54,23 @@ Running `./scripts/deploy.ps1` is the most complete deployment path. Do not run 
 
 - Deploys the infrastructure and monitoring resources.
 - Publishes the .NET sample and configures the AKS demo workloads.
+- Provisions the console runner/image and configures operator sign-in, health permissions, and selected agent access before publishing the app.
 - Creates the summary rule and deployment release annotation.
 - Assigns the signed-in user permission to send custom logs.
 - Creates the Service Group and its resource-group membership.
 - Deploys the Health Model and verifies the SLI identity permissions and source metrics.
-- Runs `setup-ai.ps1` when `stageToggles.enableStageAI` is enabled.
 - Runs SRE Agent validation when `stageToggles.enableStageSreAgent` is enabled.
+- Runs AI setup last when `stageToggles.enableStageAI` is enabled, then starts its finite 150-conversation traffic batch in the background.
 
-Review the deployment output before continuing. If optional AI setup reported a warning, rerun it after resolving the reported prerequisite:
+The one-shot command returns after the traffic worker acknowledges startup, without waiting for all conversations. It prints **Lab setup complete. Agent traffic started in the background.** Required console agents and access are still prepared before app publication; the final AI step does not delay SRE verification.
+
+Background traffic runs in a separate Python process on the deployment machine, not in the Web App or an Azure job. The process receives a snapshot of the agent IDs and inherits the configured environment without putting credentials on its command line. Each invocation starts a new finite batch, so avoid overlapping runs unless intended. Model usage remains billable and telemetry can take a few minutes to appear.
+
+The output includes the worker PID and its log/status paths. Files are outside the repository, under `%LOCALAPPDATA%/azure-monitor-lab/ai-traffic` on Windows or `$XDG_STATE_HOME/azure-monitor-lab/ai-traffic` on Linux (default `~/.local/state`). The status records `running`, `completed`, `completed_with_errors`, or `failed`; `running` acknowledges startup, not successful model responses. Use the printed log to inspect progress and the PID to inspect or stop the process. If the process is forcibly stopped, its last status may remain `running`.
+
+Keep the deployment machine and its Azure CLI sign-in available until the batch ends. A suspended laptop, expired sign-in, Cloud Shell session termination, or CI runner shutdown can interrupt traffic; there is no automatic restart. Startup failures or a missing acknowledgment after 30 seconds produce a warning instead of claiming traffic started. Standalone `setup-ai.ps1` still runs traffic in the foreground unless `-BackgroundTraffic` is supplied; `-SkipTraffic` still prepares agents only.
+
+Required console setup failures stop deployment. A later warning about optional AI traffic does not mean agent provisioning was skipped. To generate that scenario telemetry later:
 
 ```powershell
 ./scripts/setup-ai.ps1 -ResourceGroup $resourceGroup
@@ -75,25 +87,47 @@ A staged deployment contains only the stages enabled in `lab.config.json` or `te
 - [Bicep staged deployment](DEPLOY-BICEP-STEP-BY-STEP.md)
 - [Terraform staged deployment](DEPLOY-TERRAFORM-STEP-BY-STEP.md)
 
-### Required after Stage B
+### Completion After Stage B
 
-Run the staged wrapper after the workload stage is complete:
+Terraform runs the staged wrapper automatically as part of `apply` with Stage B enabled. Do not run it again after a successful apply. Raw Bicep stage deployments remain infrastructure-only; use their normal workload completion wrapper:
 
 ```powershell
-./scripts/post-staged-deploy.ps1 -ResourceGroup $resourceGroup
+./scripts/post-staged-deploy.ps1 -SubscriptionId $subscriptionId -ResourceGroup $resourceGroup
 ```
 
-The wrapper publishes the sample application, configures the AKS workloads, and creates the summary rule and Service Group. It verifies SLI prerequisites only when the Stage E SLI identity is present, so a Stage B-only deployment completes without optional Stage E resources. It also validates SRE Agent when `stageToggles.enableStageSreAgent` is enabled in `lab.config.json`.
+The wrapper publishes the application, initializes all baseline console dependencies and selected agent access, configures AKS workloads, and creates the summary rule. Service Group setup and SLI verification run only when Stage E is selected. The wrapper reads `stageToggles.enableStageE` from the central config and defaults to false when it is absent; an explicit `-EnableStageE $true` or `-EnableStageE $false` overrides it. Terraform passes its own selection explicitly. Existing optional resources are not deleted when this setup is skipped. It also validates SRE Agent when selected in the central config.
 
 ### Conditional
 
-- **Stage AI enabled:** run `./scripts/setup-ai.ps1 -ResourceGroup $resourceGroup`. The staged wrapper does not run AI setup.
+- **Stage AI enabled:** the console bootstrap prepares the agents automatically. Run `./scripts/setup-ai.ps1 -ResourceGroup $resourceGroup` only for optional scenario traffic, or for an AI-only lab with no Stage B/Web App.
 - **Stage SRE Agent enabled:** if the staged wrapper did not validate it, run `./scripts/setup-sre-agent.ps1 -SubscriptionId $subscriptionId -ResourceGroup $resourceGroup`. Then complete [SRE Agent](#sre-agent).
 - **Stage E enabled after the wrapper ran:** run `./scripts/setup-slis.ps1 -SubscriptionId $subscriptionId -ResourceGroup $resourceGroup` to verify the newly deployed SLI identity, permissions, and source metrics.
 - **Stage E disabled:** Health Model, SLI, Sentinel, and the other optional advanced resources from that stage are unavailable. Skip their follow-up steps.
 - **Earlier stage disabled:** skip scenarios that depend on resources from that stage.
 
 Continue with [Manual scenario setup](#manual-scenario-setup).
+
+## Redeployment Checks
+
+App Service infrastructure merges its telemetry settings with the app's existing settings after site creation. Existing sign-in credentials, approved-operator IDs, and console configuration are retained; those values are not template outputs. Console bootstrap still deliberately disables health/operations while required setup runs and enables them after success. A deployment that stops during bootstrap must be completed before using those controls.
+
+Bootstrap passes the Web App's lab tags to the runner registry, environment, identity, and job and merges in resource-specific tags found before that bootstrap update. Lab-owned and component tags take precedence. This preserves custom tags present at bootstrap time; it does not recover tags already removed by an earlier infrastructure deployment or an external process.
+
+Both Web App publishing paths embed a unique publication ID in the assembly. After ZIP upload they verify `/api/console/version` returns that exact ID, rather than accepting an older app's reachable homepage. Compression, upload, version waiting, and cleanup have explicit progress messages. An unverified version stops the deployment without submitting a second upload from the verification step; inspect App Service deployment status before retrying.
+
+Before promoting deployment changes, test a fresh lab and a rerun with the same approved operators, then test A+B with Stage E off and on. Confirm new app-version verification, fresh operator sign-in, rejection of unapproved users, health/runner readiness, and expected tags. Offline tests do not prove tenant permissions, role propagation, regional capacity, or every live deployment path.
+
+Resource-group deletion removes the console registry, environment, job, and runner identity. The single-tenant sign-in registration and tenant-level Service Group are separate: verify ownership and check for other consumers before deleting either. Do not delete a shared registration or Service Group as an automatic consequence of disabling a stage.
+
+## Grafana access
+
+The lab templates create a **Grafana Admin** role assignment at the Managed Grafana instance scope. By default, it targets the identity running the ARM deployment. Interactive portal and CLI deployments therefore grant the deploying user access. Terraform uses the same compiled Stage B assignment.
+
+When a service principal deploys, set `grafanaAdminObjectId` (central config or Bicep parameter) or `grafana_admin_object_id` (Terraform variable) to the lab operator's or group's Microsoft Entra object ID. An explicit override replaces the deployer as the recipient. For a raw Stage B deployment, pass `grafanaAdminObjectId` to that template; it does not read the local config automatically. The portal wizard exposes the same optional field under Advanced.
+
+If Grafana still reports that a role is required, inspect **Managed Grafana > Access control (IAM)** and verify a Grafana role for the account used to sign in. **Monitoring Reader on the Grafana managed identity is not user access**, and Azure resource ownership alone does not grant Grafana data-plane access. Newly created role assignments may take up to an hour to propagate. The deployment must have permission to create role assignments; a failed role assignment is a deployment failure, not a propagation delay.
+
+Old deployments need the updated one-shot or Stage B template applied once with the intended operator identity. The deterministic assignment name prevents duplicate assignments on subsequent deployments for the same instance, principal, and role. Changing the selected operator does not revoke old assignments in incremental deployment mode; review IAM when operator access changes.
 
 ## Manual scenario setup
 

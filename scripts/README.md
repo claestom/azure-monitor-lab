@@ -15,14 +15,19 @@ Most scripts use the Azure CLI and require `az login`. Scripts that work with AK
 | `sync-config.ps1` | Reads `lab.config.json` and generates the gitignored deployment inputs: `.azure-target.json`, `infra/main.parameters.json`, and `terraform/stages.tfvars`. | `./scripts/sync-config.ps1` |
 | `preflight-check.ps1` | Checks regional SKU availability, quota, and Azure resource-provider availability before deployment. | `./scripts/preflight-check.ps1 -Location northeurope` |
 | `deploy.ps1` | Runs the one-shot Bicep deployment, including resource creation, post-deployment workloads, health model setup, SLI prerequisite verification, optional AI setup, and optional SRE Agent deployment and validation. The preview SLIs remain a manual portal step. | `./scripts/deploy.ps1 -ResourceGroup rg-my-lab -Location northeurope` |
-| `post-deploy.ps1` | Publishes the .NET sample to App Service and applies the AKS frontend, load generator, and OpenTelemetry workloads. Normally called by `deploy.ps1`. | `./scripts/post-deploy.ps1 -ResourceGroup <rg> -WebAppName <app> -AksName <aks> -WebAppHost <host>` |
+| `post-deploy.ps1` | Publishes the app, automatically initializes console infrastructure/sign-in/access, and applies AKS workloads. Normally called by a deployment wrapper. | `./scripts/post-deploy.ps1 -SubscriptionId <sub> -TenantId <tenant> -ResourceGroup <rg> -WebAppName <app> -AksName <aks> -WebAppHost <host>` |
 | `post-staged-deploy.ps1` | After Stage B, discovers the App Service, AKS cluster, and central LAW, then configures the workloads. SLI verification runs only when the Stage E identity exists. | `./scripts/post-staged-deploy.ps1 -ResourceGroup <rg>` |
 | `post-cloud-shell-deploy.ps1` | Cloud Shell-specific portal wrapper that pins the subscription, configures workloads, and verifies SLI prerequisites. It prints the manual portal handoff because preview SLIs are not created automatically. | `./scripts/post-cloud-shell-deploy.ps1 -SubscriptionId <sub> -ResourceGroup <rg>` |
+| [initialize-webapp-console.ps1](initialize-webapp-console.ps1) | Called automatically by deployment. Provisions/builds the Azure runner, configures operator sign-in, health and scoped access, prepares optional agents, then enables the console. | No separate command after successful deployment. |
+| [deploy-webapp.ps1](deploy-webapp.ps1) | Updates an existing app and its console dependencies/access without reapplying AKS workloads. | See [upgrade and WhatIf](../workloads/webapp/README.md#monitoring-destinations). |
+| [setup-webapp-health-access.ps1](setup-webapp-health-access.ps1) | Targeted administrative repair for read-only health access; normal deployment handles this automatically. | See [hosted health access](../workloads/webapp/README.md#hosted-access). |
 | `gen-architecture-svg.ps1` | Regenerates `docs/architecture-overview-sre.svg` from the architecture definition and local Azure icons. | `./scripts/gen-architecture-svg.ps1` |
 
 For a fresh deployment, use `deploy.ps1` rather than calling `post-deploy.ps1` directly.
 
 ## Lab lifecycle and demo control
+
+The Control Center's [Lab Operations tab](../workloads/webapp/LAB-OPERATIONS.md) exposes six scripts through the [approved job wrapper](invoke-lab-operation.ps1). Normal deployment builds and configures the Azure Container Apps Job automatically. The wrapper is not an unrestricted local executor; offline tests never call Azure.
 
 | Script | Purpose | Typical command |
 |---|---|---|
@@ -52,7 +57,7 @@ For a fresh deployment, use `deploy.ps1` rather than calling `post-deploy.ps1` d
 
 | Script | Purpose | Typical command |
 |---|---|---|
-| `setup-ai.ps1` | Creates the four Foundry demo agents and optionally simulates traffic. Use `-g <rg>` or `-ResourceGroup <rg>` to override a stale local config value. | `./scripts/setup-ai.ps1 -g <rg> -Conversations 150` |
+| `setup-ai.ps1` | Reuses or creates four matching Foundry agents and optionally simulates traffic. Console deployment calls it automatically with `-SkipTraffic` when AI exists. | `./scripts/setup-ai.ps1 -g <rg> -Conversations 150` for optional scenario traffic. |
 | `setup-ai-cloud-shell.ps1` | Cloud Shell-specific AI wrapper that pins the subscription and resolves Foundry and Application Insights through ARM without optional Azure CLI extensions. | `./scripts/setup-ai-cloud-shell.ps1 -SubscriptionId <sub> -ResourceGroup <rg>` |
 | `setup-sre-agent.ps1` | Validates the deployed SRE Agent, connectors, and identity-specific RBAC. It discovers the agent identities automatically and is read-only unless `-GrantMissingRoles` is explicitly supplied. | `./scripts/setup-sre-agent.ps1 -SubscriptionId <sub> -ResourceGroup <rg>` |
 | `setup-health-model.ps1` | Creates or removes the optional tenant-scoped Service Group and its RG relationship. | `./scripts/setup-health-model.ps1 -ResourceGroup <rg>` or add `-Teardown` |

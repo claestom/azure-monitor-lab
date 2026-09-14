@@ -257,6 +257,18 @@
         "label": "Advanced",
         "elements": [
           {
+            "name": "grafanaAdminObjectId",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Grafana administrator object ID (optional)",
+            "defaultValue": "",
+            "toolTip": "Leave empty to grant your deployment identity Grafana Admin. For automation or a different lab operator, enter the Microsoft Entra user or group object ID, not an application client ID.",
+            "constraints": {
+              "required": false,
+              "regex": "^$|^(?!00000000-0000-0000-0000-000000000000$)[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+              "validationMessage": "Enter a nonzero Microsoft Entra user or group object ID in GUID format, or leave empty."
+            }
+          },
+          {
             "name": "ownerTag",
             "type": "Microsoft.Common.TextBox",
             "label": "Owner tag",
@@ -339,6 +351,7 @@
       "enableLawReplication": "[steps('monitoring').enableLawReplication]",
       "lawReplicationLocation": "[steps('monitoring').lawReplicationLocation]",
       "ownerTag": "[steps('advanced').ownerTag]",
+      "grafanaAdminObjectId": "[steps('advanced').grafanaAdminObjectId]",
       "appServiceRepoUrl": "[steps('advanced').appServiceRepoUrl]",
       "siemWebhookUrl": "[steps('advanced').siemWebhookUrl]",
       "enableAi": "[steps('advanced').enableAi]",

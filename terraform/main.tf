@@ -47,16 +47,17 @@ resource "azapi_resource" "stage_b" {
       mode     = "Incremental"
       template = sensitive(jsondecode(file("${path.module}/../infra/stages/10-workloads.json")))
       parameters = {
-        location        = { value = var.location }
-        namePrefix      = { value = var.name_prefix }
-        vmAdminUsername = { value = var.vm_admin_username }
-        vmAdminPassword = { value = var.vm_admin_password }
-        deployWindowsVm = { value = var.deploy_windows_vm }
-        deployLinuxVm   = { value = var.deploy_linux_vm }
-        vmSize          = { value = var.vm_size }
-        aksNodeVmSize   = { value = var.aks_node_vm_size }
-        aksNodeCount    = { value = var.aks_node_count }
-        ownerTag        = { value = var.owner_tag }
+        location             = { value = var.location }
+        namePrefix           = { value = var.name_prefix }
+        vmAdminUsername      = { value = var.vm_admin_username }
+        vmAdminPassword      = { value = var.vm_admin_password }
+        deployWindowsVm      = { value = var.deploy_windows_vm }
+        deployLinuxVm        = { value = var.deploy_linux_vm }
+        vmSize               = { value = var.vm_size }
+        aksNodeVmSize        = { value = var.aks_node_vm_size }
+        aksNodeCount         = { value = var.aks_node_count }
+        grafanaAdminObjectId = { value = var.grafana_admin_object_id }
+        ownerTag             = { value = var.owner_tag }
       }
     }
   }
