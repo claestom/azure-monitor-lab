@@ -32,26 +32,14 @@ public sealed class SreMcpClient(IConfiguration configuration) : ISreMcpClient, 
     };
     public static readonly IReadOnlyList<string> AllowedTools = ReadTools.Concat(WriteTools).ToArray();
     private readonly SemaphoreSlim connectionLock = new(1, 1);
+    private readonly SreMcpRuntime runtime = new(Path.Combine(AppContext.BaseDirectory, "mcp"));
     private McpClient? client;
-    private string? runtimeDirectory;
 
-    private string PrepareExecutable(string executable)
+    private Task<string> PrepareExecutableAsync(string executable, CancellationToken cancellationToken)
     {
-        if (executable != "mcp/azmcp") return executable;
+        if (executable != "mcp/azmcp") return Task.FromResult(executable);
         if (!OperatingSystem.IsLinux()) throw new InvalidOperationException("The bundled runtime requires Linux x64.");
-        var source = Path.Combine(AppContext.BaseDirectory, "mcp");
-        if (!File.Exists(Path.Combine(source, "azmcp"))) throw new InvalidOperationException("The bundled MCP runtime is missing.");
-        runtimeDirectory ??= Directory.CreateTempSubdirectory("amlab-sre-mcp-").FullName;
-        File.SetUnixFileMode(runtimeDirectory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
-        {
-            var target = Path.Combine(runtimeDirectory, Path.GetRelativePath(source, file));
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            File.Copy(file, target, true);
-        }
-        var command = Path.Combine(runtimeDirectory, "azmcp");
-        File.SetUnixFileMode(command, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-        return command;
+        return runtime.PrepareAsync(cancellationToken);
     }
 
     private async Task<McpClient> ConnectAsync(CancellationToken cancellationToken)
@@ -67,7 +55,7 @@ public sealed class SreMcpClient(IConfiguration configuration) : ISreMcpClient, 
             var hosted = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WEBSITE_INSTANCE_ID"));
             var transport = new StdioClientTransport(new StdioClientTransportOptions
             {
-                Command = PrepareExecutable(executable), Arguments = arguments,
+                Command = await PrepareExecutableAsync(executable, cancellationToken), Arguments = arguments,
                 EnvironmentVariables = new Dictionary<string, string?>
                 {
                     ["AZURE_TOKEN_CREDENTIALS"] = hosted ? "ManagedIdentityCredential" : "AzureCliCredential",
@@ -112,9 +100,15 @@ public sealed class SreMcpClient(IConfiguration configuration) : ISreMcpClient, 
 
     public async ValueTask DisposeAsync()
     {
-        if (client is not null) await client.DisposeAsync();
-        if (runtimeDirectory is not null) Directory.Delete(runtimeDirectory, true);
-        connectionLock.Dispose();
+        try
+        {
+            if (client is not null) await client.DisposeAsync();
+        }
+        finally
+        {
+            runtime.Dispose();
+            connectionLock.Dispose();
+        }
     }
 }
 

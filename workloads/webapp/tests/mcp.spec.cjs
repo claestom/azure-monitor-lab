@@ -1,11 +1,12 @@
 const { test, expect } = require('@playwright/test');
 
+const availability = { available: true, model: 'test-model', message: 'MCP tools connected', tools: [{ name: 'sreagent_agents_list', description: 'List SRE resources', readOnly: true }, { name: 'sreagent_scheduledtasks_pause', description: 'Pause a task', readOnly: false }] };
 const response = { sessionId: 'owned-chat', state: 'ready', messages: [{ role: 'assistant', text: 'There is one configured SRE agent.' }], operations: [{ tool: 'sreagent_agents_list', arguments: { subscription: 'test-sub', 'resource-group': 'test-rg' }, result: { name: 'test-agent' }, status: 'succeeded' }], proposal: null, model: 'test-model', inputTokens: 120, outputTokens: 30, error: null, traceId: 'test-trace' };
 function pending() {
   return { ...response, state: 'approval_required', operations: [], proposal: { id: 'approval-once', tool: 'sreagent_scheduledtasks_pause', description: 'Pause the nightly task.', arguments: { subscription: 'test-sub', agent: 'test-agent', 'task-id': 'nightly' }, expiresAt: new Date(Date.now() + 300000).toISOString() } };
 }
 async function ready(page) {
-  await page.route('**/api/sre/availability', route => route.fulfill({ json: { available: true, model: 'test-model', message: 'MCP tools connected', tools: [{ name: 'sreagent_agents_list', description: 'List SRE resources', readOnly: true }, { name: 'sreagent_scheduledtasks_pause', description: 'Pause a task', readOnly: false }] } }));
+  await page.route('**/api/sre/availability', route => route.fulfill({ json: availability }));
   await page.goto('/');
   await page.getByRole('tab', { name: 'SRE MCP Assistant', exact: true }).click();
   await expect(page.locator('#sre-availability')).toHaveText('MCP tools connected');
@@ -15,6 +16,93 @@ async function ask(page, prompt = 'List my SRE agents') {
   await page.getByLabel('I approve model usage and read-only MCP calls for this question.').check();
   await page.getByRole('button', { name: 'Send', exact: true }).click();
 }
+
+test('MCP connection allows slow startup while keeping tool actions disabled', async ({ page }) => {
+  await page.clock.install();
+  let release;
+  const blocked = new Promise(resolve => { release = resolve; });
+  const requests = [];
+  page.on('request', request => { if (request.url().includes('/api/sre/')) requests.push(request.url()); });
+  await page.route('**/api/sre/availability', async route => {
+    expect(new URL(route.request().headers().referer).origin).toBe(new URL(route.request().url()).origin);
+    await blocked;
+    await route.fulfill({ json: availability });
+  });
+  await page.goto('/');
+  const requested = page.waitForRequest('**/api/sre/availability');
+  await page.getByRole('tab', { name: 'SRE MCP Assistant', exact: true }).click();
+  await requested;
+  await page.clock.fastForward(30000);
+  await expect(page.locator('#sre-connection')).toHaveText('Checking...');
+  await expect(page.locator('#sre-connect')).toBeDisabled();
+  await expect(page.locator('#sre-send')).toBeDisabled();
+  release();
+  await expect(page.locator('#sre-connection')).toHaveText('Runtime connected');
+  expect(requests).toHaveLength(1);
+  expect(requests[0]).toContain('/api/sre/availability');
+});
+
+test('MCP connection timeout is bounded and retry only repeats discovery', async ({ page }) => {
+  await page.clock.install();
+  let release;
+  const blocked = new Promise(resolve => { release = resolve; });
+  let checks = 0;
+  const writes = [];
+  page.on('request', request => { if (request.method() === 'POST' && request.url().includes('/api/sre/')) writes.push(request.url()); });
+  await page.route('**/api/sre/availability', async route => {
+    checks++;
+    if (checks === 1) {
+      await blocked;
+      await route.abort().catch(() => {});
+    } else await route.fulfill({ json: availability });
+  });
+  await page.goto('/');
+  const requested = page.waitForRequest('**/api/sre/availability');
+  await page.getByRole('tab', { name: 'SRE MCP Assistant', exact: true }).click();
+  await requested;
+  await page.clock.fastForward(104000);
+  await expect(page.locator('#sre-connection')).toHaveText('Checking...');
+  await page.clock.fastForward(1000);
+  await expect(page.locator('#sre-availability')).toContainText('MCP startup timed out');
+  await expect(page.locator('#sre-connect')).toBeEnabled();
+  await expect(page.locator('#sre-send')).toBeDisabled();
+  await expect(page.locator('#sre-tool-count')).toHaveText('0 MCP tools');
+  expect(checks).toBe(1);
+  release();
+  await page.locator('#sre-connect').click();
+  await expect(page.locator('#sre-connection')).toHaveText('Runtime connected');
+  expect(checks).toBe(2);
+  expect(writes).toEqual([]);
+});
+
+test('MCP connection displays the backend startup timeout without exposing an internal error', async ({ page }) => {
+  await page.route('**/api/sre/availability', route => route.fulfill({ status: 504, json: { available: false, state: 'startup_timeout', message: 'MCP startup timed out. Retry the connection; no Azure operation was executed.', tools: [] } }));
+  await page.goto('/');
+  await page.getByRole('tab', { name: 'SRE MCP Assistant', exact: true }).click();
+  await expect(page.locator('#sre-availability')).toHaveText('MCP startup timed out. Retry the connection; no Azure operation was executed.');
+  await expect(page.locator('#sre-connect')).toBeEnabled();
+  await expect(page.locator('#sre-send')).toBeDisabled();
+});
+
+test('MCP connection handles an empty sign-in response', async ({ page }) => {
+  await page.route('**/api/sre/availability', route => route.fulfill({ status: 401, body: '' }));
+  await page.goto('/');
+  await page.getByRole('tab', { name: 'SRE MCP Assistant', exact: true }).click();
+  await expect(page.locator('#sre-connection')).toHaveText('Sign-in required');
+  await expect(page.locator('#sre-sign-in')).toBeVisible();
+  await expect(page.locator('#sre-availability')).toContainText('Sign in with an approved lab operator');
+  await expect(page.locator('#sre-send')).toBeDisabled();
+});
+
+test('MCP connection handles a non-JSON gateway response without displaying its body', async ({ page }) => {
+  await page.route('**/api/sre/availability', route => route.fulfill({ status: 502, contentType: 'text/html', body: '<h1>private-upstream-detail</h1>' }));
+  await page.goto('/');
+  await page.getByRole('tab', { name: 'SRE MCP Assistant', exact: true }).click();
+  await expect(page.locator('#sre-availability')).toContainText('HTTP 502');
+  await expect(page.locator('#sre-availability')).not.toContainText('private-upstream-detail');
+  await expect(page.locator('#sre-connect')).toBeEnabled();
+  await expect(page.locator('#sre-send')).toBeDisabled();
+});
 
 test('MCP chat sends natural language without evidence or SRE threads and preserves follow-ups', async ({ page }) => {
   const submitted = [];

@@ -4,6 +4,7 @@ using Microsoft.ApplicationInsights.Extensibility;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using OpenAI.Chat;
 using Xunit;
 
@@ -17,12 +18,76 @@ public sealed class SreAssistantTests
         ["LabConsole:Sre:TenantId"] = "22222222-2222-2222-2222-222222222222", ["LabConsole:ResourceGroup"] = "test-rg",
         ["LabConsole:Sre:AgentName"] = "test-agent", ["LabConsole:Sre:McpExecutable"] = "test-only"
     }).Build();
-    private static SreAssistant Create(FakeMcp mcp, FakeModel model, bool enabled = true) => new(Settings(enabled), mcp, model,
-        NullLogger<SreAssistant>.Instance, new TelemetryClient(new TelemetryConfiguration { DisableTelemetry = true }));
+    private static SreAssistant Create(FakeMcp mcp, FakeModel model, bool enabled = true, TimeProvider? clock = null) => new(Settings(enabled), mcp, model,
+        NullLogger<SreAssistant>.Instance, new TelemetryClient(new TelemetryConfiguration { DisableTelemetry = true }), clock);
     private static SreAssistantRequest Question(string? sessionId = null) => new(sessionId, "List the agents", true);
     private static SreAssistantReply Reply(IResult result) => Assert.IsType<SreAssistantReply>(Assert.IsAssignableFrom<IValueHttpResult>(result).Value);
+    private static JsonElement ResultJson(IResult result) => JsonSerializer.SerializeToElement(Assert.IsAssignableFrom<IValueHttpResult>(result).Value);
     private static int? Status(IResult result) => Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode;
     private static SreModelStep Tool(string name, string arguments = "{}") => new("", ChatToolCall.CreateFunctionToolCall(Guid.NewGuid().ToString("N"), name, BinaryData.FromString(arguments)), 100, 20);
+
+    [Fact]
+    public async Task AvailabilityAllowsSlowStartupWithoutCallingModelOrTools()
+    {
+        var clock = new FakeTimeProvider();
+        var mcp = new FakeMcp { BlockCatalog = true };
+        var model = new FakeModel();
+        var service = Create(mcp, model, clock: clock);
+        var running = service.AvailabilityAsync(default);
+        try
+        {
+            clock.Advance(TimeSpan.FromSeconds(30));
+            Assert.False(mcp.CatalogCancellation.IsCancellationRequested);
+            Assert.False(running.IsCompleted);
+        }
+        finally { mcp.CatalogReady.TrySetResult(); }
+        var result = ResultJson(await running);
+        Assert.True(result.GetProperty("available").GetBoolean());
+        Assert.True(ResultJson(await service.AvailabilityAsync(default)).GetProperty("available").GetBoolean());
+        Assert.Equal(1, mcp.CatalogCalls);
+        Assert.Empty(model.Tools);
+        Assert.Empty(mcp.Calls);
+    }
+
+    [Fact]
+    public async Task AvailabilityTimeoutIsBoundedAndAllowsAnotherConnectionCheck()
+    {
+        var clock = new FakeTimeProvider();
+        var mcp = new FakeMcp { BlockCatalog = true };
+        var model = new FakeModel();
+        var service = Create(mcp, model, clock: clock);
+        var running = service.AvailabilityAsync(default);
+        clock.Advance(TimeSpan.FromSeconds(89));
+        Assert.False(mcp.CatalogCancellation.IsCancellationRequested);
+        clock.Advance(TimeSpan.FromSeconds(1));
+        var result = await running.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(504, Status(result));
+        Assert.Equal("startup_timeout", ResultJson(result).GetProperty("state").GetString());
+        Assert.False(ResultJson(result).GetProperty("available").GetBoolean());
+        mcp.BlockCatalog = false;
+        Assert.True(ResultJson(await service.AvailabilityAsync(default)).GetProperty("available").GetBoolean());
+        Assert.Equal(2, mcp.CatalogCalls);
+        Assert.Empty(model.Tools);
+        Assert.Empty(mcp.Calls);
+    }
+
+    [Fact]
+    public async Task AvailabilityCallerCancellationReleasesLockWithoutExecutingTools()
+    {
+        var mcp = new FakeMcp { BlockCatalog = true };
+        var model = new FakeModel();
+        var service = Create(mcp, model, clock: new FakeTimeProvider());
+        using var cancellation = new CancellationTokenSource();
+        var running = service.AvailabilityAsync(cancellation.Token);
+        Assert.False(ResultJson(await service.AvailabilityAsync(default)).GetProperty("available").GetBoolean());
+        Assert.Equal(1, mcp.CatalogCalls);
+        cancellation.Cancel();
+        Assert.False(ResultJson(await running.WaitAsync(TimeSpan.FromSeconds(5))).GetProperty("available").GetBoolean());
+        mcp.BlockCatalog = false;
+        Assert.True(ResultJson(await service.AvailabilityAsync(default)).GetProperty("available").GetBoolean());
+        Assert.Empty(model.Tools);
+        Assert.Empty(mcp.Calls);
+    }
 
     [Fact]
     public async Task QuestionUsesDirectScopedManagementToolAndNeverCreatesThread()
@@ -182,13 +247,23 @@ public sealed class SreAssistantTests
     {
         public bool Fail { get; set; }
         public bool Block { get; set; }
+        public bool BlockCatalog { get; set; }
+        public int CatalogCalls { get; private set; }
+        public CancellationToken CatalogCancellation { get; private set; }
+        public TaskCompletionSource CatalogReady { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public List<(string Tool, Dictionary<string, JsonElement> Arguments)> Calls { get; } = [];
         public Task<IReadOnlyList<string>> ToolsAsync(CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<string>>(SreMcpClient.AllowedTools);
-        public Task<IReadOnlyList<SreTool>> CatalogAsync(CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<SreTool>>([
-            new("sreagent_agents_list", "List SRE resources", JsonDocument.Parse("""{"type":"object","properties":{"subscription":{"type":"string"},"tenant":{"type":"string"},"resource-group":{"type":"string"}}} """).RootElement.Clone(), true),
-            new("sreagent_scheduledtasks_pause", "Pause a scheduled task", JsonDocument.Parse("""{"type":"object","properties":{"subscription":{"type":"string"},"tenant":{"type":"string"},"resource-group":{"type":"string"},"agent":{"type":"string"},"task-id":{"type":"string"}},"required":["task-id","agent"]} """).RootElement.Clone(), false)
-        ]);
+        public async Task<IReadOnlyList<SreTool>> CatalogAsync(CancellationToken cancellationToken)
+        {
+            CatalogCalls++;
+            CatalogCancellation = cancellationToken;
+            if (BlockCatalog) await CatalogReady.Task.WaitAsync(cancellationToken);
+            return [
+                new("sreagent_agents_list", "List SRE resources", JsonDocument.Parse("""{"type":"object","properties":{"subscription":{"type":"string"},"tenant":{"type":"string"},"resource-group":{"type":"string"}}} """).RootElement.Clone(), true),
+                new("sreagent_scheduledtasks_pause", "Pause a scheduled task", JsonDocument.Parse("""{"type":"object","properties":{"subscription":{"type":"string"},"tenant":{"type":"string"},"resource-group":{"type":"string"},"agent":{"type":"string"},"task-id":{"type":"string"}},"required":["task-id","agent"]} """).RootElement.Clone(), false)
+            ];
+        }
         public async Task<JsonElement> CallAsync(string tool, IReadOnlyDictionary<string, object?> arguments, CancellationToken cancellationToken)
         {
             Calls.Add((tool, arguments.ToDictionary(pair => pair.Key, pair => JsonSerializer.SerializeToElement(pair.Value))));

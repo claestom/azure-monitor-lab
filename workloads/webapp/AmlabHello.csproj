@@ -7,6 +7,9 @@
     <AssemblyName>AmlabHello</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="AmlabHello.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Azure.AI.Agents.Persistent" Version="1.1.0" />
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
     <PackageReference Include="Azure.Monitor.Query.Logs" Version="1.0.0" />

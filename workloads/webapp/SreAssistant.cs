@@ -14,7 +14,7 @@ public sealed record SreAssistantReply(string SessionId, string State, IReadOnly
     IReadOnlyList<SreOperation> Operations, SreProposal? Proposal, string Model, int? InputTokens, int? OutputTokens, string? Error, string? TraceId);
 
 public sealed class SreAssistant(IConfiguration configuration, ISreMcpClient mcp, ISreModel model,
-    ILogger<SreAssistant> logger, TelemetryClient telemetry)
+    ILogger<SreAssistant> logger, TelemetryClient telemetry, TimeProvider? clock = null)
 {
     private sealed class Session(string owner, string systemPrompt)
     {
@@ -32,6 +32,7 @@ public sealed class SreAssistant(IConfiguration configuration, ISreMcpClient mcp
     }
     private static readonly HashSet<string> HiddenParameters = new(StringComparer.Ordinal)
         { "subscription", "tenant", "resource-group", "agent", "confirm" };
+    private static readonly TimeSpan DiscoveryTimeout = TimeSpan.FromSeconds(90);
     private readonly Dictionary<string, Session> sessions = new();
     private readonly SemaphoreSlim operationLock = new(1, 1);
     private IReadOnlyList<SreTool>? catalog;
@@ -70,14 +71,20 @@ public sealed class SreAssistant(IConfiguration configuration, ISreMcpClient mcp
     {
         if (!Configured) return Results.Json(new { available = false, message = "MCP assistant is not configured. Enable SRE access and configure its host model.", tools = Array.Empty<object>() });
         if (!await operationLock.WaitAsync(0, cancellationToken)) return Results.Json(new { available = false, message = "An MCP operation is active. Check again after it completes.", tools = Array.Empty<object>() });
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(20));
+        using var startupTimeout = new CancellationTokenSource(DiscoveryTimeout, clock ?? TimeProvider.System);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, startupTimeout.Token);
         try
         {
             var tools = await CatalogAsync(timeout.Token);
             return Results.Json(new { available = tools.Count > 0, model = model.Deployment,
                 message = "MCP tools connected. Azure and model access are checked on use.",
                 tools = tools.Select(tool => new { name = tool.Name, description = tool.Description, readOnly = SreMcpClient.ReadTools.Contains(tool.Name) }) });
+        }
+        catch (OperationCanceledException) when (startupTimeout.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning("MCP discovery timed out after {TimeoutSeconds} seconds", DiscoveryTimeout.TotalSeconds);
+            return Results.Json(new { available = false, state = "startup_timeout",
+                message = "MCP startup timed out. Retry the connection; no Azure operation was executed.", tools = Array.Empty<object>() }, statusCode: 504);
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {

@@ -29,18 +29,27 @@ export function initializeSreAssistant() {
     if ((checked && !force) || checking || active) return;
     checked = true;
     checking = true;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 105000);
+    const timeoutMessage = 'MCP startup timed out. Retry the connection; no Azure operation was executed.';
+    let failureMessage = 'MCP connection check failed. Check your connection and retry.';
     controls();
     byId('sre-availability').textContent = 'Connecting to SRE MCP...';
     byId('sre-connection').textContent = 'Checking...';
     try {
-      const response = await fetch('/api/sre/availability', { cache: 'no-store', signal: AbortSignal.timeout(25000) });
+      const response = await fetch('/api/sre/availability', { cache: 'no-store', referrerPolicy: 'same-origin', signal: controller.signal });
       byId('sre-sign-in').hidden = response.status !== 401;
-      const data = await response.json();
-      available = response.ok && data.available === true;
+      failureMessage = response.status === 504 ? timeoutMessage : `MCP connection check failed (HTTP ${response.status}). Retry the connection.`;
+      const body = await response.json().catch(() => null);
+      const data = body && typeof body === 'object' && !Array.isArray(body) ? body : null;
+      if (controller.signal.aborted || (!data && response.status !== 401)) throw new Error('MCP availability response was not readable.');
+      available = response.ok && data?.available === true;
       byId('sre-connection').textContent = response.status === 401 ? 'Sign-in required' : available ? 'Runtime connected' : 'Unavailable';
-      byId('sre-availability').textContent = data.message || 'MCP connection unavailable';
-      const tools = Array.isArray(data.tools) ? data.tools : [];
-      byId('sre-tool-count').textContent = `${tools.length} MCP tools${data.model ? ` / ${data.model}` : ''}`;
+      byId('sre-availability').textContent = typeof data?.message === 'string' ? data.message
+        : response.status === 401 ? 'Sign in with an approved lab operator account to connect to MCP.'
+        : available ? 'MCP tools connected.' : failureMessage;
+      const tools = available && Array.isArray(data?.tools) ? data.tools : [];
+      byId('sre-tool-count').textContent = `${tools.length} MCP tools${typeof data?.model === 'string' ? ` / ${data.model}` : ''}`;
       byId('sre-tools').replaceChildren(...tools.map(tool => {
         const item = element('li', `${tool.name} (${tool.readOnly ? 'Read' : 'Approval required'})`);
         item.title = tool.description;
@@ -49,8 +58,10 @@ export function initializeSreAssistant() {
     } catch {
       available = false;
       byId('sre-connection').textContent = 'Unavailable';
-      byId('sre-availability').textContent = 'MCP connection unavailable. Check the backend configuration and retry.';
-    } finally { checking = false; controls(); }
+      byId('sre-availability').textContent = controller.signal.aborted ? timeoutMessage : failureMessage;
+      byId('sre-tool-count').textContent = '0 MCP tools';
+      byId('sre-tools').replaceChildren();
+    } finally { clearTimeout(timeout); checking = false; controls(); }
   }
   function render(data) {
     sessionId = data.sessionId;
@@ -97,7 +108,7 @@ export function initializeSreAssistant() {
     controls();
     try {
       const response = await fetch(refresh ? `/api/sre/chats/${encodeURIComponent(sessionId)}` : resolving ? '/api/sre/approval' : '/api/sre/messages', {
-        method: refresh ? 'GET' : 'POST', cache: 'no-store', signal: controller.signal,
+        method: refresh ? 'GET' : 'POST', cache: 'no-store', referrerPolicy: 'same-origin', signal: controller.signal,
         headers: refresh ? {} : { 'Content-Type': 'application/json', 'X-Amlab-Agent-Request': 'true' },
         body: refresh ? undefined : JSON.stringify(payload)
       });

@@ -82,7 +82,9 @@ The installer requires PowerShell 7, npm, and tar on the packaging machine. It p
 
 For manual packaging, first publish the app, then run the installer with `-Platform linux-x64 -Destination '<publish-directory>/mcp'`, and generate deployment configuration into that publish directory. Set the executable to `mcp/azmcp`. Do not enable chat until authentication and scoped permissions are ready. Do not check native binaries into git.
 
-On Linux, the app copies the bundled runtime into a private temporary directory and sets executable permissions. This accommodates ZIP permission loss and read-only deployment mounts. Temporary files are removed on normal shutdown; an abrupt process termination may leave them for host cleanup. Linux execution must be validated on the target host before enabling chat.
+On Linux, the app copies the bundled runtime asynchronously into a private temporary directory and sets executable permissions. This accommodates ZIP permission loss and read-only deployment mounts. A completed copy is reused for the lifetime of the MCP client, including retries after connection failures; cancelled or failed copies are removed before retrying. Temporary files are removed on normal shutdown; an abrupt process termination may leave them for host cleanup. Linux execution must be validated on the target host before enabling chat.
+
+The connection check allows up to 90 seconds for runtime preparation and MCP discovery. The browser allows 105 seconds so it can receive the backend's timeout response. A startup timeout leaves questions disabled and reports a retryable connection error; retrying discovery never invokes a model or executes an Azure operation. Runtime startup and the first read-only discovery still need verification on the target App Service after publication.
 
 `dotnet publish` excludes local `lab-console.json`, avoiding accidental publication of enabled local settings. The post-deployment helper generates fresh disabled-by-default configuration after publishing. A plain publish without that helper requires explicit configuration through environment settings.
 
@@ -108,6 +110,6 @@ npm test
 ./tests/webapp-access.Tests.ps1
 ```
 
-Playwright forces both integrations off for its own server and mocks successful chat responses. Unit tests use fake model and MCP adapters for scope validation, ownership, one-time approval, refusal of investigation tools, bounded reads, cancellation, and unknown write outcomes. Model SDK tests use a fake HTTP transport to check token limits, tool serialization, and disabled retries. These tests create no paid traffic or Azure mutations. Native runtime discovery is a separate `GET /api/sre/availability` check; live model inference, MCP operations, and hosted permissions need validation in the intended environment.
+Playwright forces both integrations off for its own server and mocks successful chat responses, slow startup, connection timeouts, and sign-in/gateway failures. Unit tests use fake model and MCP adapters for scope validation, ownership, one-time approval, refusal of investigation tools, bounded reads, cancellation, and unknown write outcomes. Startup deadlines use a virtual clock; filesystem tests verify runtime reuse and cleanup of partial copies. Model SDK tests use a fake HTTP transport to check token limits, tool serialization, and disabled retries. These tests create no paid traffic or Azure mutations. Native runtime discovery is a separate `GET /api/sre/availability` check; live model inference, MCP operations, and hosted permissions need validation in the intended environment.
 
 See the [Azure SRE Agent MCP documentation](https://learn.microsoft.com/en-us/azure/sre-agent/mcp-server) for current preview behavior and role requirements.
