@@ -145,25 +145,9 @@ Step-by-step guides:
 
 > **Next:** Follow the [post-deployment guide for the staged option](docs/POST-DEPLOYMENT.md#staged-deployment) after completing the stages you selected.
 
-### Grafana Access
-
-Lab deployment assigns **Grafana Admin** to the deploying identity at the Grafana instance scope. This permits dashboard and alert setup, not subscription-wide administration. It is separate from the **Monitoring Reader** assignment that lets Grafana's own managed identity query telemetry. The assignment is included in one-shot, portal, Stage B, and Terraform deployments.
-
-For a pipeline deployment or a different operator, set `grafanaAdminObjectId` in the [central configuration](lab.config.json.example), use the optional **Grafana administrator object ID** portal field, or set Terraform's `grafana_admin_object_id`. Use a Microsoft Entra user or group **object ID** in the deployment tenant, not an application/client ID. Empty defaults to the deployment identity; automation otherwise grants its service principal access rather than the human operator.
-
-The deploying identity needs `Microsoft.Authorization/roleAssignments/write` at the lab scope, such as Owner or Contributor plus Role Based Access Control Administrator. After deployment, allow up to an hour for Grafana role propagation and sign in with the assigned account. Updating the repository alone does not repair an already-deployed instance; redeploy its lab/Stage B template with the correct operator ID. For view-only participants, grant Grafana Viewer separately. See [Grafana post-deployment checks](docs/POST-DEPLOYMENT.md#grafana-access).
-
 ### Lab Control Center
 
-Normal deployment publishes the [Lab Control Center](docs/LAB-CONTROL-CENTER.md) from the checked-out branch and automatically configures sign-in, health access, and its independent Azure job runner. Open the lab's **App Service**, select **Browse**, and sign in as an approved operator. The tabs are **Infra Health**, **Traffic & Faults**, **Lab Operations**, **SRE MCP Assistant**, and **Foundry Playground**. The [six script operations](workloads/webapp/LAB-OPERATIONS.md) need no GitHub credentials or manual enablement. Foundry requires Stage AI; the SRE assistant requires both AI and SRE stages. No separate frontend build is needed for checked-in assets. See the [developer reference](workloads/webapp/README.md).
-
-Scripted deployment and Terraform with Stage B complete this automatically. Portal/raw templates still require their normal workload-publication wrapper, which includes the same console initialization. Noninteractive deployment supplies approved user object IDs through `-ConsoleOperatorObjectIds` or Terraform's `console_operator_object_ids`; an interactive deployment defaults to its signed-in user.
-
-Scripted, staged, and portal/Cloud Shell paths use the same packaging helper. If an SRE Agent is present, the Linux MCP runtime is included automatically. The portal template alone provisions infrastructure; complete its Cloud Shell post-deployment step to publish this application.
-
-Monitoring links and resource context are discovered during publishing. Hosted SRE/Foundry execution remains opt-in: configure App Service Authentication, scoped managed-identity access, and the model settings described in [SRE MCP setup](workloads/webapp/SRE-MCP.md) and [Foundry setup](workloads/webapp/README.md#enable-foundry-access). The console's health, latency, error, checkout, and traffic controls are available without enabling model usage.
-
-For an existing lab, [deploy-webapp.ps1](scripts/deploy-webapp.ps1) updates only the App Service. The optional [hosted access setup](scripts/setup-webapp-agent-access.ps1) configures operator-only sign-in and scoped agent permissions with an explicit opt-in. Both support `-WhatIf` and require explicit subscription and tenant parameters.
+The [Lab Control Center](docs/LAB-CONTROL-CENTER.md) runs in the lab's existing **Web App**. Use it to control the lab from your browser, including starting, breaking, and restoring it.
 
 ## Cost and lifecycle
 
