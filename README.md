@@ -149,6 +149,14 @@ Step-by-step guides:
 
 The [Lab Control Center](docs/LAB-CONTROL-CENTER.md) runs in the lab's existing **Web App**. Use it to control the lab from your browser, including starting, breaking, and restoring it.
 
+Retrieve its URL in PowerShell or Azure Cloud Shell (PowerShell):
+
+```powershell
+$subscriptionId = Read-Host 'Subscription ID'
+$resourceGroup = Read-Host 'Resource group name'
+az webapp list --subscription $subscriptionId --resource-group $resourceGroup --query "[].defaultHostName" --output tsv | ForEach-Object { "https://$_" }
+```
+
 ## Cost and lifecycle
 
 The full lab is roughly **EUR 6-11 / USD 7-12 per day** when left running 24/7, based on the indicative list-price estimate in [REFERENCE.md](docs/REFERENCE.md#cost-notes-north-europe-list-pricing-may-2026). The USD range uses a planning rate of EUR 1 = USD 1.10 and is rounded to whole dollars. The optional AI stage adds model usage when `setup-ai.ps1` generates traffic. Do not leave the environment deployed when it is not needed: stop or deallocate compute between sessions, or run `./scripts/teardown.ps1 -Yes` and redeploy the stages for the next demo. Actual costs vary by region, currency conversion, usage, retention, and Azure pricing.
