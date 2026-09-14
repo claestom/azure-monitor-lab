@@ -6,9 +6,9 @@ $null = New-Item -ItemType Directory -Path $directory -Force
 $fixture = @{
   Subscription = [guid]::NewGuid(); Tenant = [guid]::NewGuid(); Operator = [guid]::NewGuid()
   Events = [Collections.Generic.List[string]]::new(); FailSetup = $false; BadTenant = $false; Uploads = 0
-  OperatorRoles = 0
+  OperatorRoles = 0; DeploymentWrites = 0
 }
-foreach ($name in @('deploy-webapp.ps1', 'post-staged-deploy.ps1', 'post-cloud-shell-deploy.ps1')) {
+foreach ($name in @('deploy.ps1', 'deploy-webapp.ps1', 'post-staged-deploy.ps1', 'post-cloud-shell-deploy.ps1')) {
   Copy-Item -LiteralPath (Join-Path $source "scripts/$name") -Destination $directory
 }
 @{ expectedSubscriptionId = [guid]::NewGuid(); expectedTenantId = [guid]::NewGuid() } | ConvertTo-Json | Set-Content (Join-Path $root '.azure-target.json')
@@ -25,7 +25,7 @@ $fixture.Events.Add('initialize')
 if ($fixture.FailSetup) { throw 'Bootstrap failed.' }
 '@ | Set-Content (Join-Path $directory 'initialize-webapp-console.ps1')
 @'
-param($SubscriptionId, $TenantId, $ResourceGroup, $WebAppName, $AksName, $WebAppHost, $CentralLawName, $ConsoleOperatorObjectIds, $AppInsightsConnectionString)
+param([guid]$SubscriptionId, [guid]$TenantId, $ResourceGroup, $WebAppName, $AksName, $WebAppHost, $CentralLawName, $ConsoleOperatorObjectIds, $AppInsightsConnectionString)
 if ($SubscriptionId -ne $fixture.Subscription -or $TenantId -ne $fixture.Tenant -or $ConsoleOperatorObjectIds[0] -ne $fixture.Operator) { throw 'Deployment wrapper lost the verified target or operator inputs.' }
 $fixture.Events.Add('post-deploy')
 '@ | Set-Content (Join-Path $directory 'post-deploy.ps1')
@@ -56,6 +56,28 @@ function az {
       return
     }
     'account show' { return @{ id = $fixture.Subscription; tenantId = $(if ($fixture.BadTenant) { [guid]::NewGuid() } else { $fixture.Tenant }) } | ConvertTo-Json }
+    'group create' { $fixture.DeploymentWrites++; return '{}' }
+    'provider show' { return 'Registered' }
+    'deployment group' {
+      if ($args[2] -eq 'create') { $fixture.DeploymentWrites++; return }
+      if ($args[2] -ne 'show') { throw 'Unexpected deployment command.' }
+      return @{
+        webAppName = @{ value = 'app-amlab-test' }; webAppDefaultHost = @{ value = 'app-amlab-test.azurewebsites.net' }
+        aksName = @{ value = 'aks-amlab' }; centralLawName = @{ value = 'law-amlab-central-test' }
+        grafanaEndpoint = @{ value = 'https://example.com' }; workbookId = @{ value = 'test-workbook' }
+        linuxVmNameOut = @{ value = 'vm-amlab-lin' }; windowsVmNameOut = @{ value = 'vm-amlab-win' }
+      } | ConvertTo-Json -Depth 3
+    }
+    'monitor log-analytics' {
+      if (($args[2..3] -join ' ') -ne 'workspace show') { throw 'Unexpected workspace command.' }
+      return "/subscriptions/$($fixture.Subscription)/resourceGroups/test-rg/providers/Microsoft.OperationalInsights/workspaces/law-amlab-central-test"
+    }
+    'monitor diagnostic-settings' {
+      if (($args[2..3] -join ' ') -eq 'subscription list') { return '' }
+      if (($args[2..3] -join ' ') -ne 'subscription create') { throw 'Unexpected Activity Log command.' }
+      $fixture.DeploymentWrites++
+      return
+    }
     'webapp show' { return '{"kind":"app,linux","host":"app-amlab-test.azurewebsites.net"}' }
     'webapp config' {
       if ($args[2] -eq 'show') { return 'DOTNETCORE|8.0' }
@@ -109,13 +131,33 @@ try {
     & (Join-Path $directory $name) -SubscriptionId $fixture.Subscription -ResourceGroup test-rg -ConsoleOperatorObjectIds @($fixture.Operator) | Out-Null
     if (($fixture.Events -join ',') -ne 'post-deploy') { throw 'Deployment completion did not invoke the shared console path exactly once.' }
   }
+  @{ expectedSubscriptionId = $fixture.Subscription; expectedTenantId = $fixture.Tenant } | ConvertTo-Json | Set-Content (Join-Path $root '.azure-target.json')
+  @'
+param($ResourceGroup, [guid]$SubscriptionId)
+if ($SubscriptionId -ne $fixture.Subscription) { throw 'One-shot SLI setup lost the verified subscription.' }
+'@ | Set-Content (Join-Path $directory 'setup-slis.ps1')
+  foreach ($inheritedAccount in @($null, [pscustomobject]@{ id = [guid]::NewGuid(); tenantId = [guid]::NewGuid() })) {
+    $active = $inheritedAccount
+    $fixture.Events.Clear()
+    $fixture.DeploymentWrites = 0
+    & (Join-Path $directory 'deploy.ps1') -ResourceGroup test-rg -SkipPreflight -ConsoleOperatorObjectIds @($fixture.Operator) | Out-Null
+    if (($fixture.Events -join ',') -ne 'post-deploy' -or $fixture.DeploymentWrites -ne 3) { throw 'One-shot deployment did not complete its verified account handoff.' }
+  }
+  $fixture.BadTenant = $true
+  $fixture.Events.Clear()
+  $fixture.DeploymentWrites = 0
+  $rejected = $false
+  try { & (Join-Path $directory 'deploy.ps1') -ResourceGroup test-rg -SkipPreflight | Out-Null }
+  catch { $rejected = $_.Exception.Message -like 'BLOCKED:*' }
+  if (-not $rejected -or $fixture.DeploymentWrites -or $fixture.Events.Count) { throw 'One-shot account mismatch did not stop before deployment.' }
+  $fixture.BadTenant = $false
   $postDeploy = Get-Content -LiteralPath (Join-Path $source 'scripts/post-deploy.ps1') -Raw
   if ($postDeploy.IndexOf("'initialize-webapp-console.ps1'") -lt 0 -or $postDeploy.IndexOf("'initialize-webapp-console.ps1'") -gt $postDeploy.IndexOf('Compress-Archive')) { throw 'Shared publication does not wait for automatic console setup.' }
   $fixture.Events.Clear()
   Copy-Item -LiteralPath (Join-Path $source 'scripts/post-deploy.ps1') -Destination $directory -Force
   & (Join-Path $directory 'post-deploy.ps1') @parameters -AksName aks-amlab -WebAppHost app-amlab-test.azurewebsites.net -CentralLawName law-amlab-central-test | Out-Null
   if ($fixture.Uploads -ne 2 -or $fixture.OperatorRoles -ne 1) { throw 'Shared deployment did not publish and configure the supplied operator without interactive-user lookup.' }
-  Write-Output 'PASS: app, staged, and Cloud Shell handoffs preserve account/operator inputs, bootstrap before publication, and stop on setup failures. No Azure calls.'
+  Write-Output 'PASS: one-shot, app, staged, and Cloud Shell handoffs preserve account/operator inputs, bootstrap before publication, and stop on setup failures. No Azure calls.'
 } finally {
   if (Test-Path $root) { Remove-Item -LiteralPath $root -Recurse -Force }
 }

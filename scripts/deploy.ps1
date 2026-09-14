@@ -98,9 +98,10 @@ function Assert-AllowedSubscription {
     throw "BLOCKED: active sub '$($active.name)' is on the forbidden list."
   }
   Write-Host "   OK — $($active.name)" -ForegroundColor Green
+  return $active
 }
 
-Assert-AllowedSubscription
+$active = Assert-AllowedSubscription
 
 # 0. Sanity
 Write-Step "Active subscription"
