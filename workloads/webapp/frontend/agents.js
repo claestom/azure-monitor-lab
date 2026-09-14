@@ -163,15 +163,28 @@ export function initializeAgentViews({ resizeChart, toast, refreshIcons, checkWe
     byId('agent-status').textContent = 'Submitting agent task...';
     try {
       const response = await fetch('/api/agents/run', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Amlab-Agent-Request': 'true' },
+        method: 'POST', cache: 'no-store', referrerPolicy: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-Amlab-Agent-Request': 'true' },
         body: JSON.stringify({ agent: byId('agent-choice').value, prompt, consent: true }),
         signal: AbortSignal.any([activeRequest.signal, AbortSignal.timeout(115000)])
       });
       const traceId = response.headers.get('X-Amlab-Trace-Id') || '';
-      const data = await response.json();
+      const data = await response.json().catch(error => {
+        if (error instanceof SyntaxError) return null;
+        throw error;
+      });
+      byId('agent-sign-in').hidden = response.status !== 401 && response.status !== 403;
       if (!response.ok) {
         const retry = response.headers.get('Retry-After');
-        byId('agent-status').textContent = `${data.error || 'Agent task failed.'}${retry ? ` Retry after ${retry} seconds.` : ''}${traceId ? ` Trace: ${traceId}` : ''}`;
+        const message = typeof data?.error === 'string' ? data.error : response.status === 401
+          ? 'Sign in with an approved lab operator account before submitting again.' : response.status === 403
+          ? 'App Service or the application rejected the request. Check sign-in and same-origin access.'
+          : 'The app returned an unexpected response. Check the server trace before retrying.';
+        byId('agent-status').textContent = `HTTP ${response.status}: ${message}${retry ? ` Retry after ${retry} seconds.` : ''}${traceId ? ` Trace: ${traceId}` : ''}`;
+        return;
+      }
+      if (typeof data?.agent !== 'string' || typeof data?.text !== 'string') {
+        byId('agent-status').textContent = `The app returned an invalid agent response (HTTP ${response.status}). Check sign-in and the server trace before retrying.${traceId ? ` Trace: ${traceId}` : ''}`;
         return;
       }
       showAnswer(data, prompt, data.traceId || traceId);

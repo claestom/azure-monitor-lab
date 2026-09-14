@@ -95,6 +95,45 @@ test('playground shows actual returned metadata, requires per-task consent, and 
   await expect(page.locator('#agent-results')).toBeEmpty();
 });
 
+test('playground sends a same-origin referrer through App Service authentication', async ({ page }) => {
+  let requests = 0;
+  await page.route('**/api/agents/run', async route => {
+    requests++;
+    const expectedReferrer = new URL('/', route.request().url()).href;
+    if (route.request().headers().referer !== expectedReferrer) {
+      await route.fulfill({ status: 403, contentType: 'text/html', body: '<h1>Forbidden</h1>' });
+      return;
+    }
+    await route.fulfill({ json: answer });
+  });
+  await ready(page);
+  await approve(page);
+  await page.getByRole('button', { name: 'Run Agent', exact: true }).click();
+  await expect(page.locator('#agent-status')).toContainText('Completed');
+  expect(requests).toBe(1);
+});
+
+for (const status of [401, 403, 502]) {
+  test(`playground reports non-JSON HTTP ${status} without replaying the request`, async ({ page }) => {
+    let requests = 0;
+    await page.route('**/api/agents/run', async route => {
+      requests++;
+      await route.fulfill({ status, headers: { 'X-Amlab-Trace-Id': 'platform-failure-trace' },
+        contentType: 'text/html', body: status === 401 ? '' : '<h1>private platform diagnostic</h1>' });
+    });
+    await ready(page);
+    await approve(page);
+    await page.getByRole('button', { name: 'Run Agent', exact: true }).click();
+    await expect(page.locator('#agent-status')).toContainText(`HTTP ${status}`);
+    await expect(page.locator('#agent-status')).toContainText('platform-failure-trace');
+    await expect(page.locator('#agent-status')).not.toContainText('private platform diagnostic');
+    await expect(page.locator('#agent-results')).toBeEmpty();
+    await expect(page.getByLabel('I approve billable model usage for this task.')).not.toBeChecked();
+    if (status === 401) await expect(page.locator('#agent-sign-in')).toBeVisible();
+    expect(requests).toBe(1);
+  });
+}
+
 test('playground reports unavailable services and recovers after cancellation and upstream failure', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('tab', { name: 'Foundry Playground' }).click();
