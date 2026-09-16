@@ -138,6 +138,7 @@ public sealed class ContainerJobOperations : ILabOperationsRunner
         var message = state switch
         {
             "succeeded" when run.Parameters.Operation == "ramp" => "Ramp job submitted. AKS traffic continues independently for about 60 minutes.",
+            "succeeded" when run.Parameters.Operation == "cpu" => "CPU simulation requests submitted to both demo VMs. Each guest load expires after 10 minutes. Verify Percentage CPU in Azure Monitor; guest execution and alert firing are not confirmed. Cancellation does not stop submitted load.",
             "succeeded" => "The approved script completed. Refresh Infra Health after resource startup and telemetry settle.",
             "failed" or "cancelled" => "The runner did not complete successfully. Changes already made are not rolled back. Inspect Azure before another operation.",
             "running" => "The Azure runner is executing the approved operation.", "queued" => "Azure is starting the job execution.",

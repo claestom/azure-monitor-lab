@@ -121,7 +121,7 @@ notepad lab.config.json
 ./scripts/deploy.ps1 -ResourceGroup rg-my-lab -Location westeurope
 ```
 
-Defaults: resource group `rg-azure-monitor-lab`, region `northeurope`. Override them with `-ResourceGroup` / `-Location` (explicit args win over `lab.config.json`, then defaults). The group is created or reused. Infrastructure provisioning, native packaging, and the cloud runner build can take tens of minutes. A successful run includes console sign-in, health, the six-operation Azure runner, and access to selected optional agents. See [deployment reference](docs/REFERENCE.md#deploy) for config and guardrails.
+Defaults: resource group `rg-azure-monitor-lab`, region `northeurope`. Override them with `-ResourceGroup` / `-Location` (explicit args win over `lab.config.json`, then defaults). The group is created or reused. Infrastructure provisioning, native packaging, and the cloud runner build can take tens of minutes. A successful run includes console sign-in, health, the seven-operation Azure runner, and access to selected optional agents. See [deployment reference](docs/REFERENCE.md#deploy) for config and guardrails.
 
 <details>
 <summary><b>Pre-flight check</b> (region SKU / quota validation before deploy)</summary>
@@ -148,6 +148,8 @@ Step-by-step guides:
 ### Lab Control Center
 
 The [Lab Control Center](docs/LAB-CONTROL-CENTER.md) runs in the lab's existing **Web App**. Use it to control the lab from your browser, including starting, breaking, and restoring it.
+
+In **Lab Operations**, **Simulate High CPU** submits a self-expiring 10-minute CPU load to both running demo VMs after review and approval. You can also run [simulate-high-cpu.ps1](scripts/simulate-high-cpu.ps1) directly; see the [script commands](scripts/README.md#lab-lifecycle-and-demo-control) and [CPU prerequisites and limits](workloads/webapp/LAB-OPERATIONS.md#simulate-high-cpu). Existing labs need the normal [console upgrade](scripts/deploy-webapp.ps1) to receive the new button, runner image, and VM permissions.
 
 Retrieve its URL in PowerShell or Azure Cloud Shell (PowerShell):
 

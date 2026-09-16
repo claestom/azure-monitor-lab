@@ -43,6 +43,7 @@ on:
       - 'scripts/break-the-lab.ps1'
       - 'scripts/restore-the-lab.ps1'
       - 'scripts/start-ramp.ps1'
+      - 'scripts/simulate-high-cpu.ps1'
       - 'scripts/send-custom-logs.ps1'
       - 'scripts/send-release-annotation.ps1'
       - '.github/workflows/lab-operations*.yml'

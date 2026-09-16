@@ -46,7 +46,7 @@ cd azure-monitor-lab
 The wrapper:
 
 - Publishes the .NET sample to App Service.
-- Automatically configures console operator sign-in, health access, the six-operation Azure job runner, and available optional agent integrations.
+- Automatically configures console operator sign-in, health access, the seven-operation Azure job runner, and available optional agent integrations.
 - Applies the AKS frontend, load generator, and OpenTelemetry workloads.
 - Creates the hourly summary rule.
 - Creates the Service Group and its resource-group membership.

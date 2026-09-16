@@ -93,17 +93,32 @@ try {
     if (-not $resource.id.StartsWith("$resourceBase/providers/", [StringComparison]::OrdinalIgnoreCase)) { throw 'Runner tag discovery returned a resource outside the lab.' }
     $existingResourceTags[$resource.name] = $resource.tags ?? @{}
   }
+  $vmInventory = @(az vm list --subscription $SubscriptionId --resource-group $ResourceGroup --output json --only-show-errors | ConvertFrom-Json)
+  if ($LASTEXITCODE -ne 0) { throw 'CPU target discovery failed. No runner deployment was submitted.' }
+  $cpuVms = @($vmInventory | Where-Object { $_.tags.purpose -ceq 'azure-monitor-lab' })
+  $cpuVmNames = @()
+  if ($cpuVms.Count -eq 2 -and @($cpuVms | Where-Object { $_.storageProfile.osDisk.osType -eq 'Linux' }).Count -eq 1 -and
+    @($cpuVms | Where-Object { $_.storageProfile.osDisk.osType -eq 'Windows' }).Count -eq 1) {
+    foreach ($vm in $cpuVms) {
+      if ($vm.id -ine "$resourceBase/providers/Microsoft.Compute/virtualMachines/$($vm.name)") { throw 'A CPU target is outside the selected lab. No guest execution access was granted.' }
+    }
+    $cpuVmNames = @($cpuVms.name)
+  }
   $tagParametersPath = Join-Path $temporary 'runner-tags.parameters.json'
-  @{
+  $tagParameters = @{
     '$schema' = 'https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#'
     contentVersion = '1.0.0.0'
     parameters = @{
       tags = @{ value = $web.tags ?? @{} }
       existingResourceTags = @{ value = $existingResourceTags }
     }
-  } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $tagParametersPath -Encoding utf8
+  }
+  $tagParameters | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $tagParametersPath -Encoding utf8
+  $platformParametersPath = Join-Path $temporary 'runner-platform.parameters.json'
+  $tagParameters.parameters.cpuVmNames = @{ value = $cpuVmNames }
+  $tagParameters | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $platformParametersPath -Encoding utf8
   $platform = Invoke-ConsoleDeployment 'lab-console-platform' (Join-Path $root 'infra/modules/lab-console-platform.json') @(
-    "webAppName=$WebAppName", "centralLawId=$($config.LabConsole.Health.CentralWorkspaceResourceId)", "location=$($web.location)", "@$tagParametersPath"
+    "webAppName=$WebAppName", "centralLawId=$($config.LabConsole.Health.CentralWorkspaceResourceId)", "location=$($web.location)", "@$platformParametersPath"
   )
   if ($LASTEXITCODE -ne 0 -or -not $platform.registryName.value -or -not $platform.environmentId.value -or -not $platform.runnerIdentityId.value) { throw 'The workload template did not provision the console runner platform.' }
   foreach ($id in @($platform.registryId.value, $platform.environmentId.value, $platform.runnerIdentityId.value)) {
@@ -119,7 +134,7 @@ try {
   $null = New-Item -ItemType Directory -Path (Join-Path $build 'scripts') -Force
   $null = New-Item -ItemType Directory -Path (Join-Path $build 'workloads/k8s') -Force
   $files = @('scripts/invoke-lab-operation.ps1', 'scripts/start-the-lab.ps1', 'scripts/break-the-lab.ps1', 'scripts/restore-the-lab.ps1',
-    'scripts/start-ramp.ps1', 'scripts/send-custom-logs.ps1', 'scripts/send-release-annotation.ps1', 'workloads/k8s/02-loadgen.yaml', 'workloads/k8s/03-loadgen-ramp.yaml')
+    'scripts/start-ramp.ps1', 'scripts/simulate-high-cpu.ps1', 'scripts/send-custom-logs.ps1', 'scripts/send-release-annotation.ps1', 'workloads/k8s/02-loadgen.yaml', 'workloads/k8s/03-loadgen-ramp.yaml')
   foreach ($file in $files) { Copy-Item -LiteralPath (Join-Path $root $file) -Destination (Join-Path $build $file) }
   Copy-Item -LiteralPath (Join-Path $root 'workloads/operations/Dockerfile') -Destination (Join-Path $build 'Dockerfile')
   $hashes = @(Get-ChildItem $build -File -Recurse | Sort-Object FullName | ForEach-Object { (Get-FileHash $_.FullName -Algorithm SHA256).Hash })

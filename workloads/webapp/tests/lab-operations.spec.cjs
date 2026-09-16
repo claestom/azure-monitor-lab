@@ -8,6 +8,7 @@ const actions = [
   ['break', 'Break Lab', 'break-the-lab.ps1', 'Deallocates lab VMs, disrupts the AKS frontend, and increases application failures.'],
   ['restore', 'Restore Lab', 'restore-the-lab.ps1', 'Starts VMs and restores the demo frontend and load generator.'],
   ['ramp', 'Start Load Ramp', 'start-ramp.ps1', 'Replaces the previous ramp job and starts 60 minutes of traffic.'],
+  ['cpu', 'Simulate High CPU', 'simulate-high-cpu.ps1', 'Runs a self-expiring 10-minute CPU load on both running demo VMs via Run Command. Performance, CPU credits, and telemetry charges are affected.'],
   ['logs', 'Send Custom Logs', 'send-custom-logs.ps1', 'Ingests sample audit events into the lab custom table.'],
   ['annotation', 'Add Release Marker', 'send-release-annotation.ps1', 'Writes a deployment or incident marker.']
 ].map(([id, title, file, impact]) => ({ id, title, script: `scripts/${file}`, impact }));
@@ -105,6 +106,32 @@ test('Lab Operations requires target confirmation and consent, then tracks a sin
   expect(calls.approvals).toHaveLength(1);
 });
 
+test('Lab Operations CPU simulation requires approval and stays disabled with an older runner catalog', async ({ page }) => {
+  const calls = await prepare(page);
+  await expect(page.locator('[data-operation="cpu"] svg.lucide-cpu')).toHaveCount(1);
+  await review(page, 'cpu');
+  await expect(page.locator('#operation-impact')).toContainText('10-minute');
+  await expect(page.locator('#operation-impact')).toContainText('both running demo VMs');
+  await expect(page.locator('#operation-count-field')).toBeHidden();
+  await expect(page.locator('#operation-marker-fields')).toBeHidden();
+  expect(calls.approvals).toEqual([]);
+  await page.getByLabel('Confirm resource group').fill(target.resourceGroup);
+  await expect(page.getByRole('button', { name: 'Approve & Run' })).toBeDisabled();
+  await page.getByLabel('I approve these changes and associated Azure charges.').check();
+  await page.getByRole('button', { name: 'Approve & Run' }).click();
+  expect(calls.prepared).toEqual([{ operation: 'cpu' }]);
+  expect(calls.approvals).toEqual([{ proposalId, resourceGroup: target.resourceGroup, approve: true }]);
+  await expect(page.getByRole('button', { name: 'Simulate High CPU', exact: true })).toBeDisabled();
+  await expect(page.locator('#operations-runs')).toContainText('Simulate High CPU');
+  await page.clock.fastForward(11000);
+  await page.route('**/api/operations/catalog', route => route.fulfill({ json: {
+    available: true, message: 'Runner verified.', actions: actions.filter(action => action.id !== 'cpu'), target, runs: []
+  } }));
+  await page.getByRole('button', { name: 'Refresh runner connection and history' }).click();
+  await expect(page.getByRole('button', { name: 'Simulate High CPU', exact: true })).toBeDisabled();
+  expect(calls.approvals).toHaveLength(1);
+});
+
 test('Lab Operations restores journal history and only checks active runs while the tab is visible', async ({ page }) => {
   const calls = await prepare(page, { runs: [operationRun('restore', 'running')], nextState: 'running' });
   await page.clock.fastForward(11000);
@@ -163,7 +190,7 @@ test('Lab Operations API is disabled by default and enforces operator and same-o
   const catalog = await request.get('/api/operations/catalog');
   expect(catalog.status()).toBe(200);
   expect((await catalog.json()).available).toBe(false);
-  expect((await catalog.json()).actions).toHaveLength(6);
+  expect((await catalog.json()).actions).toHaveLength(7);
   expect(catalog.headers()['cache-control']).toBe('no-store');
   expect((await request.post('/api/operations/prepare', { data: { operation: 'start' } })).status()).toBe(403);
   expect((await request.post('/api/operations/prepare', { headers: { ...headers, Host: 'attacker.example' }, data: { operation: 'start' } })).status()).toBe(401);
@@ -229,7 +256,7 @@ for (const width of [1440, 390, 320]) {
     await expect(page.locator('.mobile-feedback')).toBeHidden();
     await page.screenshot({ path: testInfo.outputPath(`lab-operations-${width}.png`), fullPage: true });
     if (process.env.UPDATE_CONTROL_CENTER_SCREENSHOT === '1' && width === 1440) await page.screenshot({ path: path.resolve(__dirname, '../../../docs/images/lab-operations.png'), fullPage: true });
-    await review(page, 'break');
+    await review(page, 'cpu');
     await page.screenshot({ path: testInfo.outputPath(`lab-operation-review-${width}.png`), fullPage: true });
     const clipped = await page.locator('button, input, h1, h2, .operation-details dd').evaluateAll(items => items.filter(item => item.clientWidth > 0 && item.scrollWidth > item.clientWidth + 2).map(item => item.textContent));
     expect(clipped).toEqual([]);

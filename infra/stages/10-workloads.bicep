@@ -198,6 +198,7 @@ module consolePlatform '../modules/lab-console-platform.bicep' = {
     centralLawId: lawCentral.id
     location: appServiceLocation
     tags: commonTags
+    cpuVmNames: deployLinuxVm && deployWindowsVm ? [vmLinux!.outputs.vmName, vmWindows!.outputs.vmName] : []
   }
 }
 

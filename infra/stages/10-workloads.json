@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.37.4.10188",
-      "templateHash": "6447266456110578876"
+      "templateHash": "1768261801311444834"
     }
   },
   "parameters": {
@@ -1665,7 +1665,8 @@
           },
           "tags": {
             "value": "[variables('commonTags')]"
-          }
+          },
+          "cpuVmNames": "[if(and(parameters('deployLinuxVm'), parameters('deployWindowsVm')), createObject('value', createArray(reference(resourceId('Microsoft.Resources/deployments', 'vm-linux'), '2022-09-01').outputs.vmName.value, reference(resourceId('Microsoft.Resources/deployments', 'vm-windows'), '2022-09-01').outputs.vmName.value)), createObject('value', createArray()))]"
         },
         "template": {
           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
@@ -1674,7 +1675,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.37.4.10188",
-              "templateHash": "7168125476521454539"
+              "templateHash": "5513852199695061519"
             }
           },
           "parameters": {
@@ -1705,6 +1706,14 @@
               "defaultValue": {},
               "metadata": {
                 "description": "Existing runner tags indexed by resource name, captured before bootstrap updates."
+              }
+            },
+            "cpuVmNames": {
+              "type": "array",
+              "defaultValue": [],
+              "maxLength": 2,
+              "metadata": {
+                "description": "Names of the two demo VMs allowed to receive the CPU simulation Run Command. Empty when the pair is not deployed."
               }
             }
           },
@@ -1775,6 +1784,48 @@
                   }
                 ]
               }
+            },
+            {
+              "type": "Microsoft.Authorization/roleDefinitions",
+              "apiVersion": "2022-04-01",
+              "name": "[guid(resourceGroup().id, 'lab-console-cpu-run-command-role')]",
+              "properties": {
+                "roleName": "[format('Lab Console VM Run Command {0}', take(variables('suffix'), 8))]",
+                "description": "Elevated guest Run Command execution for CPU simulation, assigned only on the selected demo VMs.",
+                "type": "CustomRole",
+                "assignableScopes": [
+                  "[resourceGroup().id]"
+                ],
+                "permissions": [
+                  {
+                    "actions": [
+                      "Microsoft.Compute/virtualMachines/runCommand/action"
+                    ],
+                    "notActions": [],
+                    "dataActions": [],
+                    "notDataActions": []
+                  }
+                ]
+              }
+            },
+            {
+              "copy": {
+                "name": "cpuRunCommandAccess",
+                "count": "[length(parameters('cpuVmNames'))]"
+              },
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[format('Microsoft.Compute/virtualMachines/{0}', parameters('cpuVmNames')[copyIndex()])]",
+              "name": "[guid(resourceId('Microsoft.Compute/virtualMachines', parameters('cpuVmNames')[copyIndex()]), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName')), resourceId('Microsoft.Authorization/roleDefinitions', guid(resourceGroup().id, 'lab-console-cpu-run-command-role')))]",
+              "properties": {
+                "roleDefinitionId": "[resourceId('Microsoft.Authorization/roleDefinitions', guid(resourceGroup().id, 'lab-console-cpu-run-command-role'))]",
+                "principalId": "[reference(resourceId('Microsoft.Resources/deployments', 'console-runner-identity'), '2022-09-01').outputs.principalId.value]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Authorization/roleDefinitions', guid(resourceGroup().id, 'lab-console-cpu-run-command-role'))]",
+                "[resourceId('Microsoft.Resources/deployments', 'console-runner-identity')]"
+              ]
             },
             {
               "type": "Microsoft.Resources/deployments",
@@ -8653,7 +8704,9 @@
         }
       },
       "dependsOn": [
-        "[resourceId('Microsoft.Resources/deployments', 'appservice')]"
+        "[resourceId('Microsoft.Resources/deployments', 'appservice')]",
+        "[resourceId('Microsoft.Resources/deployments', 'vm-linux')]",
+        "[resourceId('Microsoft.Resources/deployments', 'vm-windows')]"
       ]
     },
     {
