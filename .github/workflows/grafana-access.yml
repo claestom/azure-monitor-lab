@@ -12,20 +12,14 @@ on:
       - 'README.md'
       - '.github/workflows/grafana-access.yml'
   pull_request:
-    paths:
-      - 'infra/**'
-      - 'terraform/**'
-      - 'scripts/sync-config.ps1'
-      - 'scripts/tests/grafana-*.Tests.ps1'
-      - 'lab.config.json.example'
-      - 'README.md'
-      - '.github/workflows/grafana-access.yml'
+    types: [opened, synchronize, reopened, edited, ready_for_review]
 
 permissions:
   contents: read
 
 jobs:
   verify:
+    name: Grafana access
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

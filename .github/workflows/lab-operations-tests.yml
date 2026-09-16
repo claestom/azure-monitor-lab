@@ -47,28 +47,14 @@ on:
       - 'scripts/send-release-annotation.ps1'
       - '.github/workflows/lab-operations*.yml'
   pull_request:
-    paths:
-      - 'workloads/webapp/**'
-      - 'workloads/webapp.Tests/**'
-      - 'scripts/**'
-      - 'workloads/operations/**'
-      - 'workloads/ai/*.py'
-      - 'workloads/ai/tests/**'
-      - 'infra/modules/lab-console*'
-      - 'infra/modules/appservice*'
-      - 'infra/main.*'
-      - 'infra/stages/*'
-      - 'docs/DEPLOY-*-STEP-BY-STEP.md'
-      - 'docs/POST-DEPLOYMENT.md'
-      - 'docs/STAGE-AI.md'
-      - 'terraform/**'
-      - '.github/workflows/lab-operations*.yml'
+    types: [opened, synchronize, reopened, edited, ready_for_review]
 
 permissions:
   contents: read
 
 jobs:
   verify:
+    name: Lab operations
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -100,6 +86,7 @@ jobs:
           npm test
 
   infrastructure:
+    name: Infrastructure validation
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
