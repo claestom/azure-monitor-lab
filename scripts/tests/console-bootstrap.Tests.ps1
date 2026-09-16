@@ -14,13 +14,24 @@ foreach ($templatePath in @('infra/main.json', 'infra/stages/10-workloads.json')
   $siteDependency = "[resourceId('Microsoft.Web/sites', parameters('webAppName'))]"
   if ($settingsModule.Count -ne 1 -or $settingsModule[0].dependsOn -notcontains $siteDependency) { throw "$templatePath must wait for the site before reading its settings, including on first deployment." }
   $settingsTemplate = $settingsModule[0].properties.template
-  if ($settingsTemplate.parameters.appSettings.type -ne 'secureObject' -or $settingsTemplate.outputs) { throw 'App settings must be secure inputs and must not be exposed as deployment outputs.' }
   $settingsResource = @($settingsTemplate.resources | Where-Object type -eq 'Microsoft.Web/sites/config')
-  if ($settingsResource.Count -ne 1 -or $settingsResource[0].properties -notmatch "^\[union\(list\(.+/config/appsettings.+\.properties, parameters\('appSettings'\)\)\]$") {
-    throw "$templatePath must merge existing app settings with the intended telemetry settings."
+  if ($settingsResource.Count -ne 1) { throw "$templatePath must contain exactly one app-settings resource." }
+  if ($settingsResource[0].properties -match '\blist\(') {
+    throw "$templatePath must not list app settings from the resource being updated; ARM treats that as a circular dependency."
+  }
+  if ($settingsTemplate.parameters.appSettings.type -ne 'secureObject' -or $settingsTemplate.parameters.existingAppSettings.type -ne 'secureObject' -or $settingsTemplate.outputs) {
+    throw 'Existing and intended app settings must be secure inputs and must not be exposed as deployment outputs.'
+  }
+  $existingSettings = $settingsModule[0].properties.parameters.existingAppSettings.value
+  if ($existingSettings -notmatch "^\[list\(.+/config/appsettings.+\.properties\]$") {
+    throw "$templatePath must read the existing app settings in the parent deployment after the web app exists."
+  }
+  if ($settingsResource[0].properties -cne "[union(parameters('existingAppSettings'), parameters('appSettings'))]") {
+    throw "$templatePath must preserve the existing settings snapshot and overlay only the intended telemetry settings."
   }
   $intendedSettings = $settingsModule[0].properties.parameters.appSettings.value
   if ($intendedSettings.PSObject.Properties.Name -match '^LabConsole__|^MICROSOFT_PROVIDER_AUTHENTICATION_SECRET$') { throw 'Infrastructure must not replace runtime-owned console or sign-in values.' }
+  Write-Output "PASS: $templatePath securely merges app settings without a resource self-reference."
   $platformModule = @($template.resources | Where-Object { $_.type -eq 'Microsoft.Resources/deployments' -and $_.name -eq 'lab-console-platform' })
   $cpuParameter = $platformModule[0].properties.parameters.cpuVmNames
   $cpuExpression = if ($cpuParameter -is [string]) { $cpuParameter } else { $cpuParameter.value }

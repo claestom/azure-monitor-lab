@@ -67,6 +67,7 @@ module appSettings './appservice-settings.bicep' = {
   name: 'app-settings'
   params: {
     webAppName: site.name
+    existingAppSettings: list('${site.id}/config/appsettings', '2023-12-01').properties
     appSettings: {
       APPLICATIONINSIGHTS_CONNECTION_STRING: appInsightsConnectionString
       APPINSIGHTS_INSTRUMENTATIONKEY: appInsightsInstrumentationKey
