@@ -1,0 +1,56 @@
+name: Promotion policy
+
+on:
+  push:
+    branches: [dev, integration, master]
+    paths:
+      - '.github/scripts/promotion-policy*.cjs'
+      - '.github/workflows/promotion-policy.yml'
+  pull_request:
+    branches: [integration, master]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+  pull_request_target:
+    branches: [master]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: promotion-policy-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  policy-tests:
+    name: Branch policy tests
+    if: github.event_name != 'pull_request_target'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Test routing and stale promotion handling without GitHub writes
+        run: node --test .github/scripts/promotion-policy.test.cjs
+
+  enforce-source:
+    name: Enforce integration-only promotion
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+    steps:
+      - name: Read the trusted policy revision, never the PR head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Validate PR metadata and close disallowed sources
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        with:
+          script: |
+            const { enforcePromotion } = require('./.github/scripts/promotion-policy.cjs');
+            await enforcePromotion({ github, context, core });
