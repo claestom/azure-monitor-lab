@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.37.4.10188",
-      "templateHash": "1768261801311444834"
+      "templateHash": "9556683742930615605"
     }
   },
   "parameters": {
@@ -1363,7 +1363,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.37.4.10188",
-              "templateHash": "10255279453466802032"
+              "templateHash": "17927996694735374534"
             }
           },
           "parameters": {
@@ -1563,6 +1563,9 @@
                   "webAppName": {
                     "value": "[parameters('webAppName')]"
                   },
+                  "existingAppSettings": {
+                    "value": "[list(format('{0}/config/appsettings', resourceId('Microsoft.Web/sites', parameters('webAppName'))), '2023-12-01').properties]"
+                  },
                   "appSettings": {
                     "value": {
                       "APPLICATIONINSIGHTS_CONNECTION_STRING": "[parameters('appInsightsConnectionString')]",
@@ -1588,7 +1591,7 @@
                     "_generator": {
                       "name": "bicep",
                       "version": "0.37.4.10188",
-                      "templateHash": "11805995673697308098"
+                      "templateHash": "5145608396194603445"
                     }
                   },
                   "parameters": {
@@ -1596,6 +1599,12 @@
                       "type": "string",
                       "metadata": {
                         "description": "Web App created by the parent deployment."
+                      }
+                    },
+                    "existingAppSettings": {
+                      "type": "secureObject",
+                      "metadata": {
+                        "description": "Existing settings read by the parent after creating the Web App, avoiding a self-reference in the settings resource."
                       }
                     },
                     "appSettings": {
@@ -1610,7 +1619,7 @@
                       "type": "Microsoft.Web/sites/config",
                       "apiVersion": "2023-12-01",
                       "name": "[format('{0}/{1}', parameters('webAppName'), 'appsettings')]",
-                      "properties": "[union(list(format('{0}/config/appsettings', resourceId('Microsoft.Web/sites', parameters('webAppName'))), '2023-12-01').properties, parameters('appSettings'))]"
+                      "properties": "[union(parameters('existingAppSettings'), parameters('appSettings'))]"
                     }
                   ]
                 }
