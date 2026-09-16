@@ -5,9 +5,9 @@ namespace AmlabHello.Tests;
 public sealed class LabOperationCatalogTests
 {
     [Fact]
-    public void OnlyTheSixApprovedScriptsAreAvailable()
+    public void OnlyTheApprovedScriptsAreAvailable()
     {
-        Assert.Equal(new[] { "start", "break", "restore", "ramp", "logs", "annotation" }, LabOperationCatalog.Actions.Select(action => action.Id));
+        Assert.Equal(new[] { "start", "break", "restore", "ramp", "cpu", "logs", "annotation" }, LabOperationCatalog.Actions.Select(action => action.Id));
         Assert.All(LabOperationCatalog.Actions, action => Assert.StartsWith("scripts/", action.Script));
         Assert.All(LabOperationCatalog.Actions, action => Assert.NotEmpty(action.Impact));
         foreach (var operation in new[] { "teardown", "deploy", "setup-rbac-demo", "../script.ps1", "start;whoami" })
@@ -19,11 +19,22 @@ public sealed class LabOperationCatalogTests
     [InlineData("break")]
     [InlineData("restore")]
     [InlineData("ramp")]
+    [InlineData("cpu")]
     public void LifecycleActionsRejectExtraParameters(string operation)
     {
         Assert.Equal(new(operation, 0, "", ""), LabOperationCatalog.Validate(new(operation)));
         Assert.Throws<ArgumentException>(() => LabOperationCatalog.Validate(new(operation, Count: 1)));
         Assert.Throws<ArgumentException>(() => LabOperationCatalog.Validate(new(operation, Name: "marker")));
+    }
+
+    [Fact]
+    public void CpuSimulationUsesTheBoundedVmScriptWithoutAks()
+    {
+        var action = Assert.Single(LabOperationCatalog.Actions, action => action.Id == "cpu");
+        Assert.Equal("scripts/simulate-high-cpu.ps1", action.Script);
+        Assert.False(action.RequiresAks);
+        Assert.Contains("10-minute", action.Impact);
+        Assert.Throws<ArgumentException>(() => LabOperationCatalog.Validate(new("cpu", Category: "Incident")));
     }
 
     [Theory]

@@ -40,6 +40,25 @@ public sealed class ContainerJobOperationsTests
     }
 
     [Fact]
+    public async Task CpuDispatchReportsSubmissionWithoutClaimingGuestOrAlertSuccess()
+    {
+        using var transport = new FakeAzure { Operation = "cpu" };
+        var client = Client(transport);
+        var request = Run(client) with { Parameters = LabOperationCatalog.Validate(new("cpu")) };
+        Assert.Equal("test-runner-execution", await client.DispatchAsync(request, default));
+        Assert.Equal(1, transport.Starts);
+        var environment = transport.Sent!["containers"]![0]!["env"]!.AsArray();
+        Assert.Contains(environment, item => item!["name"]!.GetValue<string>() == "OP_OPERATION" && item["value"]!.GetValue<string>() == "cpu");
+        Assert.Contains(environment, item => item!["name"]!.GetValue<string>() == "OP_COUNT" && item["value"]!.GetValue<string>() == "0");
+        var result = await client.ReadAsync(request, default);
+        Assert.Equal("succeeded", result.State);
+        Assert.Contains("requests submitted to both demo VMs", result.Message);
+        Assert.Contains("10 minutes", result.Message);
+        Assert.Contains("not confirmed", result.Message);
+        Assert.Contains("Cancellation does not stop", result.Message);
+    }
+
+    [Fact]
     public async Task DispatchOmitsReadOnlyTemplateFieldsNotAcceptedByTheStartApi()
     {
         using var transport = new FakeAzure { IncludeTemplateVolumes = true };
@@ -195,6 +214,7 @@ public sealed class ContainerJobOperationsTests
         public HttpStatusCode? StartStatus { get; set; }
         public int RetryLimit { get; set; }
         public string State { get; set; } = "Succeeded";
+        public string Operation { get; set; } = "logs";
         public string? NextLink { get; set; }
 
         private JsonObject Template()
@@ -203,8 +223,8 @@ public sealed class ContainerJobOperationsTests
         {
             new { name = "LAB_RESOURCE_GROUP", value = WrongScope ? "another-rg" : "test-rg" }, new { name = "LAB_SUBSCRIPTION_ID", value = Subscription }, new { name = "LAB_TENANT_ID", value = Tenant },
             new { name = "LAB_RUNNER_MODE", value = "ContainerAppsJob" }, new { name = "AZURE_CLIENT_ID", value = WrongIdentity ? Guid.NewGuid().ToString() : IdentityClient },
-            new { name = "OP_REQUEST_ID", value = new string(WrongRequest ? 'd' : 'b', 32) }, new { name = "OP_OPERATION", value = "logs" },
-            new { name = "OP_COUNT", value = WrongCount ? "99" : "12" }, new { name = "OP_ANNOTATION_NAME", value = "" }, new { name = "OP_ANNOTATION_CATEGORY", value = "" }
+            new { name = "OP_REQUEST_ID", value = new string(WrongRequest ? 'd' : 'b', 32) }, new { name = "OP_OPERATION", value = Operation },
+            new { name = "OP_COUNT", value = WrongCount ? "99" : Operation == "logs" ? "12" : "0" }, new { name = "OP_ANNOTATION_NAME", value = "" }, new { name = "OP_ANNOTATION_CATEGORY", value = "" }
         }, resources = new { cpu = 1, memory = "2Gi" } } } })!.AsObject();
             if (IncludeTemplateVolumes) template["volumes"] = new JsonArray();
             return template;

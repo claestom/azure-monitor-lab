@@ -20,7 +20,7 @@ function Assert-Rejected([hashtable] $Changes) {
 }
 
 try {
-  foreach ($operation in @('start', 'break', 'restore', 'ramp')) { & $scriptPath @parameters -Operation $operation | Out-Null }
+  foreach ($operation in @('start', 'break', 'restore', 'ramp', 'cpu')) { & $scriptPath @parameters -Operation $operation | Out-Null }
   & $scriptPath @parameters -Operation logs -Count 100 | Out-Null
   & $scriptPath @parameters -Operation annotation -Name 'Release 1.2 (demo)' -Category Deployment | Out-Null
   Assert-Rejected @{ Operation = 'teardown' }
@@ -29,6 +29,9 @@ try {
   Assert-Rejected @{ TenantId = [guid]::NewGuid().ToString() }
   Assert-Rejected @{ RequestId = 'invalid' }
   Assert-Rejected @{ Count = 12 }
+  Assert-Rejected @{ Operation = 'cpu'; Count = 1 }
+  Assert-Rejected @{ Operation = 'cpu'; Name = 'command' }
+  Assert-Rejected @{ Operation = 'cpu'; Category = 'Incident' }
   Assert-Rejected @{ Operation = 'logs'; Count = 0 }
   Assert-Rejected @{ Operation = 'logs'; Count = 101 }
   Assert-Rejected @{ Operation = 'annotation'; Name = '$(whoami)'; Category = 'Deployment' }

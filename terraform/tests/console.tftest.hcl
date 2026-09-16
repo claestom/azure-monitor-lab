@@ -52,6 +52,11 @@ run "workloads_include_console" {
   }
 
   assert {
+    condition     = contains(local.console_sources, "scripts/simulate-high-cpu.ps1")
+    error_message = "CPU simulation script updates must rebuild and republish the console runner."
+  }
+
+  assert {
     condition     = terraform_data.console_ready[0].triggers_replace.resource_group == data.azurerm_resource_group.lab.id
     error_message = "Console completion must target the selected lab resource group."
   }

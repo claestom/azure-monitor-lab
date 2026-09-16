@@ -12,6 +12,10 @@ param tags object = {}
 @description('Existing runner tags indexed by resource name, captured before bootstrap updates.')
 param existingResourceTags object = {}
 
+@description('Names of the two demo VMs allowed to receive the CPU simulation Run Command. Empty when the pair is not deployed.')
+@maxLength(2)
+param cpuVmNames array = []
+
 var suffix = uniqueString(resourceGroup().id, webAppName)
 var registryName = 'acrlabops${take(suffix, 12)}'
 var environmentName = 'cae-labops-${take(suffix, 8)}'
@@ -132,6 +136,38 @@ module runnerAssignment './lab-console-role.bicep' = {
     principalId: identity.outputs.principalId
   }
 }
+
+resource cpuRunCommandRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' = {
+  name: guid(resourceGroup().id, 'lab-console-cpu-run-command-role')
+  properties: {
+    roleName: 'Lab Console VM Run Command ${take(suffix, 8)}'
+    description: 'Elevated guest Run Command execution for CPU simulation, assigned only on the selected demo VMs.'
+    type: 'CustomRole'
+    assignableScopes: [resourceGroup().id]
+    permissions: [
+      {
+        actions: ['Microsoft.Compute/virtualMachines/runCommand/action']
+        notActions: []
+        dataActions: []
+        notDataActions: []
+      }
+    ]
+  }
+}
+
+resource cpuVms 'Microsoft.Compute/virtualMachines@2024-03-01' existing = [for vmName in cpuVmNames: {
+  name: vmName
+}]
+
+resource cpuRunCommandAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for (vmName, vmIndex) in cpuVmNames: {
+  name: guid(cpuVms[vmIndex].id, resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', identityName), cpuRunCommandRole.id)
+  scope: cpuVms[vmIndex]
+  properties: {
+    roleDefinitionId: cpuRunCommandRole.id
+    principalId: identity.outputs.principalId
+    principalType: 'ServicePrincipal'
+  }
+}]
 
 module consoleReader './lab-console-role.bicep' = {
   name: 'console-health-reader'

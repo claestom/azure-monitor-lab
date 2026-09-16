@@ -30,7 +30,7 @@ The Control Center runs in the lab's existing App Service. It is not a separate 
 |---|---|---|
 | Infra Health (first/default) | Check only VMs, VM scale sets, AKS clusters, and web apps. Inspect Azure platform availability, VM heartbeats, AKS reporting, and App Service server errors. | Enabled read-only backend access to the lab resource group and central workspace, plus an approved signed-in operator. No AI or SRE stage is required. |
 | Traffic & Faults | Health checks, deliberately slow requests and errors, dependency calls, checkout outcomes, bounded traffic runs, and a confirmation-gated performance experiment. Inspect request history, latency, and trace IDs. | The published lab web app. The optional AI and SRE stages are not required. |
-| Lab Operations | Start, break, or restore the lab; start the load ramp; send custom logs; add a release marker. Review exact targets and parameters, then track the independent job. | Azure job, pinned image, managed identities, private journal, and operator access, all configured by deployment. |
+| Lab Operations | Start, break, or restore the lab; start the load ramp; simulate high CPU on both demo VMs; send custom logs; add a release marker. Review exact targets and parameters, then track the independent job. | Azure job, pinned image, managed identities, private journal, and operator access, all configured by deployment. CPU simulation requires both VMs running with ready VM Agents. |
 | Foundry Playground | Run an approved task against an existing lab agent. Inspect its response, reported model, token usage, run ID, and application trace. | Stage AI and an approved operator. Deployment prepares the four agents and access. |
 | SRE MCP Assistant | Ask questions about configured SRE resources and use allowed management tools. Review exact tool arguments before approving a change and inspect the operation log afterward. | Stages AI and SRE Agent, plus an approved operator. Deployment packages MCP and configures host-model access. |
 
@@ -55,11 +55,13 @@ The tab does not start investigations, use a model, probe arbitrary endpoints, r
 
 ## Lab Operations
 
-![Lab Operations with the six approved script actions and an example completed run](images/lab-operations.png)
+![Lab Operations with the approved script actions and an example completed run](images/lab-operations.png)
 
 The screenshot uses example configuration and a simulated run. No real operation was executed to produce it.
 
-The six actions reuse repository scripts through an independent Azure Container Apps Job. Every action requires a five-minute proposal, review of the script, exact lab target and image digest, resource-group confirmation, and approval of changes and charges. The UI shows Azure execution status and links to the job's execution history. Switching away stops automatic status checks, not the job.
+The seven actions reuse repository scripts through an independent Azure Container Apps Job. Every action requires a five-minute proposal, review of the script, exact lab target and image digest, resource-group confirmation, and approval of changes and charges. The UI shows Azure execution status and links to the job's execution history. Switching away stops automatic status checks, not the job.
+
+**Simulate High CPU** submits fixed 10-minute loads to the Linux and Windows demo VMs without restarting them or using AKS. It validates both tagged targets and their VM Agents first, uses guest overlap locks and expiry, and reports submission rather than confirmed CPU or alert success. Watch **Percentage CPU** for each VM in Azure Monitor; VM health rows here assess heartbeats, not CPU. B-series CPU credits and alert evaluation windows can affect the observed result. Cancellation or Restore Lab does not stop an accepted CPU command. See [CPU simulation details](../workloads/webapp/LAB-OPERATIONS.md#simulate-high-cpu).
 
 **Break Lab is disruptive.** Start and Restore can increase costs, the ramp generates about an hour of load, and ingested events/annotations are not undone by cancellation. Failed scripts can leave partial changes. The app never automatically resends an uncertain dispatch; refresh its status and inspect the resources first.
 
@@ -83,6 +85,7 @@ Opening tabs checks availability only; model execution still requires usage cons
 |---|---|---|
 | Infrastructure health snapshot | [1: Health Dashboard](DEMO-SCENARIOS.md#s1) | Resource-scoped availability and workbook-derived traffic lights, including unavailable or stale data. |
 | Start, break, and restore lab scripts | [8: Break the lab](DEMO-SCENARIOS.md#s8) | Resource changes and delayed telemetry/alerts after an explicitly approved job. |
+| Simulate High CPU | [7: Alerts](DEMO-SCENARIOS.md#s7), [17: Dynamic Thresholds](DEMO-SCENARIOS.md#s17) | Each VM's Percentage CPU, the static CPU alert, and a dynamic baseline when enough history exists. |
 | Load ramp, custom logs, and release markers | [13: Smart Detection](DEMO-SCENARIOS.md#s13), [24: Custom Logs](DEMO-SCENARIOS.md#s24), [33: Release annotations](DEMO-SCENARIOS.md#s33) | The corresponding script-driven workload and monitoring evidence. |
 | Health, slow, error, and dependency requests | [3: Application Insights](DEMO-SCENARIOS.md#s3) | Server requests, failures, dependencies, and correlated traces. |
 | Checkout and payment outcomes | [28: Custom metrics and events](DEMO-SCENARIOS.md#s28) | Business telemetry and checkout outcomes. |
@@ -99,7 +102,7 @@ Related Scenarios links are navigation, not execution shortcuts. The [scenario c
 - Traffic targets the deployed demo application. Errors and delays are intentional; the performance experiment can affect other users of that app. Browser runs are capped at 30 requests, and Stop prevents subsequent requests rather than undoing work already sent.
 - Traffic counters and request history include deliberate actions and traffic runs, not automatic header checks. Clearing results preserves the latest header health result and does not delete Azure telemetry.
 - Infrastructure health and optional agent access are configured by deployment and require operator-restricted App Service Authentication. Backend service calls use the app's managed identity, not delegated permissions from each browser user.
-- Lab Operations has a separate runner identity and single-use script approvals. Cancellation does not undo Azure changes, and the ramp can keep running in AKS after the Azure job completes.
+- Lab Operations has a separate runner identity and single-use script approvals. Cancellation does not undo Azure changes; the ramp and bounded VM CPU loads can keep running after the Azure job completes. VM Run Command access is elevated guest execution scoped to the two demo VMs.
 - Foundry tasks and MCP host-model questions require usage consent. Existing model charges apply. Do not submit secrets or sensitive data.
 - MCP writes require a separate, expiring approval of the exact tool and arguments. A lost or timed-out response can leave the operation outcome unknown; check Azure before repeating it. Stop Waiting is not a guarantee of cancellation.
 - Opening a tab creates no roles or resources. Deployment, not a browser request, configures access. Existing agent API contracts and approval gates are unchanged.

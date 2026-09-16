@@ -13,6 +13,7 @@ public static class LabOperationCatalog
         new LabOperationDefinition("break", "Break Lab", "scripts/break-the-lab.ps1", "Deallocates lab VMs, disrupts the AKS frontend, and increases application failures.", true),
         new LabOperationDefinition("restore", "Restore Lab", "scripts/restore-the-lab.ps1", "Starts lab VMs and restores the demo AKS frontend and load generator. This is not a rollback of arbitrary changes.", true),
         new LabOperationDefinition("ramp", "Start Load Ramp", "scripts/start-ramp.ps1", "Replaces the previous ramp job and starts approximately 60 minutes of AKS traffic. Compute and telemetry charges apply.", true),
+        new LabOperationDefinition("cpu", "Simulate High CPU", "scripts/simulate-high-cpu.ps1", "Runs a self-expiring 10-minute CPU load on both running demo VMs via Run Command. Performance, CPU credits, and telemetry charges are affected.", false),
         new LabOperationDefinition("logs", "Send Custom Logs", "scripts/send-custom-logs.ps1", "Ingests sample audit events into the lab custom table. Ingested events are not undone by cancellation.", false),
         new LabOperationDefinition("annotation", "Add Release Marker", "scripts/send-release-annotation.ps1", "Writes a deployment or incident marker to the lab Application Insights timeline.", false)
     });

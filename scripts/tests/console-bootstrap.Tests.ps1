@@ -21,8 +21,17 @@ foreach ($templatePath in @('infra/main.json', 'infra/stages/10-workloads.json')
   }
   $intendedSettings = $settingsModule[0].properties.parameters.appSettings.value
   if ($intendedSettings.PSObject.Properties.Name -match '^LabConsole__|^MICROSOFT_PROVIDER_AUTHENTICATION_SECRET$') { throw 'Infrastructure must not replace runtime-owned console or sign-in values.' }
+  $platformModule = @($template.resources | Where-Object { $_.type -eq 'Microsoft.Resources/deployments' -and $_.name -eq 'lab-console-platform' })
+  $cpuParameter = $platformModule[0].properties.parameters.cpuVmNames
+  $cpuExpression = if ($cpuParameter -is [string]) { $cpuParameter } else { $cpuParameter.value }
+  if ($platformModule.Count -ne 1 -or $cpuExpression -notmatch "and\(parameters\('deployLinuxVm'\), parameters\('deployWindowsVm'\)\)") { throw "$templatePath must grant CPU guest access only when both demo VMs are deployed." }
 }
 $platformTemplate = Get-Content -LiteralPath (Join-Path $source 'infra/modules/lab-console-platform.json') -Raw | ConvertFrom-Json
+$cpuRole = @($platformTemplate.resources | Where-Object { $_.type -eq 'Microsoft.Authorization/roleDefinitions' -and $_.properties.permissions.actions -contains 'Microsoft.Compute/virtualMachines/runCommand/action' })
+if ($cpuRole.Count -ne 1 -or @($cpuRole[0].properties.permissions.actions).Count -ne 1) { throw 'CPU guest execution requires a separate, narrowly scoped role.' }
+$cpuAssignments = @($platformTemplate.resources | Where-Object { $_.type -eq 'Microsoft.Authorization/roleAssignments' -and $_.properties.roleDefinitionId -like '*lab-console-cpu-run-command-role*' })
+if ($cpuAssignments.Count -ne 1 -or $cpuAssignments[0].scope -notmatch 'Microsoft.Compute/virtualMachines/' -or $cpuAssignments[0].copy.count -cne "[length(parameters('cpuVmNames'))]" -or $cpuAssignments[0].properties.principalType -ne 'ServicePrincipal') { throw 'CPU role assignments must target only the selected individual VMs.' }
+if ($platformTemplate.parameters.cpuVmNames.maxLength -ne 2 -or @($platformTemplate.parameters.cpuVmNames.defaultValue).Count -ne 0) { throw 'CPU execution access must default to no VM and allow at most the demo pair.' }
 foreach ($templatePath in @('infra/modules/lab-console-platform.json', 'infra/modules/lab-console-job.json')) {
   $runnerTemplate = Get-Content -LiteralPath (Join-Path $source $templatePath) -Raw | ConvertFrom-Json
   foreach ($runnerModule in @($runnerTemplate.resources | Where-Object { $_.name -in @('console-runner-identity', 'console-runner-registry', 'console-runner-environment', 'console-runner-job') })) {
@@ -47,7 +56,7 @@ $scriptDirectory = Join-Path $root 'scripts'
 $null = New-Item -ItemType Directory -Path $scriptDirectory -Force
 Copy-Item -LiteralPath (Join-Path $source 'scripts/initialize-webapp-console.ps1') -Destination $scriptDirectory
 foreach ($directory in @('workloads/k8s', 'workloads/operations', 'infra/modules')) { $null = New-Item -ItemType Directory -Path (Join-Path $root $directory) -Force }
-foreach ($file in @('scripts/invoke-lab-operation.ps1', 'scripts/start-the-lab.ps1', 'scripts/break-the-lab.ps1', 'scripts/restore-the-lab.ps1', 'scripts/start-ramp.ps1', 'scripts/send-custom-logs.ps1', 'scripts/send-release-annotation.ps1', 'workloads/k8s/02-loadgen.yaml', 'workloads/k8s/03-loadgen-ramp.yaml', 'workloads/operations/Dockerfile', 'infra/modules/lab-console-job.bicep')) {
+foreach ($file in @('scripts/invoke-lab-operation.ps1', 'scripts/start-the-lab.ps1', 'scripts/break-the-lab.ps1', 'scripts/restore-the-lab.ps1', 'scripts/start-ramp.ps1', 'scripts/simulate-high-cpu.ps1', 'scripts/send-custom-logs.ps1', 'scripts/send-release-annotation.ps1', 'workloads/k8s/02-loadgen.yaml', 'workloads/k8s/03-loadgen-ramp.yaml', 'workloads/operations/Dockerfile', 'infra/modules/lab-console-job.bicep')) {
   Copy-Item -LiteralPath (Join-Path $source $file) -Destination (Join-Path $root $file)
 }
 @'
@@ -71,6 +80,7 @@ $fixture = @{
   WithAi = $false; FailAi = $false; AiCalls = 0
   DeletePreview = $false; LastPreview = ''; Deployments = 0
   ExistingTags = $true; FailTagRead = $false
+  NoCpuPair = $false; FailCpuInventory = $false; CpuScopeEscape = $false
 }
 $scope = "/subscriptions/$($fixture.Subscription)/resourceGroups/test-rg"
 $fixture.ResourceBase = $scope
@@ -99,6 +109,10 @@ function az {
         if ($tagParameters.tags.value.owner -ne 'lab-owner' -or $tagParameters.tags.value.costCenter -ne 'test-center') { throw 'Runner deployment lost lab tags.' }
         if ($fixture.ExistingTags -and $tagParameters.existingResourceTags.value.acrlabtest.custom -ne 'keep-me') { throw 'Runner deployment lost resource-specific tags.' }
         if (-not $fixture.ExistingTags -and $tagParameters.existingResourceTags.value.Count) { throw 'First-time setup invented existing tags.' }
+        if ($deploymentName -eq 'lab-console-platform') {
+          $expectedCpuNames = if ($fixture.NoCpuPair) { @() } else { @('vm-test-lin', 'vmwintest') }
+          if (@($tagParameters.cpuVmNames.value).Count -ne $expectedCpuNames.Count -or @($tagParameters.cpuVmNames.value | Where-Object { $_ -notin $expectedCpuNames }).Count) { throw 'CPU role target selection is incorrect.' }
+        } elseif ($tagParameters.ContainsKey('cpuVmNames')) { throw 'VM role parameters must not leak into the job deployment schema.' }
       }
       if ($args[2] -eq 'what-if') {
         $fixture.LastPreview = $deploymentName
@@ -115,6 +129,17 @@ function az {
     }
     'identity show' { return @{ id = "$scope/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-test"; principalId = $fixture.RunnerIdentity; clientId = $fixture.Client } | ConvertTo-Json }
     'resource show' { return '{"location":"westeurope"}' }
+    'vm list' {
+      if ($fixture.FailCpuInventory) { $global:LASTEXITCODE = 1; return '[]' }
+      $vms = @(
+        @{ name = 'vm-test-lin'; id = "$scope/providers/Microsoft.Compute/virtualMachines/vm-test-lin"; tags = @{ purpose = 'azure-monitor-lab' }; storageProfile = @{ osDisk = @{ osType = 'Linux' } } }
+        @{ name = 'vmwintest'; id = "$scope/providers/Microsoft.Compute/virtualMachines/vmwintest"; tags = @{ purpose = 'azure-monitor-lab' }; storageProfile = @{ osDisk = @{ osType = 'Windows' } } }
+        @{ name = 'unrelated'; tags = @{ purpose = 'other' } }
+      )
+      if ($fixture.NoCpuPair) { $vms = @($vms | Where-Object name -ne 'vmwintest') }
+      if ($fixture.CpuScopeEscape) { $vms[0].id = '/subscriptions/other/resourceGroups/other/providers/Microsoft.Compute/virtualMachines/vm-test-lin' }
+      return ConvertTo-Json -InputObject $vms -Depth 5
+    }
     'resource list' {
       if ($fixture.FailTagRead) { $global:LASTEXITCODE = 1; return '[]' }
       $resources = @()
@@ -133,7 +158,7 @@ function az {
       if ($args -notcontains '--no-logs') { throw 'Build output must not dump protected data.' }
       $build = $args[[Array]::IndexOf($args, '--no-logs') + 1]
       if (Test-Path (Join-Path $build 'lab-console.json')) { throw 'Build context includes local configuration.' }
-      if (@(Get-ChildItem $build -File -Recurse).Count -ne 10) { throw 'Unexpected runner build context.' }
+      if (@(Get-ChildItem $build -File -Recurse).Count -ne 11 -or -not (Test-Path (Join-Path $build 'scripts/simulate-high-cpu.ps1'))) { throw 'Unexpected runner build context or missing CPU simulation script.' }
       if ($fixture.FailBuild) { $global:LASTEXITCODE = 1 }
       return
     }
@@ -184,6 +209,10 @@ try {
   & (Join-Path $scriptDirectory 'initialize-webapp-console.ps1') @parameters | Out-Null
   $fixture.ExistingTags = $true
   Reset-Configuration
+  $fixture.NoCpuPair = $true
+  & (Join-Path $scriptDirectory 'initialize-webapp-console.ps1') @parameters | Out-Null
+  $fixture.NoCpuPair = $false
+  Reset-Configuration
   $fixture.MissingLogs = $true
   & (Join-Path $scriptDirectory 'initialize-webapp-console.ps1') @parameters | Out-Null
   if ($fixture.LogsDeployments -ne 1 -or $fixture.MissingLogs) { throw 'Existing labs did not automatically acquire missing custom-log prerequisites.' }
@@ -191,7 +220,7 @@ try {
   $fixture.WithAi = $true
   & (Join-Path $scriptDirectory 'initialize-webapp-console.ps1') @parameters | Out-Null
   if ($fixture.AiCalls -ne 1 -or $fixture.Settings['LabConsole__Foundry__Enabled'] -ne 'True') { throw 'Optional Foundry setup was not automatic.' }
-  foreach ($failure in @('FailAuth', 'FailBuild', 'BadTenant', 'FailAi', 'DeletePreview', 'FailTagRead')) {
+  foreach ($failure in @('FailAuth', 'FailBuild', 'BadTenant', 'FailAi', 'DeletePreview', 'FailTagRead', 'FailCpuInventory', 'CpuScopeEscape')) {
     Reset-Configuration
     $fixture[$failure] = $true
     $before = $fixture.Writes.Count
@@ -203,6 +232,7 @@ try {
     elseif ($fixture.Settings['LabConsole__Operations__Enabled'] -ne 'false') { throw 'Setup failure left operations enabled.' }
     if ($failure -eq 'DeletePreview' -and $fixture.Deployments -ne $beforeDeployments) { throw 'A destructive preview did not block deployment.' }
     if ($failure -eq 'FailTagRead' -and $fixture.Deployments -ne $beforeDeployments) { throw 'Failed tag discovery must stop before redeploying runner resources.' }
+    if ($failure -in @('FailCpuInventory', 'CpuScopeEscape') -and $fixture.Deployments -ne $beforeDeployments) { throw 'Invalid CPU discovery must stop before guest execution access is granted.' }
     $fixture[$failure] = $false
   }
   Write-Output 'PASS: automatic sign-in, isolated cloud build, digest pinning, scoped access, ordered enablement, and fail-closed deployment. No live Azure calls.'

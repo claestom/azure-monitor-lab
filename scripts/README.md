@@ -27,7 +27,7 @@ For a fresh deployment, use `deploy.ps1` rather than calling `post-deploy.ps1` d
 
 ## Lab lifecycle and demo control
 
-The Control Center's [Lab Operations tab](../workloads/webapp/LAB-OPERATIONS.md) exposes six scripts through the [approved job wrapper](invoke-lab-operation.ps1). Normal deployment builds and configures the Azure Container Apps Job automatically. The wrapper is not an unrestricted local executor; offline tests never call Azure.
+The Control Center's [Lab Operations tab](../workloads/webapp/LAB-OPERATIONS.md) exposes seven scripts through the [approved job wrapper](invoke-lab-operation.ps1). Normal deployment builds and configures the Azure Container Apps Job automatically. The wrapper is not an unrestricted local executor; offline tests never call Azure.
 
 | Script | Purpose | Typical command |
 |---|---|---|
@@ -35,6 +35,7 @@ The Control Center's [Lab Operations tab](../workloads/webapp/LAB-OPERATIONS.md)
 | `break-the-lab.ps1` | Intentionally degrades the lab: stops VMs, crashloops the AKS frontend, and increases load-generator failures. | `./scripts/break-the-lab.ps1 -ResourceGroup <rg>` |
 | `restore-the-lab.ps1` | Reverses the break scenario by starting VMs, restoring the AKS image, and applying a healthy load generator. | `./scripts/restore-the-lab.ps1 -ResourceGroup <rg>` |
 | `start-ramp.ps1` | Starts a 60-minute AKS load test against the App Service for Smart Detection and autoscale demonstrations. | `./scripts/start-ramp.ps1 -ResourceGroup <rg>` |
+| [simulate-high-cpu.ps1](simulate-high-cpu.ps1) | Submits fixed 10-minute CPU loads to the running Linux and Windows demo VMs. No AKS dependency; guest load expires independently. | `./scripts/simulate-high-cpu.ps1 -SubscriptionId <sub> -TenantId <tenant> -ResourceGroup <rg>`; add `-WhatIf` for readiness checks only. |
 | `teardown.ps1` | Removes tenant-scoped demo artifacts and monitoring dependencies, then deletes every resource group whose name contains the complete requested resource group name, including AKS-managed `MC_` groups. | `./scripts/teardown.ps1 -ResourceGroup <rg> -Yes` |
 
 `teardown.ps1` is destructive. It lists all matching resource groups before deletion. The `-Yes` switch skips the confirmation prompt. If omitted, the script requires you to type `DELETE`.

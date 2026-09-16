@@ -4,7 +4,7 @@ $repo = Join-Path $root 'repo'
 $scriptDirectory = Join-Path $repo 'scripts'
 $null = New-Item -ItemType Directory -Path $scriptDirectory -Force
 $source = Split-Path $PSScriptRoot -Parent
-foreach ($name in @('invoke-lab-operation.ps1', 'start-the-lab.ps1', 'break-the-lab.ps1', 'restore-the-lab.ps1', 'start-ramp.ps1', 'send-custom-logs.ps1', 'send-release-annotation.ps1')) {
+foreach ($name in @('invoke-lab-operation.ps1', 'start-the-lab.ps1', 'break-the-lab.ps1', 'restore-the-lab.ps1', 'start-ramp.ps1', 'simulate-high-cpu.ps1', 'send-custom-logs.ps1', 'send-release-annotation.ps1')) {
   Copy-Item -LiteralPath (Join-Path $source $name) -Destination $scriptDirectory
 }
 $workloads = Join-Path $repo 'workloads/k8s'
@@ -15,6 +15,8 @@ $fixture = @{
   Calls = [Collections.Generic.List[object]]::new(); Http = [Collections.Generic.List[object]]::new(); Credentials = 0; Conversions = 0
   BadTenant = $false; DenyKubernetes = $false; FailVmStart = $false; FailKubernetes = $false; ObservedTarget = $false
   FailLogin = $false; VmssStopped = $false; AllResourcesStopped = $false; FailVmInventory = $false
+  CpuMode = $false; CpuMissingWindows = $false; CpuExtraVm = $false; CpuStoppedWindows = $false; CpuAgentUnavailable = $false
+  CpuWrongScope = $false; CpuSecondSubmissionFails = $false; CpuCommands = [Collections.Generic.List[object]]::new()
 }
 $envValues = @{
   LAB_RUNNER_MODE = 'ContainerAppsJob'; IDENTITY_ENDPOINT = 'http://localhost/identity'; IDENTITY_HEADER = 'test-header'; AZURE_CLIENT_ID = [guid]::NewGuid().ToString()
@@ -60,6 +62,17 @@ function Invoke-FakeAzure {
     'group exists' { return 'true' }
     'vm list' {
       if ($fixture.FailVmInventory) { $global:LASTEXITCODE = 3; return 'private diagnostic output' }
+      if ($fixture.CpuMode) {
+        $cpuVms = @(
+          @{ name = 'vm-test-lin'; id = "/subscriptions/$($fixture.Subscription)/resourceGroups/test-rg/providers/Microsoft.Compute/virtualMachines/vm-test-lin"; tags = @{ purpose = 'azure-monitor-lab' }; storageProfile = @{ osDisk = @{ osType = 'Linux' } } }
+          @{ name = 'vmwintest'; id = "/subscriptions/$($fixture.Subscription)/resourceGroups/test-rg/providers/Microsoft.Compute/virtualMachines/vmwintest"; tags = @{ purpose = 'azure-monitor-lab' }; storageProfile = @{ osDisk = @{ osType = 'Windows' } } }
+          @{ name = 'unrelated-vm'; tags = @{ purpose = 'other' }; storageProfile = @{ osDisk = @{ osType = 'Linux' } } }
+        )
+        if ($fixture.CpuMissingWindows) { $cpuVms = @($cpuVms | Where-Object name -ne 'vmwintest') }
+        if ($fixture.CpuExtraVm) { $cpuVms += $cpuVms[0] }
+        if ($fixture.CpuWrongScope) { $cpuVms[1].id = '/subscriptions/other/resourceGroups/other/providers/Microsoft.Compute/virtualMachines/vmwintest' }
+        return ConvertTo-Json -InputObject $cpuVms -Depth 6
+      }
       if ($args -contains '[].name') { return 'test-vm' }
       return '[{"name":"test-vm","power":"VM deallocated"}]'
     }
@@ -68,7 +81,22 @@ function Invoke-FakeAzure {
       return
     }
     'vm deallocate' { return }
-    'vm get-instance-view' { return 'VM running' }
+    'vm get-instance-view' {
+      if ($fixture.CpuMode) {
+        $power = if ($fixture.CpuStoppedWindows -and $args -contains 'vmwintest') { 'PowerState/deallocated' } else { 'PowerState/running' }
+        $agent = if ($fixture.CpuAgentUnavailable) { 'ProvisioningState/failed' } else { 'ProvisioningState/succeeded' }
+        return @{ statuses = @(@{ code = $power }); vmAgent = @{ statuses = @(@{ code = $agent }) } } | ConvertTo-Json -Depth 5
+      }
+      return 'VM running'
+    }
+    'vm run-command' {
+      if (-not $fixture.CpuMode -or $args[2] -ne 'invoke' -or $args -notcontains '--no-wait') { throw 'Unexpected VM guest command.' }
+      $scriptPath = $args[[Array]::IndexOf($args, '--scripts') + 1]
+      if (-not $scriptPath.StartsWith('@')) { throw 'Guest command must use a fixed script file.' }
+      $fixture.CpuCommands.Add(@{ Name = $args[[Array]::IndexOf($args, '--name') + 1]; CommandId = $args[[Array]::IndexOf($args, '--command-id') + 1]; Script = Get-Content -LiteralPath $scriptPath.Substring(1) -Raw; Path = $scriptPath.Substring(1) })
+      if ($fixture.CpuSecondSubmissionFails -and $args -contains 'vmwintest') { $global:LASTEXITCODE = 7; return 'private diagnostic output' }
+      return
+    }
     'vmss list' { return 'test-vmss' }
     'vmss list-instances' {
       if ($args -contains '-d') { $global:LASTEXITCODE = 2; return 'private diagnostic: unrecognized VMSS argument' }
@@ -166,6 +194,35 @@ try {
   }
   if (-not $discoveryRejected) { throw 'Access-only mode ignored an inventory failure.' }
   $fixture.FailVmInventory = $false
+  $fixture.CpuMode = $true
+  $cpuReadStart = $fixture.Calls.Count
+  & (Join-Path $scriptDirectory 'invoke-lab-operation.ps1') @parameters -Operation cpu -CheckAccessOnly | Out-Null
+  if ($fixture.CpuCommands.Count -ne 0 -or @($fixture.Calls | Select-Object -Skip $cpuReadStart | Where-Object { ($_.Arguments[0..1] -join ' ') -notin @('login --identity', 'account set', 'account show', 'group exists', 'vm list', 'vm get-instance-view') }).Count) { throw 'CPU access-only mode was not read-only and independent of AKS.' }
+  foreach ($failure in @('CpuMissingWindows', 'CpuExtraVm', 'CpuStoppedWindows', 'CpuAgentUnavailable', 'CpuWrongScope', 'FailVmInventory', 'BadTenant')) {
+    $fixture[$failure] = $true
+    $rejected = $false
+    try { & (Join-Path $scriptDirectory 'invoke-lab-operation.ps1') @parameters -Operation cpu | Out-Null } catch { $rejected = $true }
+    if (-not $rejected -or $fixture.CpuCommands.Count -ne 0) { throw "CPU simulation submitted load despite $failure." }
+    $fixture[$failure] = $false
+  }
+  $cpuOutput = & (Join-Path $scriptDirectory 'invoke-lab-operation.ps1') @parameters -Operation cpu | Out-String
+  if ($fixture.CpuCommands.Count -ne 2 -or $cpuOutput -notmatch "Approved action 'cpu' completed") { throw 'Both VM commands were not submitted.' }
+  $linuxCpu = $fixture.CpuCommands[0]
+  $windowsCpu = $fixture.CpuCommands[1]
+  if ($linuxCpu.Name -ne 'vm-test-lin' -or $linuxCpu.CommandId -ne 'RunShellScript' -or $linuxCpu.Script -notmatch 'timeout --signal=TERM --kill-after=5s 600s' -or $linuxCpu.Script -notmatch 'flock -n 9' -or $linuxCpu.Script -notmatch 'trap cleanup EXIT' -or $linuxCpu.Script -notmatch '_NPROCESSORS_ONLN') { throw 'Linux CPU lifetime, scope, lock, or worker contract is missing.' }
+  if ($windowsCpu.Name -ne 'vmwintest' -or $windowsCpu.CommandId -ne 'RunPowerShellScript' -or $windowsCpu.Script -notmatch 'clock.Elapsed.TotalSeconds < 600' -or $windowsCpu.Script -notmatch 'guard.WaitOne\(0\)' -or $windowsCpu.Script -notmatch 'worker.IsBackground = true' -or $windowsCpu.Script -notmatch 'Environment.ProcessorCount') { throw 'Windows CPU lifetime, scope, lock, or worker contract is missing.' }
+  $parseErrors = $null
+  $null = [Management.Automation.Language.Parser]::ParseInput($windowsCpu.Script, [ref]$null, [ref]$parseErrors)
+  if ($parseErrors.Count) { throw 'Windows guest script is not valid PowerShell.' }
+  if (@($fixture.CpuCommands | Where-Object { Test-Path -LiteralPath $_.Path }).Count) { throw 'Guest script files were not cleaned up.' }
+  $fixture.CpuCommands.Clear()
+  $fixture.CpuSecondSubmissionFails = $true
+  $rejected = $false
+  try { & (Join-Path $scriptDirectory 'invoke-lab-operation.ps1') @parameters -Operation cpu | Out-Null } catch { $rejected = $true }
+  if (-not $rejected -or $fixture.CpuCommands.Count -ne 2) { throw 'A partial CPU submission was ignored or retried.' }
+  if (@($fixture.CpuCommands | Where-Object { Test-Path -LiteralPath $_.Path }).Count) { throw 'Failed guest submission leaked temporary files.' }
+  $fixture.CpuSecondSubmissionFails = $false
+  $fixture.CpuMode = $false
   foreach ($operation in @('start', 'break', 'restore', 'ramp', 'logs', 'annotation')) {
     $arguments = $parameters.Clone()
     $arguments.Operation = $operation
@@ -201,7 +258,7 @@ try {
     if (-not $rejected) { throw "Runner did not stop for $failure." }
     $fixture[$failure] = $false
   }
-  Write-Output 'PASS: all six existing scripts execute only through fake scoped commands; repeated AKS login, native failures, parameters, and cleanup verified. No Azure calls executed.'
+  Write-Output 'PASS: all seven scripts execute only through fake scoped commands; bounded dual-VM CPU submission, preflight failures, repeated AKS login, parameters, and cleanup verified. No Azure calls or CPU load executed.'
 } finally {
   foreach ($name in $previous.Keys) { [Environment]::SetEnvironmentVariable($name, $previous[$name]) }
   if (Test-Path $root) { Remove-Item -LiteralPath $root -Recurse -Force }
