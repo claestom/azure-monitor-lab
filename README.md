@@ -94,11 +94,8 @@ cd azure-monitor-lab
 # 2. Copy the template and fill in subscriptionId, tenantId, alertEmail, vmAdminPassword, ...
 Copy-Item lab.config.json.example lab.config.json
 notepad lab.config.json
-#    → edit the values, then save the file (Ctrl+S) and close Notepad before continuing
-#    → stageToggles.enableStageA-E are only used by the staged/Terraform paths; the
-#      one-shot deploy always deploys everything and can leave them untouched.
-#      enableStageAI deploys the optional Foundry resources, while
-#      enableStageSreAgent deploys Azure SRE Agent and validates its connectors.
+# Save your changes and close Notepad before continuing.
+# One-shot ignores enableStageA-E; enableStageAI and enableStageSreAgent remain optional.
 
 # 3. Deploy (deploy.ps1 calls sync-config.ps1 for you)
 ./scripts/deploy.ps1
