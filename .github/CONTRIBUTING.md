@@ -50,8 +50,9 @@ contributing:
      where supported) and don't introduce hardcoded values.
 4. Test a real deployment into **your own** subscription where practical, then
    tear it down with `scripts/teardown.ps1`.
-5. Commit with a clear message and open a pull request against `integration`,
-   describing the change and how you validated it. Do not target `master` directly.
+5. Commit with a clear message and either push directly to `integration` or open a
+  pull request against it, describing the change and how you validated it. Do not
+  target `master` directly.
 
 ## Branch promotion
 
@@ -60,9 +61,8 @@ The release route is `dev -> integration -> master`. Feature branches also targe
 lab before a maintainer manually promotes it.
 
 - `dev` remains the normal development branch.
-- `integration` requires a pull request, passing CI against the current base,
-  and resolved review conversations. Direct pushes, force-pushes, and deletion
-  are blocked, with no bypass actors.
+- `integration` accepts direct fast-forward pushes and pull requests. Force-pushes
+  and deletion are blocked.
 - `master` has the same protections and additionally requires the
   **Integration promotion gate**. Only this repository's `integration` branch
   can pass it; a fork branch with the same name is not accepted.

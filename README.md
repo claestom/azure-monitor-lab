@@ -43,7 +43,6 @@ The App Service Control Center starts approved lab operations in an independent 
 - PowerShell 7+
 - .NET 8 SDK for publishing the Control Center
 - Deployment rights for the console registry, Consumption job environment, custom roles, and role assignments; tenant permission to manage its single-tenant sign-in registration and validate operator users. See [console deployment prerequisites](workloads/webapp/LAB-OPERATIONS.md#prerequisites). ACR Tasks must be available in the subscription; no local Docker or GitHub runner credentials are needed.
-- A subscription with quota for ~5 small VMs/nodes (`Standard_B2s`), 1 App Service B1, Managed Grafana, Storage, Event Hub, and Key Vault
 - For the optional AI stage only: Python 3.10+. `scripts/setup-ai.ps1` provisions the demo agents and traffic simulator from [`workloads/ai/`](workloads/ai/), and the models it deploys are billable.
 - For deployments with an SRE Agent: npm and tar on the deployment machine to package the pinned native MCP runtime. The deployed .NET app does not need Node.js.
 
