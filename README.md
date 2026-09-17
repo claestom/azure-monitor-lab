@@ -43,8 +43,8 @@ The App Service Control Center starts approved lab operations in an independent 
 - PowerShell 7+
 - .NET 8 SDK for publishing the Control Center
 - Azure and Microsoft Entra permissions to deploy the lab and configure Control Center access. See [console deployment prerequisites](workloads/webapp/LAB-OPERATIONS.md#prerequisites) for the required roles.
-- Optional AI stage: Python 3.10+
-- SRE Agent stage: npm and tar
+- Optional AI stage: [Python 3.10+](https://www.python.org/downloads/)
+- SRE Agent stage: [npm](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm) and [tar](https://www.gnu.org/software/tar/)
 
 > Two IaC paths, one config. Bicep is the primary one (`infra/`); Terraform (`terraform/`) is a parallel implementation driven from the same `lab.config.json`. Pick one and don't mix them.
 
