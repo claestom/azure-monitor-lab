@@ -78,17 +78,6 @@ az account set --subscription $subscriptionId
 ./scripts/post-cloud-shell-deploy.ps1 -SubscriptionId $subscriptionId -ResourceGroup $resourceGroup
 ```
 
-If the repository is already present in Cloud Shell, update it before rerunning the wrapper:
-
-```powershell
-cd ~/azure-monitor-lab
-git switch master
-git pull --ff-only origin master
-$subscriptionId = Read-Host 'Subscription ID'
-$resourceGroup = Read-Host 'Resource group name'
-./scripts/post-cloud-shell-deploy.ps1 -SubscriptionId $subscriptionId -ResourceGroup $resourceGroup
-```
-
 > **Next:** Follow the [post-deployment guide for the portal option](docs/POST-DEPLOYMENT.md#portal-deployment) to finish the scenarios and optional stages you enabled.
 
 > Use Option 2 for a scripted one-shot deployment, or Option 3 for the staged workshop and progressive deployment.
