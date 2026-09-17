@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.37.4.10188",
-      "templateHash": "8039290159437556042"
+      "templateHash": "3189765578054132533"
     }
   },
   "parameters": {
@@ -293,14 +293,14 @@
       "location": "global",
       "tags": "[variables('commonTags')]",
       "properties": {
-        "description": "Lab VM CPU anomaly detected by ML-learned dynamic thresholds (medium sensitivity)",
+        "description": "Lab VM CPU above its ML-learned baseline (medium sensitivity)",
         "severity": 3,
         "enabled": true,
         "scopes": "[filter(createArray(if(parameters('deployLinuxVm'), reference(resourceId('Microsoft.Resources/deployments', 'vm-linux'), '2022-09-01').outputs.vmId.value, ''), if(parameters('deployWindowsVm'), reference(resourceId('Microsoft.Resources/deployments', 'vm-windows'), '2022-09-01').outputs.vmId.value, '')), lambda('id', not(empty(lambdaVariables('id')))))]",
         "targetResourceType": "Microsoft.Compute/virtualMachines",
         "targetResourceRegion": "[parameters('location')]",
         "evaluationFrequency": "PT5M",
-        "windowSize": "PT10M",
+        "windowSize": "PT15M",
         "criteria": {
           "odata.type": "Microsoft.Azure.Monitor.MultipleResourceMultipleMetricCriteria",
           "allOf": [
@@ -308,13 +308,13 @@
               "name": "CpuDynamic",
               "metricNamespace": "Microsoft.Compute/virtualMachines",
               "metricName": "Percentage CPU",
-              "operator": "GreaterOrLessThan",
+              "operator": "GreaterThan",
               "timeAggregation": "Average",
               "criterionType": "DynamicThresholdCriterion",
               "alertSensitivity": "Medium",
               "failingPeriods": {
-                "numberOfEvaluationPeriods": 4,
-                "minFailingPeriodsToAlert": 3
+                "numberOfEvaluationPeriods": 1,
+                "minFailingPeriodsToAlert": 1
               }
             }
           ]
