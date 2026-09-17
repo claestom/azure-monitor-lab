@@ -8,7 +8,7 @@
   "tenantId":         "<YOUR-TENANT-ID>",
 
   "alertEmail":       "your.alias@example.com",
-  "fabricAdminEmail": "admin@yourtenant.onmicrosoft.com",
+  "fabricAdminEmail": "admin@example.com",
   "vmAdminPassword":  "<STRONG-PASSWORD>",
 
   "resourceGroup":    "rg-azure-monitor-lab",

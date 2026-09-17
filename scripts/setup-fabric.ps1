@@ -66,6 +66,10 @@ function Wait-FabricOperation {
       -Uri $OperationUrl `
       -Headers $script:fabricHeaders `
       -ResponseHeadersVariable pollHeaders
+    if ($operation.status -notin @('NotStarted', 'Running', 'Succeeded', 'Failed', 'Cancelled')) {
+      $unexpectedStatus = if ([string]::IsNullOrWhiteSpace($operation.status)) { '<missing>' } else { $operation.status }
+      throw "Fabric operation '$OperationId' returned unexpected status '$unexpectedStatus'. Expected an operation status response. Operation URL: $OperationUrl"
+    }
     if ($operation.status -ne $lastStatus) {
       $progress = if ($null -ne $operation.percentComplete) { " ($($operation.percentComplete)%)" } else { '' }
       Write-Info "Fabric operation $OperationId`: $($operation.status)$progress"
@@ -100,6 +104,7 @@ function New-FabricItem {
   )
 
   $responseHeaders = $null
+  $responseStatus = $null
   $request = @{
     Method = 'Post'
     Uri = "$fabricApi/$Path"
@@ -107,13 +112,18 @@ function New-FabricItem {
     ContentType = 'application/json'
     Body = ($Body | ConvertTo-Json -Depth 8)
     ResponseHeadersVariable = 'responseHeaders'
+    StatusCodeVariable = 'responseStatus'
   }
   $result = Invoke-RestMethod @request
-  $operationUrl = $responseHeaders.Location | Select-Object -First 1
+  if ($responseStatus -in @(200, 201)) { return $result }
+  if ($responseStatus -ne 202) { throw "Fabric request '$Path' returned unexpected HTTP status '$responseStatus'." }
+
   $operationId = $responseHeaders.'x-ms-operation-id' | Select-Object -First 1
-  if ($operationUrl) {
-    Wait-FabricOperation -OperationUrl $operationUrl -OperationId $operationId
+  $operationUrl = if ($operationId) { "$fabricApi/operations/$operationId" } else { $responseHeaders.Location | Select-Object -First 1 }
+  if ([string]::IsNullOrWhiteSpace($operationUrl)) {
+    throw "Fabric accepted '$Path' but did not return an operation URL or ID. No request was retried."
   }
+  Wait-FabricOperation -OperationUrl $operationUrl -OperationId $operationId
   return $result
 }
 
@@ -378,6 +388,7 @@ function Set-EventstreamTopology {
   }
 
   $responseHeaders = $null
+  $responseStatus = $null
   try {
     Invoke-RestMethod `
       -Method Post `
@@ -385,7 +396,8 @@ function Set-EventstreamTopology {
       -Headers $script:fabricHeaders `
       -ContentType 'application/json' `
       -Body ($requestBody | ConvertTo-Json -Depth 25) `
-      -ResponseHeadersVariable responseHeaders | Out-Null
+      -ResponseHeadersVariable responseHeaders `
+      -StatusCodeVariable responseStatus | Out-Null
   } catch {
     $fabricError = $_.ErrorDetails.Message
     if ($fabricError) {
@@ -398,11 +410,13 @@ function Set-EventstreamTopology {
     }
     throw "Eventstream definition was rejected: $($_.Exception.Message)"
   }
-  $operationUrl = $responseHeaders.Location | Select-Object -First 1
-  if ($operationUrl) {
-    Wait-FabricOperation `
-      -OperationUrl $operationUrl `
-      -OperationId ($responseHeaders.'x-ms-operation-id' | Select-Object -First 1)
+  if ($responseStatus -eq 202) {
+    $operationId = $responseHeaders.'x-ms-operation-id' | Select-Object -First 1
+    $operationUrl = if ($operationId) { "$fabricApi/operations/$operationId" } else { $responseHeaders.Location | Select-Object -First 1 }
+    if ([string]::IsNullOrWhiteSpace($operationUrl)) {
+      throw 'Fabric accepted the Eventstream definition but did not return an operation URL or ID. No request was retried.'
+    }
+    Wait-FabricOperation -OperationUrl $operationUrl -OperationId $operationId
   }
 }
 

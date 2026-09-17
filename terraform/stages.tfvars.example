@@ -36,7 +36,7 @@ enable_stage_e = false  # Optional advanced (auto-mitigation Logic App, availabi
 # and other meters can add cost. Run scripts/setup-fabric.ps1 after apply, and suspend
 # the capacity when the demo is idle.
 enable_stage_fabric = false
-fabric_admin_email  = "admin@yourtenant.onmicrosoft.com" # tenant user UPN, not an external alert alias
+fabric_admin_email  = "admin@example.com" # replace with your tenant's user UPN, not an external alert alias
 
 # Optional AI stage - Microsoft Foundry GenAI workload (account, project, chat/embed/
 # optimize/model-router deployments) + App Insights connection + token metric alerts.

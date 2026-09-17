@@ -69,13 +69,13 @@ The Azure Monitor workbook reports the ARM capacity state and provisioning state
 
 ## One-shot deployment
 
-Set the Fabric toggle in `lab.config.json`:
+Set the Fabric toggle in `lab.config.json` and replace the fictitious `admin@example.com` with a Microsoft Entra user UPN from your deployment tenant:
 
 ```json
 "stageToggles": {
   "enableStageFabric": true
 },
-"fabricAdminEmail": "admin@yourtenant.onmicrosoft.com"
+"fabricAdminEmail": "admin@example.com"
 ```
 
 Then deploy and configure the Fabric items:
@@ -96,7 +96,7 @@ az deployment group create `
   --resource-group <resource-group> `
   --name stage-fabric-capacity `
   --template-file infra/stages/60-fabric.bicep `
-        --parameters namePrefix=amlab fabricAdminEmail=admin@yourtenant.onmicrosoft.com
+          --parameters namePrefix=amlab fabricAdminEmail=admin@example.com
 
 ./scripts/setup-fabric.ps1 -SubscriptionId <subscription-id> -ResourceGroup <resource-group>
 ```
@@ -202,7 +202,7 @@ Full lab teardown also removes the tenant-scoped workspace and its contained Eve
 2. It is a Microsoft Entra user UPN in the subscription tenant, not an external alert address.
 3. The user can sign in to Microsoft Fabric and the tenant has Fabric enabled.
 
-For this sponsored lab tenant, the known working administrator format is `admin@MngEnvMCAP363544.onmicrosoft.com`. The portal, Bicep, config-sync, and Terraform inputs now require a separate Fabric administrator value. `setup-fabric.ps1` also compares the signed-in Azure CLI user with the deployed capacity administrators before requesting a Fabric API token.
+Use your deployment tenant's actual Microsoft Entra user UPN, not the fictitious example address. The portal, Bicep, config-sync, and Terraform inputs require a separate Fabric administrator value. `setup-fabric.ps1` also compares the signed-in Azure CLI user with the deployed capacity administrators before requesting a Fabric API token.
 
 ## Demo scenarios
 

@@ -327,7 +327,7 @@
             "type": "Microsoft.Common.TextBox",
             "label": "Fabric administrator UPN",
             "defaultValue": "",
-            "toolTip": "Microsoft Entra user UPN in the selected subscription tenant, for example admin@contoso.onmicrosoft.com. Do not use an external notification alias.",
+            "toolTip": "Microsoft Entra user UPN in the selected subscription tenant. Replace the fictitious example admin@example.com with your tenant's user UPN. Do not use an external notification alias.",
             "constraints": {
               "required": "[equals(steps('advanced').enableFabric, true)]",
               "regex": "^[^@\\s]+@[^@\\s]+$",
