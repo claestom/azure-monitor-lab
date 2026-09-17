@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------------
 // Security operations workbook
 //
-// Single, opinionated security pane-of-glass for the Azure Monitor demo lab.
+// Single, opinionated security pane-of-glass for Azure Monitor Lab.
 // Pulls from:
 //   * AzureActivity        - control-plane CRUD, privilege escalation, lifecycle
 //   * SigninLogs            - identity / Entra sign-ins (best-effort, with fallback)
@@ -262,7 +262,7 @@ var workbookContent = {
     {
       type: 1
       content: {
-        json: '## 🛡️ Security operations — single pane of glass\n\nThis workbook surfaces the most useful security telemetry from the Azure Monitor demo lab:\n\n* **Identity** — Entra sign-ins (success / failure / risky)\n* **Control plane** — Azure Resource Manager CRUD activity, top operations & callers\n* **Privilege escalation** — RBAC role assignments / definitions / elevateAccess\n* **Network** — egress hotspots, denied flows, malicious-flow hits (from VNet Flow Logs + Traffic Analytics)\n* **Lifecycle** — resource churn by provider\n* **Sensitive data plane** — Key Vault secret reads, Storage transactions\n* **Linked alerts** — fires from scenarios 47/48/49\n\n> Time scope defaults to 24h for tiles, 7d for higher-signal panels (privilege escalation, malicious flows). All queries are pinned to the central lab workspace.'
+        json: '## 🛡️ Security operations — single pane of glass\n\nThis workbook surfaces the most useful security telemetry from Azure Monitor Lab:\n\n* **Identity** — Entra sign-ins (success / failure / risky)\n* **Control plane** — Azure Resource Manager CRUD activity, top operations & callers\n* **Privilege escalation** — RBAC role assignments / definitions / elevateAccess\n* **Network** — egress hotspots, denied flows, malicious-flow hits (from VNet Flow Logs + Traffic Analytics)\n* **Lifecycle** — resource churn by provider\n* **Sensitive data plane** — Key Vault secret reads, Storage transactions\n* **Linked alerts** — fires from scenarios 47/48/49\n\n> Time scope defaults to 24h for tiles, 7d for higher-signal panels (privilege escalation, malicious flows). All queries are pinned to the central lab workspace.'
       }
       name: 'header'
     }
@@ -614,7 +614,7 @@ resource workbook 'Microsoft.Insights/workbooks@2023-06-01' = {
   tags: tags
   kind: 'shared'
   properties: {
-    displayName: '🛡️ Azure Monitor Demo Lab — Security operations'
+    displayName: '🛡️ Azure Monitor Lab — Security operations'
     serializedData: string(workbookContent)
     category: 'workbook'
     sourceId: centralLawId

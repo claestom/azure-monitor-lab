@@ -7,8 +7,13 @@ param location string
 @description('Azure Monitor Workspace resource ID to integrate (Managed Prometheus).')
 param azureMonitorWorkspaceId string
 
+@description('Optional Microsoft Entra object ID of the lab operator or group to grant Grafana Admin. Empty assigns the deployment identity; set explicitly when deploying through automation.')
+param adminObjectId string = ''
+
 @description('Resource tags.')
 param tags object = {}
+
+var adminPrincipalId = empty(adminObjectId) ? deployer().objectId : adminObjectId
 
 resource grafana 'Microsoft.Dashboard/grafana@2024-10-01' = {
   name: name
@@ -41,6 +46,15 @@ resource roleMonitoringReader 'Microsoft.Authorization/roleAssignments@2022-04-0
     principalId: grafana.identity.principalId
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '43d0d8ad-25c7-4714-9337-8ba259a9fe05')
     principalType: 'ServicePrincipal'
+  }
+}
+
+resource deployerAdmin 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(grafana.id, adminPrincipalId, '22926164-76b3-42b3-bc55-97df8dab3e41')
+  scope: grafana
+  properties: {
+    principalId: adminPrincipalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '22926164-76b3-42b3-bc55-97df8dab3e41')
   }
 }
 

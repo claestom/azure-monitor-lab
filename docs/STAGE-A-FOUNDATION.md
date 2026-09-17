@@ -21,7 +21,7 @@
 | Saved queries + KQL functions | Many | Drop the "starter pack" of KQL into the workspace `Queries` pane so demos start with curated assets. |
 | Workbooks | Traffic-Lights workbook (display: `wb-amlab-trafficlights`), Cost-of-Monitoring workbook (display: `wb-amlab-cost`) | Two pinned workbooks the customer will see in the next demo step. |
 
-> All resources are tagged `purpose=azure-monitor-demo-lab`, `owner=demo-lab`.
+> All resources are tagged `purpose=azure-monitor-lab`, `owner=demo-lab`.
 
 ## 2) Speaker notes
 

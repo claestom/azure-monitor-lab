@@ -3,7 +3,7 @@ kind: Namespace
 metadata:
   name: demo
   labels:
-    purpose: azure-monitor-demo-lab
+    purpose: azure-monitor-lab
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -29,7 +29,7 @@ spec:
             - containerPort: 80
           env:
             - name: TITLE
-              value: "Azure Monitor Demo Lab"
+              value: "Azure Monitor Lab"
           resources:
             requests:
               cpu: "50m"

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Deploy the Azure Monitor Demo Lab.
+  Deploy the Azure Monitor Lab.
 
 .DESCRIPTION
   1. Creates the resource group (if missing).
@@ -35,7 +35,8 @@ param(
   [string] $Location       = 'northeurope',
   [string] $ParametersFile = (Join-Path $PSScriptRoot '..' 'infra' 'main.parameters.json'),
   [switch] $SkipPreflight,
-  [int]    $MaxDeployRetries = 0
+  [int]    $MaxDeployRetries = 0,
+  [guid[]] $ConsoleOperatorObjectIds
 )
 
 $ErrorActionPreference = 'Stop'
@@ -97,9 +98,10 @@ function Assert-AllowedSubscription {
     throw "BLOCKED: active sub '$($active.name)' is on the forbidden list."
   }
   Write-Host "   OK — $($active.name)" -ForegroundColor Green
+  return $active
 }
 
-Assert-AllowedSubscription
+$active = Assert-AllowedSubscription
 
 # 0. Sanity
 Write-Step "Active subscription"
@@ -122,7 +124,7 @@ if ($SkipPreflight) {
 
 # 1. Resource group
 Write-Step "Ensuring resource group $ResourceGroup in $Location"
-az group create -n $ResourceGroup -l $Location --tags purpose=azure-monitor-demo-lab owner=demo-lab | Out-Null
+az group create -n $ResourceGroup -l $Location --tags purpose=azure-monitor-lab owner=demo-lab | Out-Null
 
 # 1b. Resource provider registration — Health Models (preview) is not auto-registered
 function Register-ResourceProvider {
@@ -144,6 +146,8 @@ function Register-ResourceProvider {
 
 Write-Step "Ensuring preview resource providers are registered"
 Register-ResourceProvider -Namespace 'Microsoft.CloudHealth'
+Register-ResourceProvider -Namespace 'Microsoft.App'
+Register-ResourceProvider -Namespace 'Microsoft.ContainerRegistry'
 
 $fabricEnabled = $false
 if ($null -ne $labCfg -and $null -ne $labCfg.stageToggles -and $null -ne $labCfg.stageToggles.enableStageFabric) {
@@ -346,7 +350,7 @@ Write-Host "  Windows VM     : $winVm"
 
 # 3. Post-deploy
 $postDeploy = Join-Path $PSScriptRoot 'post-deploy.ps1'
-& $postDeploy -ResourceGroup $ResourceGroup -WebAppName $webAppName -AksName $aksName -WebAppHost $webAppHost -CentralLawName $centralLawName
+& $postDeploy -SubscriptionId $active.id -TenantId $active.tenantId -ResourceGroup $ResourceGroup -WebAppName $webAppName -AksName $aksName -WebAppHost $webAppHost -CentralLawName $centralLawName -ConsoleOperatorObjectIds $ConsoleOperatorObjectIds
 
 # 4. Service Group (tenant-scoped, preview) + service group member relationship.
 #    Required before SLIs can be attached as extensions on the group.
@@ -354,29 +358,43 @@ Write-Step "Provisioning service group + RG member (scenario 45 prerequisite)"
 $setupHm = Join-Path $PSScriptRoot 'setup-health-model.ps1'
 & $setupHm -ResourceGroup $ResourceGroup
 
-# 5. Service Level Indicators (scenario 46) — extension on the service group.
-Write-Step "Provisioning demo SLIs (scenario 46)"
+# 5. Verify the portal-created SLI prerequisites and source metrics (scenario 46).
+Write-Step "Verifying demo SLI prerequisites and source metrics (scenario 46)"
 $setupSli = Join-Path $PSScriptRoot 'setup-slis.ps1'
-& $setupSli -ResourceGroup $ResourceGroup
+& $setupSli -SubscriptionId $active.id -ResourceGroup $ResourceGroup
 
-# 6. Optional AI feature — create the demo agents + simulate GenAI traffic, but only
+# 6. Optional SRE Agent stage. Bicep creates the agent and Azure Monitor connectors;
+#    this verifies the deployed resource and prints the portal URL.
+$sreAgentEnabled = $false
+if ($null -ne $labCfg -and $null -ne $labCfg.stageToggles -and $null -ne $labCfg.stageToggles.enableStageSreAgent) {
+  $sreAgentEnabled = [bool]$labCfg.stageToggles.enableStageSreAgent
+}
+if ($sreAgentEnabled) {
+  Write-Step "SRE Agent stage enabled - verifying the deployed agent and Azure Monitor connectors"
+  $setupSreAgent = Join-Path $PSScriptRoot 'setup-sre-agent.ps1'
+  & $setupSreAgent -SubscriptionId $active.id -ResourceGroup $ResourceGroup
+}
+
+# 7. Optional AI feature - create the demo agents + simulate GenAI traffic, but only
 #    when lab.config.json enabled it (stageToggles.enableStageAI -> Bicep enableAi).
 $aiEnabled = $false
+$aiTrafficStarted = $false
 if ($null -ne $labCfg -and $null -ne $labCfg.stageToggles -and $null -ne $labCfg.stageToggles.enableStageAI) {
   $aiEnabled = [bool]$labCfg.stageToggles.enableStageAI
 }
 if ($aiEnabled) {
-  Write-Step "AI feature enabled — creating agents + simulating traffic (scripts/setup-ai.ps1)"
+  Write-Step "AI feature enabled - preparing agents and starting background traffic"
   $setupAi = Join-Path $PSScriptRoot 'setup-ai.ps1'
   try {
-    & $setupAi -ResourceGroup $ResourceGroup
+    & $setupAi -ResourceGroup $ResourceGroup -SubscriptionId $active.id -TenantId $active.tenantId -BackgroundTraffic
+    $aiTrafficStarted = $true
   } catch {
-    Write-Host "  AI setup failed: $($_.Exception.Message)" -ForegroundColor Yellow
-    Write-Host "  Re-run manually once Python + az are ready: ./scripts/setup-ai.ps1" -ForegroundColor Yellow
+    Write-Host "  Optional AI traffic could not start: $($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host '  Console agent provisioning completed earlier. This warning concerns optional demo traffic.' -ForegroundColor Yellow
   }
 }
 
-# 7. Optional Fabric feature - create the tenant-scoped workspace and Real-Time
+# 8. Optional Fabric feature - create the tenant-scoped workspace and Real-Time
 #    Intelligence items after the ARM capacity is ready.
 if ($fabricEnabled) {
   Write-Step "Fabric feature enabled - creating workspace and Real-Time Intelligence items"
@@ -391,4 +409,6 @@ if ($fabricEnabled) {
   }
 }
 
-Write-Host "`n✅ Lab is up. See README.md for the demo flow." -ForegroundColor Green
+$completionMessage = 'Lab setup complete.'
+if ($aiTrafficStarted) { $completionMessage += ' Agent traffic started in the background.' }
+Write-Host "`n$completionMessage" -ForegroundColor Green

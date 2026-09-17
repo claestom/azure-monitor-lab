@@ -26,5 +26,6 @@ resource appi 'Microsoft.Insights/components@2020-02-02' = {
 
 output id string = appi.id
 output name string = appi.name
+output appId string = appi.properties.AppId
 output instrumentationKey string = appi.properties.InstrumentationKey
 output connectionString string = appi.properties.ConnectionString

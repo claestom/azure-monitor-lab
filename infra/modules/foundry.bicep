@@ -89,7 +89,7 @@ resource project 'Microsoft.CognitiveServices/accounts/projects@2025-06-01' = {
   location: location
   identity: { type: 'SystemAssigned' }
   properties: {
-    displayName: 'Azure Monitor Demo Lab — AI'
+    displayName: 'Azure Monitor Lab — AI'
     description: 'GenAI workload generating token/trace/cost telemetry for the observability lab.'
   }
   // Account allows only one write at a time — order the project after all deployments.

@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.37.4.10188",
-      "templateHash": "16389798141352517874"
+      "templateHash": "5133479670281576829"
     }
   },
   "parameters": {
@@ -71,7 +71,7 @@
     "costWorkbookName": "[format('wb-{0}-cost', parameters('namePrefix'))]",
     "commonTags": {
       "owner": "[parameters('ownerTag')]",
-      "purpose": "azure-monitor-demo-lab",
+      "purpose": "azure-monitor-lab",
       "costCenter": "demo"
     },
     "appServiceLocation": "westeurope"
@@ -476,7 +476,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.37.4.10188",
-              "templateHash": "8128719559614570963"
+              "templateHash": "4105218306251594533"
             }
           },
           "parameters": {
@@ -531,6 +531,10 @@
             "name": {
               "type": "string",
               "value": "[parameters('name')]"
+            },
+            "appId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Insights/components', parameters('name')), '2020-02-02').AppId]"
             },
             "instrumentationKey": {
               "type": "string",
@@ -1799,7 +1803,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.37.4.10188",
-              "templateHash": "13441797547168921085"
+              "templateHash": "2374855197336449984"
             }
           },
           "parameters": {
@@ -1829,7 +1833,7 @@
                 "displayName": "Function: vmHealth() — traffic-light status for all VMs",
                 "functionAlias": "vmHealth",
                 "functionParameters": "",
-                "query": "let heartbeats = Heartbeat\r\n  | summarize LastHB = max(TimeGenerated) by Computer, OSType\r\n  | extend MinutesSinceHB = datetime_diff(\"minute\", now(), LastHB);\r\nlet cpu = InsightsMetrics\r\n  | where TimeGenerated > ago(15m)\r\n  | where Namespace == \"Processor\" and Name == \"UtilizationPercentage\"\r\n  | summarize AvgCpu = avg(Val) by Computer;\r\nheartbeats\r\n| join kind=leftouter cpu on Computer\r\n| extend AvgCpu = coalesce(AvgCpu, 0.0)\r\n| extend Status = case(\r\n    MinutesSinceHB > 5 or AvgCpu > 90, \"Red\",\r\n    MinutesSinceHB > 2 or AvgCpu > 70, \"Orange\",\r\n    \"Green\")\r\n| project Computer, OSType, LastHB, MinutesSinceHB, AvgCpu, Status",
+                "query": "let heartbeats = Heartbeat\n  | summarize LastHB = max(TimeGenerated) by Computer, OSType\n  | extend MinutesSinceHB = datetime_diff(\"minute\", now(), LastHB);\nlet cpu = InsightsMetrics\n  | where TimeGenerated > ago(15m)\n  | where Namespace == \"Processor\" and Name == \"UtilizationPercentage\"\n  | summarize AvgCpu = avg(Val) by Computer;\nheartbeats\n| join kind=leftouter cpu on Computer\n| extend AvgCpu = coalesce(AvgCpu, 0.0)\n| extend Status = case(\n    MinutesSinceHB > 5 or AvgCpu > 90, \"Red\",\n    MinutesSinceHB > 2 or AvgCpu > 70, \"Orange\",\n    \"Green\")\n| project Computer, OSType, LastHB, MinutesSinceHB, AvgCpu, Status",
                 "version": 2
               }
             },
@@ -1842,7 +1846,7 @@
                 "displayName": "Function: aksHealth() — traffic-light status for AKS pods",
                 "functionAlias": "aksHealth",
                 "functionParameters": "",
-                "query": "KubePodInventory\r\n| where TimeGenerated > ago(15m)\r\n| summarize Restarts = sum(toint(ContainerRestartCount)),\r\n            arg_max(TimeGenerated, PodStatus) by Namespace, Name, ControllerName\r\n| extend Status = case(\r\n    PodStatus !in (\"Running\",\"Succeeded\") or Restarts > 10, \"Red\",\r\n    Restarts > 3, \"Orange\",\r\n    \"Green\")\r\n| project Namespace, Pod = Name, Controller = ControllerName, PodStatus, Restarts, Status",
+                "query": "KubePodInventory\n| where TimeGenerated > ago(15m)\n| summarize Restarts = sum(toint(ContainerRestartCount)),\n            arg_max(TimeGenerated, PodStatus) by Namespace, Name, ControllerName\n| extend Status = case(\n    PodStatus !in (\"Running\",\"Succeeded\") or Restarts > 10, \"Red\",\n    Restarts > 3, \"Orange\",\n    \"Green\")\n| project Namespace, Pod = Name, Controller = ControllerName, PodStatus, Restarts, Status",
                 "version": 2
               }
             },
@@ -1855,7 +1859,7 @@
                 "displayName": "Function: envHealth() — combined environment health",
                 "functionAlias": "envHealth",
                 "functionParameters": "",
-                "query": "[replace('__APPI_LAW__', parameters('appInsightsLawName'), 'let vms = vmHealth()\r\n  | project ResourceType = \"VM\", ResourceName = Computer, Status, Detail = strcat(\"CPU=\", round(AvgCpu,1), \"% HB=\", MinutesSinceHB, \"m ago\");\r\nlet pods = aksHealth()\r\n  | project ResourceType = \"AKS Pod\", ResourceName = Pod, Status, Detail = strcat(\"Restarts=\", Restarts, \" Status=\", PodStatus);\r\nlet appi = workspace(\"__APPI_LAW__\").AppRequests\r\n  | where TimeGenerated > ago(15m)\r\n  | summarize Total = count(), Failed = countif(Success == false)\r\n  | extend FailPct = round(100.0 * Failed / Total, 1)\r\n  | extend Status = case(FailPct > 10, \"Red\", FailPct > 5, \"Orange\", \"Green\")\r\n  | project ResourceType = \"App Insights\", ResourceName = \"App Service\", Status, Detail = strcat(\"FailRate=\", FailPct, \"% (\", Failed, \"/\", Total, \")\");\r\nunion vms, pods, appi\r\n| order by case(Status == \"Red\", 0, Status == \"Orange\", 1, 2) asc, ResourceType asc')]",
+                "query": "[replace('__APPI_LAW__', parameters('appInsightsLawName'), 'let vms = vmHealth()\n  | project ResourceType = \"VM\", ResourceName = Computer, Status, Detail = strcat(\"CPU=\", round(AvgCpu,1), \"% HB=\", MinutesSinceHB, \"m ago\");\nlet pods = aksHealth()\n  | project ResourceType = \"AKS Pod\", ResourceName = Pod, Status, Detail = strcat(\"Restarts=\", Restarts, \" Status=\", PodStatus);\nlet appi = workspace(\"__APPI_LAW__\").AppRequests\n  | where TimeGenerated > ago(15m)\n  | summarize Total = count(), Failed = countif(Success == false)\n  | extend FailPct = round(100.0 * Failed / Total, 1)\n  | extend Status = case(FailPct > 10, \"Red\", FailPct > 5, \"Orange\", \"Green\")\n  | project ResourceType = \"App Insights\", ResourceName = \"App Service\", Status, Detail = strcat(\"FailRate=\", FailPct, \"% (\", Failed, \"/\", Total, \")\");\nunion vms, pods, appi\n| order by case(Status == \"Red\", 0, Status == \"Orange\", 1, 2) asc, ResourceType asc')]",
                 "version": 2
               }
             }
@@ -1900,7 +1904,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.37.4.10188",
-              "templateHash": "972363763155286983"
+              "templateHash": "9277295640901288810"
             }
           },
           "parameters": {
@@ -1938,26 +1942,26 @@
             }
           },
           "variables": {
-            "trafficLightsQuery": "let lookback = 15m;\r\nlet nowT = now();\r\nlet vm = Heartbeat\r\n  | where TimeGenerated > ago(1h)\r\n  | summarize LastBeat = max(TimeGenerated) by Computer, OSType\r\n  | extend SecondsSince = datetime_diff(\"second\", nowT, LastBeat)\r\n  | extend Status = case(SecondsSince <= 300, \"🟢\", SecondsSince <= 900, \"🟠\", \"🔴\")\r\n  | project ResourceType = strcat(\"VM (\", OSType, \")\"), Resource = Computer, Status,\r\n            Detail = strcat(\"Last heartbeat \", SecondsSince, \"s ago\");\r\nlet aksNodes = Perf\r\n  | where TimeGenerated > ago(15m)\r\n  | where ObjectName == \"K8SNode\" and CounterName == \"cpuUsageNanoCores\"\r\n  | summarize LastSample = max(TimeGenerated) by Computer\r\n  | summarize Total = count();\r\nlet aksRestarts = toscalar(KubePodInventory\r\n  | where TimeGenerated > ago(15m)\r\n  | summarize MaxRestarts = max(toint(ContainerRestartCount)) by Namespace, Name\r\n  | summarize Restarts = sum(MaxRestarts)\r\n  | project Restarts);\r\nlet aks = aksNodes\r\n  | extend Restarts = aksRestarts\r\n  | extend Status = case(Total == 0, \"🔴\", Restarts > 5, \"🟠\", \"🟢\")\r\n  | extend Detail = strcat(Total, \" nodes reporting · \", Restarts, \" restarts (15m)\")\r\n  | project ResourceType = \"AKS Cluster\", Resource = \"aks\", Status, Detail;\r\nlet app = AppServiceHTTPLogs\r\n  | where TimeGenerated > ago(15m)\r\n  | summarize FiveXX = countif(ScStatus >= 500), Total = count() by _ResourceId\r\n  | extend Status = case(FiveXX >= 5, \"🔴\", FiveXX > 0, \"🟠\", \"🟢\")\r\n  | extend ResourceType = \"App Service\", Resource = tostring(split(_ResourceId, \"/\")[8])\r\n  | project ResourceType, Resource, Status, Detail = strcat(Total, \" req · \", FiveXX, \" 5xx (15m)\");\r\nlet appi = workspace(\"__APPI_LAW__\").AppRequests\r\n  | where TimeGenerated > ago(15m)\r\n  | summarize Total = count(), Failed = countif(Success == false)\r\n  | extend Status = case(Failed >= 10, \"🔴\", Failed > 0, \"🟠\", \"🟢\")\r\n  | project ResourceType = \"App Insights\", Resource = \"appi\", Status,\r\n            Detail = strcat(Total, \" requests · \", Failed, \" failed (15m)\");\r\nunion isfuzzy=true vm, aks, app, appi\r\n| extend SortKey = case(Status == \"🔴\", 0, Status == \"🟠\", 1, 2)\r\n| order by SortKey asc, ResourceType asc\r\n| project-away SortKey\r\n",
+            "trafficLightsQuery": "let lookback = 15m;\nlet nowT = now();\nlet vm = Heartbeat\n  | where TimeGenerated > ago(1h)\n  | summarize LastBeat = max(TimeGenerated) by Computer, OSType\n  | extend SecondsSince = datetime_diff(\"second\", nowT, LastBeat)\n  | extend Status = case(SecondsSince <= 300, \"🟢\", SecondsSince <= 900, \"🟠\", \"🔴\")\n  | project ResourceType = strcat(\"VM (\", OSType, \")\"), Resource = Computer, Status,\n            Detail = strcat(\"Last heartbeat \", SecondsSince, \"s ago\");\nlet aksNodes = Perf\n  | where TimeGenerated > ago(15m)\n  | where ObjectName == \"K8SNode\" and CounterName == \"cpuUsageNanoCores\"\n  | summarize LastSample = max(TimeGenerated) by Computer\n  | summarize Total = count();\nlet aksRestarts = toscalar(KubePodInventory\n  | where TimeGenerated > ago(15m)\n  | summarize MaxRestarts = max(toint(ContainerRestartCount)) by Namespace, Name\n  | summarize Restarts = sum(MaxRestarts)\n  | project Restarts);\nlet aks = aksNodes\n  | extend Restarts = aksRestarts\n  | extend Status = case(Total == 0, \"🔴\", Restarts > 5, \"🟠\", \"🟢\")\n  | extend Detail = strcat(Total, \" nodes reporting · \", Restarts, \" restarts (15m)\")\n  | project ResourceType = \"AKS Cluster\", Resource = \"aks\", Status, Detail;\nlet app = AppServiceHTTPLogs\n  | where TimeGenerated > ago(15m)\n  | summarize FiveXX = countif(ScStatus >= 500), Total = count() by _ResourceId\n  | extend Status = case(FiveXX >= 5, \"🔴\", FiveXX > 0, \"🟠\", \"🟢\")\n  | extend ResourceType = \"App Service\", Resource = tostring(split(_ResourceId, \"/\")[8])\n  | project ResourceType, Resource, Status, Detail = strcat(Total, \" req · \", FiveXX, \" 5xx (15m)\");\nlet appi = workspace(\"__APPI_LAW__\").AppRequests\n  | where TimeGenerated > ago(15m)\n  | summarize Total = count(), Failed = countif(Success == false)\n  | extend Status = case(Failed >= 10, \"🔴\", Failed > 0, \"🟠\", \"🟢\")\n  | project ResourceType = \"App Insights\", Resource = \"appi\", Status,\n            Detail = strcat(Total, \" requests · \", Failed, \" failed (15m)\");\nunion isfuzzy=true vm, aks, app, appi\n| extend SortKey = case(Status == \"🔴\", 0, Status == \"🟠\", 1, 2)\n| order by SortKey asc, ResourceType asc\n| project-away SortKey\n",
             "queryFinal": "[replace(variables('trafficLightsQuery'), '__APPI_LAW__', parameters('appInsightsLawName'))]",
-            "summaryTilesQuery": "[replace('let vmsOnline = toscalar(Heartbeat | where TimeGenerated > ago(5m) | summarize dcount(Computer));\r\nlet aksReady = toscalar(Perf | where TimeGenerated > ago(15m) | where ObjectName == \"K8SNode\" and CounterName == \"cpuUsageNanoCores\" | summarize dcount(Computer));\r\nlet totalReqs = toscalar(workspace(\"__APPI_LAW__\").AppRequests | where TimeGenerated > ago(1h) | summarize count());\r\nlet failedReqs = toscalar(workspace(\"__APPI_LAW__\").AppRequests | where TimeGenerated > ago(1h) | where Success == false | summarize count());\r\nlet avgLatency = toscalar(workspace(\"__APPI_LAW__\").AppRequests | where TimeGenerated > ago(1h) | summarize round(avg(DurationMs), 0));\r\nlet ingestMB = toscalar(Usage | where TimeGenerated > startofday(now()) | summarize round(sum(Quantity), 1));\r\nprint a=1\r\n| project Metric  = pack_array(\"💻 VMs Online\", \"☸️ AKS Nodes\", \"🌐 Requests (1h)\", \"❌ Failed (1h)\", \"⏱️ Avg Latency\", \"📦 Ingest Today\"),\r\n          Value   = pack_array(toreal(vmsOnline), toreal(aksReady), toreal(totalReqs), toreal(failedReqs), toreal(avgLatency), toreal(ingestMB)),\r\n          Suffix  = pack_array(\"\", \"\", \"\", \"\", \"ms\", \"MB\")\r\n| mv-expand Metric to typeof(string), Value to typeof(real), Suffix to typeof(string)\r\n', '__APPI_LAW__', parameters('appInsightsLawName'))]",
-            "vmCpuQuery": "InsightsMetrics\r\n| where Namespace == \"Processor\" and Name == \"UtilizationPercentage\"\r\n| summarize AvgCPU = round(avg(Val), 1) by bin(TimeGenerated, 5m), Computer\r\n| render timechart\r\n",
-            "vmMemoryQuery": "InsightsMetrics\r\n| where Namespace == \"Memory\" and Name == \"AvailableMB\"\r\n| summarize AvailMB = round(avg(Val), 0) by bin(TimeGenerated, 5m), Computer\r\n| render timechart\r\n",
-            "aksNodeCpuQuery": "Perf\r\n| where ObjectName == \"K8SNode\" and CounterName == \"cpuUsageNanoCores\"\r\n| summarize CPU_millicores = round(avg(CounterValue / 1000000.0), 0) by bin(TimeGenerated, 5m), Computer\r\n| render timechart\r\n",
-            "aksPodRestartsQuery": "KubePodInventory\r\n| summarize MaxRestarts = max(toint(ContainerRestartCount)) by Name, bin(TimeGenerated, 5m)\r\n| summarize TotalRestarts = sum(MaxRestarts) by bin(TimeGenerated, 5m)\r\n| render areachart\r\n",
-            "responseTimeQuery": "[replace('workspace(\"__APPI_LAW__\").AppRequests\r\n| summarize P50 = percentile(DurationMs, 50), P95 = percentile(DurationMs, 95), P99 = percentile(DurationMs, 99) by bin(TimeGenerated, 5m)\r\n| render timechart\r\n', '__APPI_LAW__', parameters('appInsightsLawName'))]",
-            "slowestOpsQuery": "[replace('workspace(\"__APPI_LAW__\").AppRequests\r\n| summarize AvgDuration = round(avg(DurationMs), 1), Requests = count() by OperationName\r\n| top 10 by AvgDuration desc\r\n', '__APPI_LAW__', parameters('appInsightsLawName'))]",
-            "appiDetailQuery": "[replace('workspace(\"__APPI_LAW__\").AppRequests\r\n| summarize Failed = countif(Success == false), OK = countif(Success == true) by bin(TimeGenerated, 5m)\r\n| render timechart\r\n', '__APPI_LAW__', parameters('appInsightsLawName'))]",
-            "alertActivityQuery": "AzureActivity\r\n| where CategoryValue == \"Alert\"\r\n| project TimeGenerated, Operation = OperationNameValue, Status = ActivityStatusValue, Caller\r\n| order by TimeGenerated desc\r\n| take 25\r\n",
-            "fabricCapacityHealthQuery": "[replace('resources\r\n| where type =~ \"microsoft.fabric/capacities\"\r\n| where resourceGroup =~ \"__RESOURCE_GROUP__\"\r\n| extend CapacityState = tostring(properties.state), ProvisioningState = tostring(properties.provisioningState)\r\n| extend Status = case(\r\n  ProvisioningState !~ \"Succeeded\", \"🔴\",\r\n  CapacityState =~ \"Active\", \"🟢\",\r\n  CapacityState in~ (\"Paused\", \"Suspended\"), \"🟠\",\r\n  \"⚪\")\r\n| project Status,\r\n      ResourceType = \"Microsoft Fabric F2\",\r\n      Capacity = name,\r\n      State = CapacityState,\r\n      Provisioning = ProvisioningState,\r\n      Region = location,\r\n          SKU = tostring(sku.name)\r\n', '__RESOURCE_GROUP__', resourceGroup().name)]",
-            "dataIngestionQuery": "Usage\r\n| summarize IngestedMB = round(sum(Quantity), 2) by DataType\r\n| where IngestedMB > 0.01\r\n| top 15 by IngestedMB desc\r\n| render barchart\r\n",
+            "summaryTilesQuery": "[replace('let vmsOnline = toscalar(Heartbeat | where TimeGenerated > ago(5m) | summarize dcount(Computer));\nlet aksReady = toscalar(Perf | where TimeGenerated > ago(15m) | where ObjectName == \"K8SNode\" and CounterName == \"cpuUsageNanoCores\" | summarize dcount(Computer));\nlet totalReqs = toscalar(workspace(\"__APPI_LAW__\").AppRequests | where TimeGenerated > ago(1h) | summarize count());\nlet failedReqs = toscalar(workspace(\"__APPI_LAW__\").AppRequests | where TimeGenerated > ago(1h) | where Success == false | summarize count());\nlet avgLatency = toscalar(workspace(\"__APPI_LAW__\").AppRequests | where TimeGenerated > ago(1h) | summarize round(avg(DurationMs), 0));\nlet ingestMB = toscalar(Usage | where TimeGenerated > startofday(now()) | summarize round(sum(Quantity), 1));\nprint a=1\n| project Metric  = pack_array(\"💻 VMs Online\", \"☸️ AKS Nodes\", \"🌐 Requests (1h)\", \"❌ Failed (1h)\", \"⏱️ Avg Latency\", \"📦 Ingest Today\"),\n          Value   = pack_array(toreal(vmsOnline), toreal(aksReady), toreal(totalReqs), toreal(failedReqs), toreal(avgLatency), toreal(ingestMB)),\n          Suffix  = pack_array(\"\", \"\", \"\", \"\", \"ms\", \"MB\")\n| mv-expand Metric to typeof(string), Value to typeof(real), Suffix to typeof(string)\n', '__APPI_LAW__', parameters('appInsightsLawName'))]",
+            "vmCpuQuery": "InsightsMetrics\n| where Namespace == \"Processor\" and Name == \"UtilizationPercentage\"\n| summarize AvgCPU = round(avg(Val), 1) by bin(TimeGenerated, 5m), Computer\n| render timechart\n",
+            "vmMemoryQuery": "InsightsMetrics\n| where Namespace == \"Memory\" and Name == \"AvailableMB\"\n| summarize AvailMB = round(avg(Val), 0) by bin(TimeGenerated, 5m), Computer\n| render timechart\n",
+            "aksNodeCpuQuery": "Perf\n| where ObjectName == \"K8SNode\" and CounterName == \"cpuUsageNanoCores\"\n| summarize CPU_millicores = round(avg(CounterValue / 1000000.0), 0) by bin(TimeGenerated, 5m), Computer\n| render timechart\n",
+            "aksPodRestartsQuery": "KubePodInventory\n| summarize MaxRestarts = max(toint(ContainerRestartCount)) by Name, bin(TimeGenerated, 5m)\n| summarize TotalRestarts = sum(MaxRestarts) by bin(TimeGenerated, 5m)\n| render areachart\n",
+            "responseTimeQuery": "[replace('workspace(\"__APPI_LAW__\").AppRequests\n| summarize P50 = percentile(DurationMs, 50), P95 = percentile(DurationMs, 95), P99 = percentile(DurationMs, 99) by bin(TimeGenerated, 5m)\n| render timechart\n', '__APPI_LAW__', parameters('appInsightsLawName'))]",
+            "slowestOpsQuery": "[replace('workspace(\"__APPI_LAW__\").AppRequests\n| summarize AvgDuration = round(avg(DurationMs), 1), Requests = count() by OperationName\n| top 10 by AvgDuration desc\n', '__APPI_LAW__', parameters('appInsightsLawName'))]",
+            "appiDetailQuery": "[replace('workspace(\"__APPI_LAW__\").AppRequests\n| summarize Failed = countif(Success == false), OK = countif(Success == true) by bin(TimeGenerated, 5m)\n| render timechart\n', '__APPI_LAW__', parameters('appInsightsLawName'))]",
+            "alertActivityQuery": "AzureActivity\n| where CategoryValue == \"Alert\"\n| project TimeGenerated, Operation = OperationNameValue, Status = ActivityStatusValue, Caller\n| order by TimeGenerated desc\n| take 25\n",
+            "fabricCapacityHealthQuery": "[replace('resources\n| where type =~ \"microsoft.fabric/capacities\"\n| where resourceGroup =~ \"__RESOURCE_GROUP__\"\n| extend CapacityState = tostring(properties.state), ProvisioningState = tostring(properties.provisioningState)\n| extend Status = case(\n  ProvisioningState !~ \"Succeeded\", \"🔴\",\n  CapacityState =~ \"Active\", \"🟢\",\n  CapacityState in~ (\"Paused\", \"Suspended\"), \"🟠\",\n  \"⚪\")\n| project Status,\n      ResourceType = \"Microsoft Fabric F2\",\n      Capacity = name,\n      State = CapacityState,\n      Provisioning = ProvisioningState,\n      Region = location,\n          SKU = tostring(sku.name)\n', '__RESOURCE_GROUP__', resourceGroup().name)]",
+            "dataIngestionQuery": "Usage\n| summarize IngestedMB = round(sum(Quantity), 2) by DataType\n| where IngestedMB > 0.01\n| top 15 by IngestedMB desc\n| render barchart\n",
             "workbookContent": {
               "version": "Notebook/1.0",
               "items": [
                 {
                   "type": 1,
                   "content": {
-                    "json": "## 🚦 Azure Monitor Demo Lab — Health Dashboard\n\nOne-glance overview of every resource in the demo lab.\n\n🟢 Healthy — 🟠 Warning — 🔴 Critical"
+                    "json": "## 🚦 Azure Monitor Lab — Health Dashboard\n\nOne-glance overview of every resource in the demo lab.\n\n🟢 Healthy — 🟠 Warning — 🔴 Critical"
                   },
                   "name": "header"
                 },
@@ -2294,7 +2298,7 @@
               "tags": "[parameters('tags')]",
               "kind": "shared",
               "properties": {
-                "displayName": "Azure Monitor Demo Lab — Health Dashboard",
+                "displayName": "Azure Monitor Lab — Health Dashboard",
                 "description": "Comprehensive health dashboard with traffic lights, infrastructure trends, application performance, and platform monitoring.",
                 "serializedData": "[string(variables('workbookContent'))]",
                 "category": "workbook",
@@ -2350,7 +2354,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.37.4.10188",
-              "templateHash": "1574700689098493917"
+              "templateHash": "1630570870174900578"
             }
           },
           "parameters": {
@@ -2381,11 +2385,11 @@
             }
           },
           "variables": {
-            "ingestByTableQuery": "Usage\r\n| where TimeGenerated > ago(7d)\r\n| where IsBillable == true\r\n| summarize GB = round(sum(Quantity) / 1024.0, 3) by DataType, bin(TimeGenerated, 1d)\r\n| order by TimeGenerated desc, GB desc\r\n| render columnchart kind=stacked\r\n",
-            "topTablesQuery": "Usage\r\n| where TimeGenerated > ago(24h)\r\n| where IsBillable == true\r\n| summarize GB_24h = round(sum(Quantity) / 1024.0, 3) by DataType\r\n| top 15 by GB_24h desc\r\n| render barchart\r\n",
-            "dailyTotalQuery": "Usage\r\n| where IsBillable == true\r\n| summarize GB = round(sum(Quantity) / 1024.0, 3) by bin(TimeGenerated, 1d)\r\n| order by TimeGenerated asc\r\n| render timechart\r\n",
-            "perSolutionQuery": "Usage\r\n| where TimeGenerated > ago(7d)\r\n| where IsBillable == true\r\n| summarize GB = round(sum(Quantity) / 1024.0, 3) by Solution\r\n| top 10 by GB desc\r\n| render piechart\r\n",
-            "capBurnQuery": "Usage\r\n| where IsBillable == true\r\n| where TimeGenerated >= startofday(now())\r\n| summarize TodayGB = round(sum(Quantity) / 1024.0, 3)\r\n| extend CapGB = toreal(1.0)\r\n| extend PercentOfCap = round(100.0 * TodayGB / CapGB, 1)\r\n| project Metric = pack_array(\"Today (GB)\", \"Daily cap (GB)\", \"% of cap used\"),\r\n          Value  = pack_array(TodayGB, CapGB, PercentOfCap)\r\n| mv-expand Metric to typeof(string), Value to typeof(real)\r\n",
+            "ingestByTableQuery": "Usage\n| where TimeGenerated > ago(7d)\n| where IsBillable == true\n| summarize GB = round(sum(Quantity) / 1024.0, 3) by DataType, bin(TimeGenerated, 1d)\n| order by TimeGenerated desc, GB desc\n| render columnchart kind=stacked\n",
+            "topTablesQuery": "Usage\n| where TimeGenerated > ago(24h)\n| where IsBillable == true\n| summarize GB_24h = round(sum(Quantity) / 1024.0, 3) by DataType\n| top 15 by GB_24h desc\n| render barchart\n",
+            "dailyTotalQuery": "Usage\n| where IsBillable == true\n| summarize GB = round(sum(Quantity) / 1024.0, 3) by bin(TimeGenerated, 1d)\n| order by TimeGenerated asc\n| render timechart\n",
+            "perSolutionQuery": "Usage\n| where TimeGenerated > ago(7d)\n| where IsBillable == true\n| summarize GB = round(sum(Quantity) / 1024.0, 3) by Solution\n| top 10 by GB desc\n| render piechart\n",
+            "capBurnQuery": "Usage\n| where IsBillable == true\n| where TimeGenerated >= startofday(now())\n| summarize TodayGB = round(sum(Quantity) / 1024.0, 3)\n| extend CapGB = toreal(1.0)\n| extend PercentOfCap = round(100.0 * TodayGB / CapGB, 1)\n| project Metric = pack_array(\"Today (GB)\", \"Daily cap (GB)\", \"% of cap used\"),\n          Value  = pack_array(TodayGB, CapGB, PercentOfCap)\n| mv-expand Metric to typeof(string), Value to typeof(real)\n",
             "workbookContent": {
               "version": "Notebook/1.0",
               "items": [
@@ -2472,7 +2476,7 @@
               "tags": "[parameters('tags')]",
               "kind": "shared",
               "properties": {
-                "displayName": "💰 Azure Monitor Demo Lab — Cost of Monitoring",
+                "displayName": "💰 Azure Monitor Lab — Cost of Monitoring",
                 "serializedData": "[string(variables('workbookContent'))]",
                 "category": "workbook",
                 "sourceId": "[parameters('centralLawId')]",

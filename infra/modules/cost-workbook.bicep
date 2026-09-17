@@ -140,7 +140,7 @@ resource workbook 'Microsoft.Insights/workbooks@2023-06-01' = {
   tags: tags
   kind: 'shared'
   properties: {
-    displayName: '💰 Azure Monitor Demo Lab — Cost of Monitoring'
+    displayName: '💰 Azure Monitor Lab — Cost of Monitoring'
     serializedData: string(workbookContent)
     category: 'workbook'
     sourceId: centralLawId

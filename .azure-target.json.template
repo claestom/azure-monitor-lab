@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Azure Monitor Demo Lab — allowed targets",
+  "title": "Azure Monitor Lab — allowed targets",
   "description": "Hard guardrail used by scripts/deploy.ps1. Deployment refuses to run unless the active subscription matches expectedSubscriptionId AND tenantId matches expectedTenantId. Copy this file to .azure-target.json and fill in your values.",
   "expectedSubscriptionId": "<YOUR-SUBSCRIPTION-ID>",
   "expectedSubscriptionName": "<YOUR-SUBSCRIPTION-NAME>",

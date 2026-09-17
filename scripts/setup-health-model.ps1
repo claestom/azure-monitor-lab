@@ -41,7 +41,7 @@
 param(
   [string] $ResourceGroup           = 'rg-azure-monitor-lab',
   [string] $ServiceGroupId          = 'amlab-workload',
-  [string] $ServiceGroupDisplayName = 'AMLAB · Azure Monitor Demo Lab Workload',
+  [string] $ServiceGroupDisplayName = 'AMLAB · Azure Monitor Lab Workload',
   [string] $RelationshipId          = 'sgm-amlab-rg',
   [switch] $Teardown
 )

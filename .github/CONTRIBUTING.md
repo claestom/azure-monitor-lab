@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in improving the **Azure Monitor Demo Lab**! This is a
+Thanks for your interest in improving the **Azure Monitor Lab**! This is a
 community demo project for learning Azure Monitor and Microsoft Sentinel, and
 contributions that make it clearer, more reliable, or more useful for demos,
 microhacks, and hackathons are very welcome.
@@ -50,8 +50,43 @@ contributing:
      where supported) and don't introduce hardcoded values.
 4. Test a real deployment into **your own** subscription where practical, then
    tear it down with `scripts/teardown.ps1`.
-5. Commit with a clear message and open a pull request describing the change and
-   how you validated it.
+5. Commit with a clear message and open a pull request against `integration`,
+   describing the change and how you validated it. Do not target `master` directly.
+
+## Branch promotion
+
+The release route is `dev -> integration -> master`. Feature branches also target
+`integration`. Use integration to rehearse the combined changes and validate the
+lab before a maintainer manually promotes it.
+
+- `dev` remains the normal development branch.
+- `integration` requires a pull request, passing CI against the current base,
+  and resolved review conversations. Direct pushes, force-pushes, and deletion
+  are blocked, with no bypass actors.
+- `master` has the same protections and additionally requires the
+  **Integration promotion gate**. Only this repository's `integration` branch
+  can pass it; a fork branch with the same name is not accepted.
+- GitHub permits opening PRs from other branches, but the policy automatically
+  closes those targeting `master`. Reopen the change against `integration`.
+- Keep integration current with master through a `master -> integration` PR
+  after promotion. Merge commits preserve the shared branch ancestry. Update
+  dev from integration before starting the next development cycle.
+- For `integration -> master`, integration must already contain the latest
+  master commit. CI tests the PR's combined result; the source gate checks live
+  PR metadata and reports against that PR's exact test-merge commit.
+- A passing gate does not perform a merge or prove a live deployment was tested.
+  Complete the lab rehearsal and explicitly merge the promotion PR yourself.
+
+The privileged source check uses `pull_request_target` and checks out only its
+trusted workflow revision. It never runs PR code. Test jobs use read-only
+permissions. Missing checks and API failures block promotion; if GitHub has not
+computed a conflict-free test merge yet, resolve conflicts or rerun the check.
+
+Required independent approvals are not enabled until another maintainer is
+available. Administrators can still edit repository rules. These protections are
+not a security boundary against an administrator changing policy or a trusted
+writer deliberately replacing CI checks. Review workflow changes carefully and
+add independent/code-owner review when a second maintainer is available.
 
 ## Pull request checklist
 

@@ -1,5 +1,5 @@
 // =====================================================================================
-// Traffic-Lights Workbook for the Azure Monitor Demo Lab.
+// Traffic-Lights Workbook for the Azure Monitor Lab.
 // One grid row per logical resource (VMs, AKS, App Service, App Insights) with a
 // 🟢/🟠/🔴 emoji status column based on heartbeat / failure thresholds.
 // =====================================================================================
@@ -164,7 +164,7 @@ var workbookContent = {
     {
       type: 1
       content: {
-        json: '## 🚦 Azure Monitor Demo Lab — Health Dashboard\n\nOne-glance overview of every resource in the demo lab.\n\n🟢 Healthy — 🟠 Warning — 🔴 Critical'
+        json: '## 🚦 Azure Monitor Lab — Health Dashboard\n\nOne-glance overview of every resource in the demo lab.\n\n🟢 Healthy — 🟠 Warning — 🔴 Critical'
       }
       name: 'header'
     }
@@ -493,7 +493,7 @@ resource workbook 'Microsoft.Insights/workbooks@2023-06-01' = {
   tags: tags
   kind: 'shared'
   properties: {
-    displayName: 'Azure Monitor Demo Lab — Health Dashboard'
+    displayName: 'Azure Monitor Lab — Health Dashboard'
     description: 'Comprehensive health dashboard with traffic lights, infrastructure trends, application performance, and platform monitoring.'
     serializedData: string(workbookContent)
     category: 'workbook'

@@ -15,12 +15,13 @@
 
   By default, calls return immediately (--no-wait where supported). Pass -Wait
   to poll until every resource reaches a Running state.
+  Pass -WhatIf to perform resource discovery without issuing start commands.
 .EXAMPLE
   ./scripts/start-the-lab.ps1 -ResourceGroup rg-azure-monitor-lab
 .EXAMPLE
   ./scripts/start-the-lab.ps1 -ResourceGroup rg-azure-monitor-lab -Wait
 #>
-[CmdletBinding()]
+[CmdletBinding(SupportsShouldProcess)]
 param(
   [Parameter(Mandatory)] [string] $ResourceGroup,
   [switch] $Wait,
@@ -38,7 +39,7 @@ function Get-VmssInstancePowerStates {
     --resource-group $ResourceGroup `
     --name $Name `
     --expand instanceView `
-    --query "[].{instanceId:instanceId,power:instanceView.statuses[?starts_with(code, 'PowerState/')].displayStatus | [0]}" `
+    --query $vmssPowerStateQuery `
     -o json
   if ($LASTEXITCODE -ne 0) {
     throw "Failed to retrieve instance view for VMSS '$Name'."
@@ -82,27 +83,32 @@ foreach ($vm in $vms) {
     Write-Info "$($vm.name) already running"
     $skipped.vm += $vm.name
   } else {
-    Write-Ok  "starting $($vm.name) (was: $($vm.power))"
-    az vm start -g $ResourceGroup -n $vm.name --no-wait | Out-Null
-    $started.vm += $vm.name
+    if ($PSCmdlet.ShouldProcess($vm.name, 'Start virtual machine')) {
+      Write-Ok  "starting $($vm.name) (was: $($vm.power))"
+      az vm start -g $ResourceGroup -n $vm.name --no-wait | Out-Null
+      $started.vm += $vm.name
+    }
   }
 }
 
 # --- 2. VM Scale Sets ----------------------------------------------------------
 Write-Step "VM Scale Sets"
+$vmssPowerStateQuery = "[].{power:instanceView.statuses[?starts_with(code,'PowerState/')].code | [0]}"
 $vmsses = az vmss list -g $ResourceGroup --query "[].name" -o tsv
 if (-not $vmsses) { Write-Info "no VMSS in $ResourceGroup" }
 foreach ($name in $vmsses) {
   # A VMSS has no single power state — count deallocated instances.
   $instances = @(Get-VmssInstancePowerStates -Name $name)
-  $stoppedCount = @($instances | Where-Object { $_.power -ne 'VM running' }).Count
+  $stoppedCount = @($instances | Where-Object { $_.power -ne 'PowerState/running' }).Count
   if ($stoppedCount -eq 0) {
     Write-Info "$name all instances running"
     $skipped.vmss += $name
   } else {
-    Write-Ok  "starting $name ($stoppedCount/$($instances.Count) instances stopped)"
-    az vmss start -g $ResourceGroup -n $name --no-wait | Out-Null
-    $started.vmss += $name
+    if ($PSCmdlet.ShouldProcess($name, 'Start virtual machine scale set')) {
+      Write-Ok  "starting $name ($stoppedCount/$($instances.Count) instances stopped)"
+      az vmss start -g $ResourceGroup -n $name --no-wait | Out-Null
+      $started.vmss += $name
+    }
   }
 }
 
@@ -115,9 +121,11 @@ foreach ($aks in $aksClusters) {
     Write-Info "$($aks.name) already Running"
     $skipped.aks += $aks.name
   } else {
-    Write-Ok  "starting $($aks.name) (was: $($aks.power))"
-    az aks start -g $ResourceGroup -n $aks.name --no-wait | Out-Null
-    $started.aks += $aks.name
+    if ($PSCmdlet.ShouldProcess($aks.name, 'Start AKS cluster')) {
+      Write-Ok  "starting $($aks.name) (was: $($aks.power))"
+      az aks start -g $ResourceGroup -n $aks.name --no-wait | Out-Null
+      $started.aks += $aks.name
+    }
   }
 }
 
@@ -130,20 +138,22 @@ foreach ($wa in $webapps) {
     Write-Info "$($wa.name) already Running"
     $skipped.webapp += $wa.name
   } else {
-    Write-Ok  "starting $($wa.name) (was: $($wa.state))"
-    az webapp start -g $ResourceGroup -n $wa.name | Out-Null
-    $started.webapp += $wa.name
+    if ($PSCmdlet.ShouldProcess($wa.name, 'Start web app')) {
+      Write-Ok  "starting $($wa.name) (was: $($wa.state))"
+      az webapp start -g $ResourceGroup -n $wa.name | Out-Null
+      $started.webapp += $wa.name
+    }
   }
 }
 
 # --- 5. Microsoft Fabric capacities -------------------------------------------
 Write-Step "Microsoft Fabric"
-$fabricCapacities = az resource list `
+$fabricCapacities = @(az resource list `
   --subscription $active.id `
   --resource-group $ResourceGroup `
   --resource-type Microsoft.Fabric/capacities `
   --query "[].{id:id,name:name,sku:sku.name}" `
-  -o json | ConvertFrom-Json
+  -o json | ConvertFrom-Json)
 if (-not $fabricCapacities) { Write-Info "no Fabric capacities in $ResourceGroup" }
 foreach ($fabric in @($fabricCapacities)) {
   if ($fabric.sku -ne 'F2') {
@@ -162,18 +172,25 @@ foreach ($fabric in @($fabricCapacities)) {
     Write-Info "$($fabric.name) already Active"
     $skipped.fabric += $fabric.name
   } elseif ($state -in @('Paused', 'Suspended')) {
-    Write-Ok "resuming $($fabric.name) (was: $state)"
-    Write-Host "    Cost warning: F2 billing resumes while this capacity is Active." -ForegroundColor Yellow
-    az rest `
-      --method post `
-      --url "https://management.azure.com$($fabric.id)/resume?api-version=2023-11-01" `
-      --subscription $active.id `
-      --output none
-    if ($LASTEXITCODE -ne 0) { throw "Failed to resume Fabric capacity '$($fabric.name)'." }
-    $started.fabric += $fabric.name
+    if ($PSCmdlet.ShouldProcess($fabric.name, 'Resume billable Fabric F2 capacity')) {
+      Write-Ok "resuming $($fabric.name) (was: $state)"
+      Write-Host "    Cost warning: F2 billing resumes while this capacity is Active." -ForegroundColor Yellow
+      az rest `
+        --method post `
+        --url "https://management.azure.com$($fabric.id)/resume?api-version=2023-11-01" `
+        --subscription $active.id `
+        --output none
+      if ($LASTEXITCODE -ne 0) { throw "Failed to resume Fabric capacity '$($fabric.name)'." }
+      $started.fabric += $fabric.name
+    }
   } else {
     throw "Fabric capacity '$($fabric.name)' is in unexpected state '$state'. Refusing to issue resume."
   }
+}
+
+if ($WhatIfPreference) {
+  Write-Host 'Resource discovery completed. No start commands were issued.'
+  return
 }
 
 # --- Summary -------------------------------------------------------------------
@@ -203,9 +220,8 @@ while ((Get-Date) -lt $deadline) {
     if ($p -ne 'VM running') { $pending += "vm/$n=$p" }
   }
   foreach ($n in $started.vmss) {
-    $instances = @(Get-VmssInstancePowerStates -Name $n)
-    $stoppedCount = @($instances | Where-Object { $_.power -ne 'VM running' }).Count
-    if ($stoppedCount -gt 0) { $pending += "vmss/$n=$stoppedCount-stopped" }
+    $stoppedCount = (az vmss list-instances -g $ResourceGroup -n $n --expand instanceView --query "$vmssPowerStateQuery | [?power!='PowerState/running'] | length(@)" -o tsv)
+    if ([int]$stoppedCount -gt 0) { $pending += "vmss/$n=$stoppedCount-stopped" }
   }
   foreach ($n in $started.aks) {
     $p = az aks show -g $ResourceGroup -n $n --query "powerState.code" -o tsv

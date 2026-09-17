@@ -1,8 +1,8 @@
-# Azure Monitor Demo Lab — Full reference
+# Azure Monitor Lab — Full reference
 
-> 👈 **New here? Start with the [README](../README.md).** This is the deep-dive reference: full capability matrix, every deployed resource, the demo walkthrough, cost breakdown, folder layout, optional add-ons, and troubleshooting.
+> 👈 **New here? Start with the [README](../README.md).** This is the deep-dive reference: full capability matrix, every deployed resource, the demo walkthrough, cost breakdown, folder layout, operational helpers, and troubleshooting.
 
-A self-contained, reproducible demo of the **Azure Monitor + Microsoft Sentinel** stack. One resource group, two IaC paths (Bicep or Terraform), two delivery modes (**one-shot** for internal demos or a **5-stage workshop** for customer-facing progressive enablement), and 59 demo scenarios, all driven from one central config file.
+A self-contained, reproducible demo of the **Azure Monitor + Microsoft Sentinel** stack. The lab primarily uses one resource group, plus the AKS-managed resource group and optional tenant-scoped artifacts. It provides two IaC paths (Bicep or Terraform), two delivery modes (**one-shot** for internal demos or a **5-stage workshop** for customer-facing progressive enablement), and 67 numbered demo scenarios (`0` through `66`), all driven from one central config file.
 
 ## Capabilities
 
@@ -29,6 +29,7 @@ A self-contained, reproducible demo of the **Azure Monitor + Microsoft Sentinel*
 | **Service Groups + Health Models (preview)** | `setup-health-model.ps1` provisions an Azure **Service Group** and links the RG. SLI/SLO scaffolding in `setup-slis.ps1`. | [docs](https://learn.microsoft.com/en-us/azure/azure-monitor/health-model) |
 | **GenAI observability (optional AI stage)** | Off-by-default Microsoft **Foundry** workload (account + project pinned to swedencentral) with chat / embedding / optimization / **model-router** deployments; OpenTelemetry `gen_ai.*` tracing into App Insights; **token anomaly + spike** alerts; an **AI FinOps** query pack + workbook; an AI tier folded into the workload health model; demo agents + traffic via `setup-ai.ps1`. | [docs](https://learn.microsoft.com/en-us/azure/ai-foundry/concepts/trace) · [stage](STAGE-AI.md) |
 | **Fabric Real-Time Intelligence (optional Fabric stage)** | Off-by-default Microsoft Fabric **F2** capacity pinned to swedencentral, with scripted workspace, Eventhouse, KQL database, Eventstream, source-to-Eventhouse topology, workload Health Model tier, and Azure workbook health section. Setup attempts the Event Hubs connection automatically; tenants that reject public API connection creation require a one-time portal connection followed by a setup rerun. | [stage](STAGE-FABRIC.md) |
+| **Azure SRE Agent (optional trial)** | Off-by-default guided SRE Agent evaluation pinned to `swedencentral`; connects Azure Monitor alerts to specialized Review-mode investigators and validates managed identity RBAC with `setup-sre-agent.ps1`. | [docs](https://learn.microsoft.com/en-us/azure/sre-agent/azure-monitor-alerts) · [stage](STAGE-SRE-AGENT.md) |
 | **"Break the lab" + "Start the lab"** | Scripted incident injection (`break-the-lab.ps1`, `start-the-lab.ps1`, `start-ramp.ps1`) + one-shot restore (`restore-the-lab.ps1`). | — |
 
 ---
@@ -47,13 +48,18 @@ rg-azure-monitor-lab/
 │   ├─ dcr-amlab-prometheus       ← DCR — Prometheus → AMW
 │   ├─ dcr-amlab-workspace-...    ← Workspace transformation DCR (drops /read)
 │   ├─ dcr-amlab-customlogs       ← Custom-table DCR (Logs Ingestion API)
+│   ├─ Perf_Hourly_CL             ← Summary-rule destination table in the central LAW
+│   ├─ summary rule               ← Hourly Perf aggregation into Perf_Hourly_CL
+│   ├─ export-amlab-heartbeat      ← LAW Heartbeat data export to Storage
 │   └─ amg-amlab-XXXX             ← Azure Managed Grafana (Essential) bound to AMW
 ├─ Compute workloads
 │   ├─ vm-amlab-lin               ← Ubuntu + AMA + Dependency Agent + DCR assoc.
 │   ├─ vmwinXXXX                  ← Windows Server 2022 + AMA + Dep. Agent + DCR
 │   ├─ vmss-amlab                 ← Linux VMSS + Predictive autoscale
 │   ├─ aks-amlab                  ← AKS (Free tier, 2 × B2s) + Container Insights + Managed Prom
-│   └─ plan-amlab + app-amlab-XX  ← Linux App Service B1 + .NET 8 sample (auto-instrumented) — pinned to westeurope
+│   ├─ amlab-aks-prom-rules        ← Managed Prometheus recording + alerting rule group
+│   ├─ plan-amlab + app-amlab-XX  ← Linux App Service B1 + .NET 8 sample (auto-instrumented), pinned to westeurope
+│   └─ availability test + alert   ← Standard URL test from 5 global locations
 ├─ Networking
 │   ├─ vnet-amlab + nsg-amlab     ← /16 with workload, AKS, and VMSS subnets
 │   ├─ Connection Monitor         ← VM → VM + VM → public endpoint probes
@@ -74,7 +80,11 @@ rg-azure-monitor-lab/
 │   └─ logic-amlab-automitigate   ← Logic App auto-mitigation runbook
 ├─ Security
 │   ├─ Sentinel onboarded         ← on law-amlab-central + security-posture alert rules
-│   └─ id-sli-amlab               ← UAMI used by SLI/SLO scaffolding
+│   └─ scheduled query rules      ← control-plane drift, privilege escalation, and exfiltration detections
+├─ Workload health and reliability
+│   ├─ hm-amlab-workload          ← Health Model with entities, signals, and relationships
+│   ├─ id-sli-amlab               ← UAMI used by SLI/SLO scaffolding
+│   └─ amlab-workload             ← tenant-scoped Service Group + RG membership, created by deploy.ps1
 └─ Workbooks
     ├─ wb-amlab-trafficlights     ← 🚦 Traffic Lights — single pane of glass
     ├─ wb-amlab-cost              ← Cost of monitoring
@@ -87,9 +97,15 @@ rg-azure-monitor-lab/
 
 > **Optional Fabric stage (default off, expensive):** a Microsoft Fabric F2 capacity pinned to `swedencentral`. Indicative PAYG retail cost while active is about $0.36/hour, $8.64/day, or $262.80/month, plus possible OneLake storage and usage charges. Enable via `enableStageFabric` / `enable_stage_fabric`, run `scripts/setup-fabric.ps1`, and suspend the capacity when idle. See [STAGE-FABRIC.md](STAGE-FABRIC.md).
 
-> **Region pinning:** the **App Service** (plan + site) and its diagnostic sinks (dedicated storage + Event Hub) are pinned to **`westeurope`**; the **Health Model** preview, **AI stage**, and **Fabric F2 capacity** are pinned to **`swedencentral`**. Everything else follows the lab region (default `northeurope`).
+> **Optional SRE Agent stage (default off, trial/billable):** an SRE Agent and user-assigned identity in `swedencentral`, Azure Monitor / Application Insights / Log Analytics connectors, resource-group and subscription RBAC, and deployment validation through `setup-sre-agent.ps1`. Enable via `enableStageSreAgent`. Investigators and response plans are configured in `sre.azure.com`. See [STAGE-SRE-AGENT.md](STAGE-SRE-AGENT.md).
 
-Inside the central LAW you also get **12+ saved KQL searches** and **KQL functions** under category `AzureMonitorDemoLab` (Logs → Saved searches / Functions). Optional one-shot scripts (`create-summary-rule.ps1`, `setup-rbac-demo.ps1`, `setup-health-model.ps1`, `setup-slis.ps1`) layer additional artefacts on top — see [Optional add-ons](#optional-add-ons-opt-in-scripts) below.
+> **Optional LAW replication (default off, billable):** cross-region replication on the central LAW. Enable during deployment with `enableLawReplication`, or enable it on an existing workspace with `scripts/enable-law-replication.ps1` without redeploying the complete Bicep template.
+
+> **Region pinning:** the **App Service** (plan + site) and its diagnostic sinks (dedicated storage + Event Hub) are pinned to **`westeurope`**; the **Health Model** preview, **AI stage**, **SRE Agent**, and **Fabric F2 capacity** are pinned to **`swedencentral`**. Everything else follows the lab region (default `northeurope`).
+
+The Control Center also provisions four runner resources in the Web App's region: a Basic `acrlabops<suffix>` registry, a `cae-labops-<suffix>` Consumption environment, an `id-labops-<suffix>` managed identity, and a manual `job-labops-<suffix>` job. Custom runner/launcher roles, scoped assignments, and environment diagnostics support them. The job and image are completed by workload publication, not by the raw portal template alone. The Entra sign-in registration is tenant-level and is not removed by resource-group deletion. Resource counts vary with selected stages and whether child resources, deployments, and role assignments are counted.
+
+Inside the central LAW you also get **12+ saved KQL searches** and **KQL functions** under category `AzureMonitorDemoLab` (Logs > Saved searches / Functions). The one-shot deployment wrapper runs `post-deploy.ps1`, creates the Service Group and RG membership with `setup-health-model.ps1`, and verifies SLI prerequisites with `setup-slis.ps1`. Optional operational helpers layer demos and telemetry on top. See [Operational and optional helpers](#operational-and-optional-helpers) below.
 
 ---
 
@@ -101,6 +117,7 @@ Inside the central LAW you also get **12+ saved KQL searches** and **KQL functio
 - PowerShell 7+ (the deploy scripts and helpers are `.ps1`)
 - A subscription with quota for: 1 AKS cluster (2 × `Standard_B2s`), 2 VMs (2 × `Standard_B2s`), 1 Linux VMSS (1 × `Standard_B2s`), 1 App Service B1 (in `westeurope`), 1 Managed Grafana Essential, 2 Storage accounts, 1 Event Hub namespace, 1 Key Vault.
 - *(Optional AI stage only)* Python 3.10+ for `scripts/setup-ai.ps1` (creates the demo agents + traffic simulator in `workloads/ai/`); the Foundry models it deploys are **billable**.
+- Console completion additionally requires the .NET 8 SDK, ACR Tasks availability, Container Apps Consumption capacity, and rights to manage the sign-in registration and scoped roles. See [Lab Operations prerequisites](../workloads/webapp/LAB-OPERATIONS.md#prerequisites).
 
 The deploy script lazily registers `Microsoft.ContainerService`, `Microsoft.OperationsManagement`, `Microsoft.Dashboard`, `Microsoft.AlertsManagement`, and `Microsoft.CloudHealth` (Service Groups preview) — that may already be done in your sub, otherwise it takes ~3 min.
 
@@ -153,20 +170,21 @@ Two delivery modes — pick whichever fits your audience.
 
 Defaults: resource group `rg-azure-monitor-lab`, region `northeurope`, parameters in `infra/main.parameters.json` (auto-generated from `lab.config.json` — see Bootstrap above). Some resources auto-pin to their own region regardless of the lab region: the **App Service** tier (plan + site + its diagnostic storage + Event Hub) to **`westeurope`** (no Basic App Service quota in `northeurope` on the sponsored subs), and the **Health Model** preview + optional **AI stage** to **`swedencentral`**.
 
-End-to-end: ~20–25 minutes (AKS + Grafana are the slowest). After it finishes, the script prints the App Service URL, the AKS LB IP, the Grafana URL, and the Workbook resource ID.
+End-to-end deployment can take tens of minutes, including AKS/Grafana provisioning, the runner image build, MCP packaging, ZIP upload, and app-version verification. The script prints the App Service URL, the AKS LB IP, the Grafana URL, and the Workbook resource ID. Optional AI traffic starts last as a finite background batch; setup completion does not wait for every conversation.
 
 ### Option 2 — Staged workshop (customer-facing, progressive enablement)
 
 Same lab, broken into 5 progressive stages so you can pause for discussion after each one. Each stage is its own Bicep/Terraform deployment with a dedicated speaker-notes doc. Skip stages you don't need (toggles in `lab.config.json` → `stageToggles`).
 
-| Stage | Theme | Adds | Scenarios | Time | Δ €/month |
+| Stage | Theme | Adds | Scenarios | Time | Incremental monthly cost |
 |---|---|---|---|---|---|
-| **A — Foundation** | Telemetry backbone | LAWs · AppI · AMW · DCE · network · storage · Event Hub · Key Vault · diag policies · saved queries · KQL functions · cost + traffic-lights workbooks | 1, 5, 6, 9 | 8–15 min | €5–25 |
-| **B — Workloads & dashboards** | Compute + app telemetry | Linux/Windows VMs · AKS + Container Insights + Managed Prom · Grafana · App Service + auto-instrumented .NET · OTel pods · Connection Monitor · NSG Flow Logs · availability test | 2, 3, 4, 22, 28–32, 34–36, 42 | 20–35 min | €95–145 |
-| **C — Alerts & response** | Detection + routing | Action Group · 7+ metric/KQL/activity alerts · AMBA · dynamic thresholds · alert processing rules · auto-mitigation Logic App · VMSS predictive autoscale | 7, 8, 12, 15, 17, 19, 23, 37 | 5–12 min | €0–10 |
-| **D — Security posture** | Monitor-native detections | Granular RBAC roles · control-plane drift / privilege escalation / exfil scheduled-query alerts | 27, 47, 48, 49 | 5–12 min | €0–15 |
-| **E — Optional advanced** | SOC + reliability previews | Microsoft Sentinel onboarding · search jobs + restore · Service Group + Health Model (preview) · SLIs/SLOs · data export · Prometheus rule group | 43, 44, 45, 46 | 10–20 min | €0–40 |
+| **A — Foundation** | Telemetry backbone | LAWs · AppI · AMW · DCE · network · storage · Event Hub · Key Vault · diag policies · saved queries · KQL functions · cost + traffic-lights workbooks | 1, 5, 6, 9 | 8–15 min | EUR 5–25 / USD 6–28 |
+| **B — Workloads & dashboards** | Compute + app telemetry | Linux/Windows VMs · AKS + Container Insights + Managed Prom · Grafana · App Service + auto-instrumented .NET · OTel pods · Connection Monitor · NSG Flow Logs · availability test | 2, 3, 4, 22, 28–32, 34–36, 42 | 20–35 min | EUR 95–145 / USD 105–160 |
+| **C — Alerts & response** | Detection + routing | Action Group · 7+ metric/KQL/activity alerts · AMBA · dynamic thresholds · alert processing rules · auto-mitigation Logic App · VMSS predictive autoscale | 7, 8, 12, 15, 17, 19, 23, 37 | 5–12 min | EUR 0–10 / USD 0–11 |
+| **D — Security posture** | Monitor-native detections | Granular RBAC roles · control-plane drift / privilege escalation / exfil scheduled-query alerts | 27, 47, 48, 49 | 5–12 min | EUR 0–15 / USD 0–17 |
+| **E — Optional advanced** | SOC + reliability previews | Microsoft Sentinel onboarding · search jobs + restore · Service Group + Health Model (preview) · SLIs/SLOs · data export · Prometheus rule group | 43, 44, 45, 46 | 10–20 min | EUR 0–40 / USD 0–44 |
 | **AI — GenAI observability** *(optional, off)* | AI FinOps on Foundry | Microsoft Foundry account + project (swedencentral) · chat/embedding/optimization/model-router deployments · App Insights tracing · token anomaly + spike alerts · AI FinOps query pack + workbook · AI health tier · agents + traffic (`setup-ai.ps1`) | 53 | 10–15 min | billable models |
+| **SRE Agent (optional, off)** | AI-assisted incident response | Bicep-deployed agent (swedencentral) · managed identity + RBAC · Azure Monitor, App Insights, and LAW connectors · two Review-mode investigators with automatic incident briefs · deployment validation (`setup-sre-agent.ps1`) | 54-59 | 20-25 min | active AAUs; fixed charge waived during eligible trial |
 
 Walk-through docs:
 
@@ -175,17 +193,17 @@ Walk-through docs:
 - Per-stage speaker notes → [STAGE-A](STAGE-A-FOUNDATION.md) · [STAGE-B](STAGE-B-WORKLOADS.md) · [STAGE-C](STAGE-C-ALERTING.md) · [STAGE-D](STAGE-D-SECURITY-POSTURE.md) · [STAGE-E](STAGE-E-OPTIONAL-ADVANCED.md)
 - Customer handout (time + cost cheat sheet) → [CUSTOMER-STAGE-HANDOUT.md](CUSTOMER-STAGE-HANDOUT.md)
 
-> Stage A is mandatory; B/C/D/E layer on top, and **AI** is a fully optional, off-by-default add-on (depends only on Stage A). Both IaC paths (Bicep and Terraform) keep identical stage boundaries.
+> Stage A is mandatory; B/C/D/E layer on top, and **AI** is a fully optional, off-by-default add-on (depends only on Stage A). **SRE Agent** is also off by default. In the one-shot Bicep path, `enableStageSreAgent` deploys the agent and connectors; custom investigators and response plans are configured afterward in `sre.azure.com`.
 
 ---
 
 ## Demo flow
 
-The lab supports **53 numbered demo scenarios**, each with a story, a click-path, and a "killer line". See [`DEMO-SCENARIOS.md`](DEMO-SCENARIOS.md) for the full catalogue, including audience-pivoted shortlists (App Service · AKS · Cost · Security · Workload health).
+The lab supports **60 numbered demo scenarios** (`0` through `59`), each with a story, a click-path, and a "killer line". See [`DEMO-SCENARIOS.md`](DEMO-SCENARIOS.md) for the full catalogue, including audience-pivoted shortlists (App Service, AKS, Cost, Security, and Workload health).
 
 **Suggested 25-minute "first taste" walkthrough** (covers the cross-stack story):
 
-1. **Resource group overview** — show the ~35 resources, all tagged `purpose=azure-monitor-demo-lab`.
+1. **Resource group overview** - show the resources from the selected stages, including the Control Center runner, and filter by `purpose=azure-monitor-lab`.
 2. **🚦 Traffic Lights workbook** ([scenario 1](DEMO-SCENARIOS.md#s1)) → currently all **Green**. Talk through the cross-workspace KQL behind it.
 3. **VM Insights** ([scenario 2](DEMO-SCENARIOS.md#s2)) → portal → Insights → Map → topology + Performance for the Linux VM, same for Windows.
 4. **AKS → Insights** ([scenario 4](DEMO-SCENARIOS.md#s4)) → Container Insights blades, then **Workbooks → AKS Prometheus**, then **Grafana** with AMW data source pre-wired.
@@ -207,25 +225,27 @@ The lab supports **53 numbered demo scenarios**, each with a story, a click-path
 
 ## Cost notes (North Europe, list pricing, May 2026)
 
-Rough monthly burn if left running 24/7:
+Rough monthly burn if left running 24/7. USD estimates use a planning rate of EUR 1 = USD 1.10 and are rounded:
 
-| Component | ~€/month |
-|---|---:|
-| AKS Free tier control plane | 0 |
-| AKS nodes — 2 × Standard_B2s | 60 |
-| Linux + Windows VMs — 2 × Standard_B2s | 60 |
-| Linux VMSS — 1 × Standard_B2s (predictive autoscale demo) | 30 |
-| App Service B1 | 13 |
-| Storage accounts × 2 (LRS, near-empty) | <1 |
-| Event Hub namespace (Standard, 1 TU, near-idle) | ~20 |
-| Key Vault (Standard, light use) | <1 |
-| Azure Managed Grafana Essential | 0 |
-| Managed Prometheus (very low for 2 nodes) | ~1 |
-| LAW ingestion — capped at 1 GB/day × 2 (€2.30/GB) | 5–140 |
-| Workbooks · Action Groups · Policy · Sentinel onboarding | 0 |
-| **Total (idle demo use)** | **~€190 + ingestion** |
+| Component | ~EUR/month | ~USD/month |
+|---|---:|---:|
+| AKS Free tier control plane | 0 | 0 |
+| AKS nodes — 2 × Standard_B2s | 60 | 66 |
+| Linux + Windows VMs — 2 × Standard_B2s | 60 | 66 |
+| Linux VMSS — 1 × Standard_B2s (predictive autoscale demo) | 30 | 33 |
+| App Service B1 | 13 | 14 |
+| Storage accounts × 2 (LRS, near-empty) | <1 | <1.10 |
+| Event Hub namespace (Standard, 1 TU, near-idle) | ~20 | ~22 |
+| Key Vault (Standard, light use) | <1 | <1.10 |
+| Azure Managed Grafana Essential | 0 | 0 |
+| Managed Prometheus (very low for 2 nodes) | ~1 | ~1.10 |
+| LAW ingestion — capped at 1 GB/day × 2 (EUR 2.30/GB / USD 2.53/GB) | 5–140 | 6–154 |
+| Workbooks · Action Groups · Policy · Sentinel onboarding | 0 | 0 |
+| **Total (idle demo use)** | **~190 + ingestion** | **~209 + ingestion** |
 
-> **Optional AI stage** adds pay-per-token Foundry model spend (gpt-5-mini / text-embedding-3-small / gpt-5.4 / model-router) — near-€0 at idle, driven entirely by `setup-ai.ps1` traffic. Delete the Foundry account (or skip the stage) to zero it out.
+This historical baseline excludes the Control Center runner added later. Include Basic Container Registry service/storage, ACR Tasks builds, Container Apps job CPU/memory usage, and runner log ingestion when estimating the current lab. The runner has no always-running application replica; model traffic and started workloads remain separately billable. Use the selected regions' current prices and actual usage rather than treating the baseline or stage-table amounts as all-inclusive quotes.
+
+> **Optional AI stage** adds pay-per-token Foundry model spend (gpt-5-mini / text-embedding-3-small / gpt-5.4 / model-router) — near EUR 0 / USD 0 at idle, driven entirely by `setup-ai.ps1` traffic. Delete the Foundry account (or skip the stage) to zero it out.
 
 **Cost guardrails baked in:**
 - Both LAWs capped at **1 GB/day** out of the box.
@@ -234,7 +254,7 @@ Rough monthly burn if left running 24/7:
   ```powershell
   az aks stop -g rg-azure-monitor-lab -n aks-amlab
   ```
-  → drops to ~€25/month idle.
+    → drops to roughly EUR 25 / USD 28 per month idle.
 
 ---
 
@@ -251,7 +271,7 @@ Before starting the RG deletion, the script disables LAW replication and removes
 ## Folder layout
 
 ```
-azure-monitor-demo-lab/
+azure-monitor-lab/
 ├─ lab.config.json.example          ← Copy → lab.config.json (gitignored), fill in real values
 ├─ README.md
 ├─ .github/                         ← CODE_OF_CONDUCT · CONTRIBUTING · SECURITY · workflows
@@ -271,8 +291,9 @@ azure-monitor-demo-lab/
 │   │   ├─ 20-alerting.bicep        ← Action Group · alerts · AMBA · processing rules
 │   │   ├─ 30-security-posture.bicep← Sentinel · security alerts · LAW RBAC
 │   │   ├─ 40-optional-advanced.bicep ← Connection Monitor · flow logs · data export · etc.
-│   │   └─ 50-ai.bicep              ← (optional) Foundry GenAI workload · token alerts · AI FinOps observability
-│   └─ modules/                     ← 40+ reusable Bicep modules (incl. the optional AI stage)
+│   │   ├─ 50-ai.bicep              ← (optional) Foundry GenAI workload · token alerts · AI FinOps observability
+│   │   └─ 60-sre-agent.bicep       ← (optional) SRE Agent · connectors · identity and RBAC
+│   └─ modules/                     ← 45 reusable Bicep modules (including optional AI and SRE stages)
 │       ├─ law.bicep · appinsights.bicep · azure-monitor-workspace.bicep
 │       ├─ network.bicep · vm-linux.bicep · vm-windows.bicep · vmss.bicep · aks.bicep
 │       ├─ grafana.bicep · appservice.bicep · availability-test.bicep
@@ -285,20 +306,24 @@ azure-monitor-demo-lab/
 │       ├─ storage-account.bicep · eventhub.bicep · keyvault.bicep
 │       ├─ sentinel.bicep · security-posture-alerts.bicep
 │       ├─ health-model.bicep · sli-identity.bicep · law-rbac.bicep
+│       ├─ platform-logs-dcr.bicep · metrics-export-dcr.bicep · security-workbook.bicep
 │       ├─ foundry.bicep · ai-observability.bicep · ai-healthmodel.bicep ← (optional AI stage)
+│       └─ sre-agent.bicep · sre-agent-subscription-rbac.bicep ← (optional SRE Agent stage)
 ├─ terraform/                       ← Parallel Terraform path (azurerm + azapi)
 │   ├─ main.tf · variables.tf · providers.tf
 │   ├─ stages.tfvars.example        ← Copy → stages.tfvars (gitignored, or regen via sync-config.ps1)
 │   └─ stage*.plan                  ← Pre-generated tf plans per stage
-├─ scripts/                         ← PowerShell helpers (24 total)
+├─ scripts/                         ← PowerShell deployment and demo helpers (29 tracked .ps1 files)
 │   ├─ sync-config.ps1              ← lab.config.json → all derived files
-│   ├─ deploy.ps1 · post-deploy.ps1 · teardown.ps1
+│   ├─ deploy.ps1 · post-deploy.ps1 · post-staged-deploy.ps1 · post-cloud-shell-deploy.ps1
+│   ├─ preflight-check.ps1 · teardown.ps1 · gen-architecture-svg.ps1
 │   ├─ break-the-lab.ps1 · restore-the-lab.ps1
 │   ├─ start-the-lab.ps1 · start-ramp.ps1
-│   ├─ setup-rbac-demo.ps1 · demo-granular-rbac.ps1
+│   ├─ setup-rbac-demo.ps1 · demo-granular-rbac.ps1 · demo-slis.ps1
 │   ├─ setup-health-model.ps1 · setup-slis.ps1 · setup-grafana-alerts.ps1
-│   ├─ setup-ai.ps1                 ← (optional AI stage) create agents + simulate traffic
-│   ├─ create-summary-rule.ps1 · toggle-table-plan.ps1
+│   ├─ setup-ai.ps1 · setup-ai-cloud-shell.ps1 ← optional AI setup and traffic
+│   ├─ setup-sre-agent.ps1          ← optional SRE Agent validation and RBAC repair
+│   ├─ create-summary-rule.ps1 · toggle-table-plan.ps1 · enable-law-replication.ps1
 │   ├─ run-search-job.ps1 · restore-archived-logs.ps1
 │   ├─ send-custom-logs.ps1 · send-release-annotation.ps1
 │   └─ trigger-code-optimization.ps1
@@ -316,18 +341,18 @@ azure-monitor-demo-lab/
 
 ## Ideas to extend beyond current scope
 
-The lab covers 53 scenarios out of the box; here are well-scoped follow-ups for deeper sessions:
+The lab covers 60 numbered scenarios (`0` through `59`) out of the box; here are well-scoped follow-ups for deeper sessions:
 
 - **Multi-region DR drill** — pair the central LAW with a paired region (the `enableLawReplication` parameter wires this up) and walk alert + workbook continuity during a regional outage.
 - **Cross-subscription workbook rollup** — clone the Traffic Lights workbook into a management-group-scoped variant.
 - **Change Analysis pre/post-incident drift** — combine `break-the-lab.ps1` with the App Service Change Analysis blade for a deployment-drift story.
-- **Foundry / AI Ops correlation** — stream App Insights traces into a Foundry agent for natural-language incident triage.
+- **SRE Agent remediation** — move selected response plans from Review to Autonomous only after repeated read-only validation and least-privilege remediation design.
 
 ---
 
-## Optional add-ons (opt-in scripts)
+## Operational and optional helpers
 
-These are *not* run by `deploy.ps1` — they layer extra capabilities on after the base lab is up. Each one maps to a [`DEMO-SCENARIOS.md`](DEMO-SCENARIOS.md) entry.
+These scripts operate or extend an already deployed lab. Most are manual demo helpers. `setup-health-model.ps1` and `setup-slis.ps1` are also called by the one-shot deployment wrapper, while AI and SRE Agent setup run automatically only when their stage toggles are enabled.
 
 | Script | What it does | Scenario |
 |---|---|---|
@@ -337,12 +362,16 @@ These are *not* run by `deploy.ps1` — they layer extra capabilities on after t
 | `scripts/setup-grafana-alerts.ps1` | Creates a Grafana alert rule against the AMW data source. | 32 |
 | `scripts/create-summary-rule.ps1` | Adds a LAW **Summary Rule** that pre-aggregates expensive queries into a custom table. | 21 |
 | `scripts/toggle-table-plan.ps1` | Flips a chosen table between **Analytics** and **Basic** plan to demo the cost tradeoff. | 20 |
+| `scripts/enable-law-replication.ps1` | Enables paid cross-region replication on an existing central LAW without rerunning the complete Bicep deployment. | 41 |
 | `scripts/run-search-job.ps1` | Runs a **Search Job** over archived data and waits for the resulting custom table. | 44 |
 | `scripts/restore-archived-logs.ps1` | Triggers a **Restore** of an archived table range and surfaces it as a hot table. | 44 |
 | `scripts/send-custom-logs.ps1` | Sends sample rows through the **Logs Ingestion API** into the custom-table DCR. | 24 |
 | `scripts/setup-rbac-demo.ps1` + `demo-granular-rbac.ps1` | Provisions 3 service principals (workspace / table / row scope) and replays cross-SP queries to show **Granular RBAC**. | 27 |
-| `scripts/setup-health-model.ps1` | Provisions an Azure **Service Group** (preview) + attaches the RG, then prints a portal deep-link to finish the **Health Model**. Run with `-Teardown` to remove. | 45 |
-| `scripts/setup-slis.ps1` | Wires sample **SLIs / SLOs** on top of the lab workloads. | 46 |
+| `scripts/setup-health-model.ps1` | Provisions the tenant-scoped Azure **Service Group** (preview), attaches the RG, and prints links to the Bicep-populated Health Model. Run with `-Teardown` to remove the tenant-scoped artifacts. | 45 |
+| `scripts/setup-slis.ps1` | Verifies the Service Group, identity permissions, and source metrics required for the portal-created sample **SLIs / SLOs**. | 46 |
+| `scripts/demo-slis.ps1` | Creates, degrades, restores, or removes isolated AKS workloads that drive the SLI demo. | 46 |
+| `scripts/setup-ai.ps1` | Creates the optional Foundry demo agents and generates traced token traffic when the AI stage is enabled. | 53 |
+| `scripts/setup-sre-agent.ps1` | Validates the optional SRE Agent, connectors, identities, and RBAC; missing roles are granted only with `-GrantMissingRoles`. | 54-59 |
 
 ## Troubleshooting
 

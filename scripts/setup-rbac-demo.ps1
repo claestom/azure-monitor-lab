@@ -16,14 +16,14 @@
   Resource group name. Default: rg-azure-monitor-lab.
 
 .PARAMETER WorkspaceName
-  Log Analytics workspace name. Default: law-amlab-central.
+    Log Analytics workspace name. When omitted, discovers the central workspace in the resource group.
 
 .EXAMPLE
   ./scripts/setup-rbac-demo.ps1
 #>
 param(
     [string]$ResourceGroup  = 'rg-azure-monitor-lab',
-    [string]$WorkspaceName  = 'law-amlab-central'
+    [string]$WorkspaceName  = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -48,14 +48,33 @@ if ($currentSub -ne $expectedSub) {
 # Gather workspace info
 # ---------------------------------------------------------------------------
 Write-Host "`n=== Gathering workspace info ===" -ForegroundColor Cyan
+if ([string]::IsNullOrWhiteSpace($WorkspaceName)) {
+    $workspaces = az monitor log-analytics workspace list -g $ResourceGroup -o json | ConvertFrom-Json
+    $centralWorkspace = @($workspaces | Where-Object { $_.name -match '^law-.+-central(?:-|$)' }) | Select-Object -First 1
+    if (-not $centralWorkspace) {
+        throw "Could not discover the central Log Analytics workspace in resource group '$ResourceGroup'. Pass -WorkspaceName explicitly."
+    }
+    $WorkspaceName = $centralWorkspace.name
+}
 $ws = az monitor log-analytics workspace show -g $ResourceGroup -n $WorkspaceName -o json | ConvertFrom-Json
 $workspaceId         = $ws.customerId   # GUID — used for API queries
 $workspaceResourceId = $ws.id           # ARM resource ID — used for role assignments
 $tenantId            = az account show --query tenantId -o tsv
+$resourceGroupId      = az group show -n $ResourceGroup --query id -o tsv
+
+$customRoles = az role definition list --custom-role-only true -o json | ConvertFrom-Json
+$granularRole = @($customRoles | Where-Object {
+    $_.roleName -like 'AMLAB - Granular Log Reader*' -and
+    @($_.assignableScopes) -contains $resourceGroupId
+}) | Select-Object -First 1
+if (-not $granularRole) {
+    throw "Could not find the AMLAB Granular Log Reader role assigned to resource group '$ResourceGroup'. Confirm the security posture stage was deployed."
+}
 
 Write-Host "  Workspace ID : $workspaceId"
 Write-Host "  Resource ID  : $workspaceResourceId"
 Write-Host "  Tenant ID    : $tenantId"
+Write-Host "  Custom role  : $($granularRole.roleName)"
 
 # ---------------------------------------------------------------------------
 # Define the 3 service principals
@@ -125,7 +144,7 @@ $tableCondition = "((!(ActionMatches{'Microsoft.OperationalInsights/workspaces/t
 az role assignment create `
     --assignee-object-id $credentials['table'].spObjectId `
     --assignee-principal-type ServicePrincipal `
-    --role 'AMLAB - Granular Log Reader' `
+    --role $granularRole.id `
     --scope $workspaceResourceId `
     --condition $tableCondition `
     --condition-version '2.0' `
@@ -138,7 +157,7 @@ $rowCondition = '((!(ActionMatches{''Microsoft.OperationalInsights/workspaces/ta
 az role assignment create `
     --assignee-object-id $credentials['row'].spObjectId `
     --assignee-principal-type ServicePrincipal `
-    --role 'AMLAB - Granular Log Reader' `
+    --role $granularRole.id `
     --scope $workspaceResourceId `
     --condition $rowCondition `
     --condition-version '2.0' `

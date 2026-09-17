@@ -1,4 +1,4 @@
-# Azure Monitor Demo Lab - Step-by-Step Deployment with Terraform
+# Azure Monitor Lab - Step-by-Step Deployment with Terraform
 
 This guide is for customers standardizing on Terraform while still using this lab.
 
@@ -34,6 +34,7 @@ For workshop planning and customer expectation-setting, use:
 - [STAGE-D-SECURITY-POSTURE.md](STAGE-D-SECURITY-POSTURE.md)
 - [STAGE-E-OPTIONAL-ADVANCED.md](STAGE-E-OPTIONAL-ADVANCED.md)
 - [STAGE-AI.md](STAGE-AI.md)
+- [STAGE-SRE-AGENT.md](STAGE-SRE-AGENT.md)
 
 ## 3) Stage model (same as Bicep)
 
@@ -43,6 +44,7 @@ For workshop planning and customer expectation-setting, use:
 4. Stage D - Security posture (47/48/49)
 5. Stage E - Optional advanced add-ons
 6. Stage AI - Optional Microsoft Foundry GenAI workload (off by default)
+7. Stage SRE Agent - Optional Azure SRE Agent (off by default)
 
 Keeping stage boundaries identical across Bicep and Terraform avoids customer confusion.
 
@@ -53,11 +55,12 @@ Use this matrix in customer sessions so Terraform users see exactly what each ap
 | Stage | High-level scenario goals | Scenario IDs (from DEMO-SCENARIOS.md) | Azure services/resources deployed |
 |---|---|---|---|
 | Stage A - Foundation | Build the shared monitoring substrate and governance prerequisites. | 1, 5, 6, 9 (foundation portions) | Resource group, central LAW + AppInsights LAW, workspace-based App Insights, Azure Monitor Workspace, DCE baseline, core networking (VNet/NSG), baseline diagnostics and policy assignments, shared storage/event-hub/Key Vault foundations, VM Insights DCR and AzureActivity workspace transform DCR, saved queries, KQL functions, traffic-lights and cost workbooks. |
-| Stage B - Workloads and dashboards | Onboard app/compute workloads and expose observability views. | 2, 3, 4, 22, 28, 29, 30, 31, 32, 34, 35, 36, 42 | Linux/Windows VMs with AMA + DCR associations, AKS with Container Insights + Managed Prometheus + Grafana, App Service plan/web app with App Insights, Connection Monitor, VNet flow logs + Traffic Analytics. |
+| Stage B - Workloads and dashboards | Onboard app/compute workloads and expose observability views. | 2, 3, 4, 22, 28, 29, 30, 31, 32, 34, 35, 36, 42 | Optional Linux/Windows VMs with AMA + DCR associations, AKS with Container Insights + Managed Prometheus + Grafana, App Service plan/web app with App Insights, console registry/job platform and custom-log ingestion, Connection Monitor, VNet flow logs + Traffic Analytics. Automatic completion publishes workloads and configures console sign-in, access, and the runner image. |
 | Stage C - Alerts and response | Introduce detection, routing, and auto-response controls. | 7, 8, 12, 15, 17, 19, 23, 37 | Action Group with email + Logic App + optional SIEM webhook, metric/log/AKS/App alerts, AMBA baseline alert set, Service/Resource Health alerts, alert processing rules, VMSS with predictive autoscale. |
 | Stage D - Security posture | Deliver Azure Monitor-native security detections without requiring SIEM. | 27, 47, 48, 49 | LAW granular RBAC roles + ABAC assignments, scheduled query alerts for control-plane drift, privilege-escalation watch, and exfil early warning. |
 | Stage E - Optional advanced add-ons | Add optional SOC and reliability preview capabilities. | 43, 44, 45, 46 | Optional Sentinel onboarding and analytics rule, Heartbeat data export, Managed Prometheus rule group, availability tests, health model, SLI identity prerequisites. |
-| Stage AI - Optional GenAI workload | Add a Microsoft Foundry workload that emits token/trace/cost telemetry, with AI FinOps observability. Off by default (billable models, region-limited). | - | Foundry (AI Services) account + project pinned to swedencentral, four model deployments (gpt-5-mini chat, text-embedding-3-small, gpt-5.4, model-router), Application Insights connection, token anomaly + spike metric alerts, AI FinOps query pack + workbook, and an AI tier folded into the workload health model. Agents + traffic via scripts/setup-ai.ps1. |
+| Stage AI - Optional GenAI workload | Add a Microsoft Foundry workload that emits token/trace/cost telemetry, with AI FinOps observability. Off by default (billable models, region-limited). | - | Foundry account + project in swedencentral by default, four model deployments (gpt-5-mini chat, text-embedding-3-small, gpt-5.4, model-router), Application Insights connection, token alerts, AI FinOps query pack + workbook. When Stage E is enabled, its workload health model includes the AI tier. Optional traffic always runs as a finite background batch. |
+| Stage SRE Agent - Optional SRE integration | Provision and validate the preview SRE Agent and monitoring connectors. | 54, 55, 56, 57, 58 | Agent pinned to swedencentral, system-assigned and user-assigned identities, Azure Monitor/Application Insights/Log Analytics connectors, resource-group access and subscription-scope Monitoring Contributor. Automatic validation works with or without Stage B. Portal investigation scenarios remain separate from the Control Center MCP assistant. |
 
 ### Dependency and apply order
 
@@ -67,15 +70,19 @@ Use this matrix in customer sessions so Terraform users see exactly what each ap
 4. Apply Stage D after Stage A and C; security detections need Activity data and action routing.
 5. Apply Stage E last; optional features rely on the previously deployed monitor estate.
 6. Apply Stage AI any time after Stage A; it uses the Stage A Application Insights component and is independent of Stages B to E.
+7. Apply Stage SRE Agent any time after Stage A; it uses the Stage A monitoring resources and does not require workloads.
+
+The Control Center requires Stage B. Its Foundry Playground also needs AI; its SRE MCP Assistant needs both AI and SRE. A+AI and A+SRE remain valid standalone scenarios without a Web App.
 
 ### Acceptance criteria by stage
 
-1. Stage A: workspace ingestion and baseline diagnostics confirmed.
-2. Stage B: workload telemetry visible in queries/workbooks.
+1. Stage A: shared monitoring/network resources, DCRs, workbooks, and policy are present. No compute or Web App workload is expected yet.
+2. Stage B: completion verifies the new app publication and configures console access; workload telemetry becomes visible in queries/workbooks.
 3. Stage C: at least one alert path test reaches the Action Group.
 4. Stage D: scenarios 47/48/49 query outputs are non-empty and alert rules evaluate.
 5. Stage E: optional Sentinel/health/SLI capabilities are reachable and testable.
 6. Stage AI: Foundry model deployments exist, App Insights receives AI telemetry, and the AI FinOps queries return data after `setup-ai.ps1` runs.
+7. Stage SRE Agent: the agent is in `swedencentral`, all three connectors are configured, and identity-specific RBAC validation passes.
 
 ## 5) Terraform scaffold (orchestrating staged ARM/Bicep)
 
@@ -89,14 +96,16 @@ This repo ships a working staged Terraform scaffold at `terraform/` and pre-comp
 | `enable_stage_d` | `infra/stages/30-security-posture.json` |
 | `enable_stage_e` | `infra/stages/40-optional-advanced.json` |
 | `enable_stage_ai` | `infra/stages/50-ai.json` |
+| `enable_stage_sre_agent` | `infra/stages/60-sre-agent.json` |
 
-Each toggle gates its own `azapi_resource "Microsoft.Resources/deployments@2022-09-01"` block, so flipping a flag truly adds or removes only that stage's deployment.
+Each toggle gates its own `azapi_resource "Microsoft.Resources/deployments@2022-09-01"` block. Disabling a flag removes its deployment record, not the nested Azure resources. Console and SRE completion also follow explicit Terraform selections; they do not require matching flags in a local central config.
 
 Folder layout:
 
 - `terraform/providers.tf`
 - `terraform/variables.tf`
 - `terraform/main.tf`
+- [terraform/console.tf](../terraform/console.tf)
 - `terraform/stages.tfvars`
 
 ### Regenerating stage templates from Bicep
@@ -110,19 +119,23 @@ az bicep build --file infra/stages/20-alerting.bicep          --outfile infra/st
 az bicep build --file infra/stages/30-security-posture.bicep  --outfile infra/stages/30-security-posture.json
 az bicep build --file infra/stages/40-optional-advanced.bicep --outfile infra/stages/40-optional-advanced.json
 az bicep build --file infra/stages/50-ai.bicep               --outfile infra/stages/50-ai.json
+az bicep build --file infra/stages/60-sre-agent.bicep        --outfile infra/stages/60-sre-agent.json
 ```
 
 The legacy `infra/main.bicep` continues to work unchanged for the original Bicep-only deployment path.
 
 ## 6) Deployment runbook
 
+Run the commands from the repository root. `-chdir=terraform` keeps Terraform in its own directory without changing the working directory for the later setup scripts.
+
 ### Step 1 - Confirm the existing terraform files
 
 The shipped files already contain the staged wiring described above. Open them and confirm:
 
 - `terraform/providers.tf` declares `azurerm ~> 4.0` and `azapi ~> 2.0` and threads `subscription_id` through both providers.
-- `terraform/variables.tf` declares the five stage toggles plus shared inputs (`subscription_id`, `resource_group_name` (default `rg-azure-monitor-lab`), `location`, `alert_email`, `vm_admin_password`, etc.).
-- `terraform/main.tf` declares one `data "azurerm_resource_group"` (BYO RG, looked up by name) plus five `azapi_resource` deployments, each guarded by its own stage toggle.
+- `terraform/variables.tf` declares seven stage toggles plus shared inputs (`subscription_id`, `resource_group_name` (default `rg-azure-monitor-lab`), `location`, `alert_email`, `vm_admin_password`, etc.).
+- `terraform/main.tf` declares one `data "azurerm_resource_group"` (BYO RG, looked up by name) plus seven `azapi_resource` deployments, each guarded by its own stage toggle.
+- [terraform/console.tf](../terraform/console.tf) runs console completion when B is enabled, or standalone SRE validation when SRE is enabled without B.
 
 ### Step 2 - Set inputs in `terraform/stages.tfvars`
 
@@ -134,7 +147,7 @@ notepad lab.config.json   # fill in subscriptionId, tenantId, alertEmail, vmAdmi
 ./scripts/sync-config.ps1 # regenerates terraform/stages.tfvars + .azure-target.json + infra/main.parameters.json
 ```
 
-`scripts/sync-config.ps1` writes `terraform/stages.tfvars` from your central config, including the five stage toggles. Re-run it any time you change `lab.config.json` (e.g. to flip the next stage).
+`scripts/sync-config.ps1` writes `terraform/stages.tfvars` from your central config, including all seven stage toggles. Re-run it any time you change `lab.config.json` (e.g. to flip the next stage).
 
 **Or hand-edit `terraform/stages.tfvars` directly** (skip `sync-config.ps1`; the file is gitignored):
 
@@ -151,6 +164,7 @@ enable_stage_c = false
 enable_stage_d = false
 enable_stage_e = false
 enable_stage_ai = false   # optional Foundry GenAI workload (swedencentral)
+enable_stage_sre_agent = false
 ```
 
 > Note: if `lab.config.json` exists, running `scripts/deploy.ps1` will auto-overwrite `terraform/stages.tfvars` on its next invocation. Pick **one** workflow (central config OR hand-edit) and stick with it.
@@ -161,7 +175,10 @@ Terraform looks the RG up via data source rather than creating it, so `terraform
 
 ```powershell
 $rg = "rg-azure-monitor-lab"   # set this to the RG used for this deployment
-az group create -n $rg -l northeurope --tags purpose=azure-monitor-demo-lab owner=demo-lab
+az account set --subscription $sub
+$active = az account show --query '{id:id,tenantId:tenantId}' -o json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0 -or $active.id -ne $sub) { throw 'Subscription mismatch.' }
+az group create --subscription $sub -n $rg -l northeurope --tags purpose=azure-monitor-lab owner=demo-lab
 ```
 
 If you omit `resource_group_name` from `stages.tfvars`, Terraform defaults to `rg-azure-monitor-lab`. If you use another RG, set the same name in `stages.tfvars` and in `$rg` before running the commands below. If you skip this step, `terraform plan` will fail because the configured resource group was not found.
@@ -169,15 +186,15 @@ If you omit `resource_group_name` from `stages.tfvars`, Terraform defaults to `r
 ### Step 4 - Init
 
 ```powershell
-cd terraform
-terraform init
+terraform -chdir=terraform init
+terraform -chdir=terraform validate
 ```
 
 ### Step 5 - Plan/apply Stage A
 
 ```powershell
-terraform plan -var-file stages.tfvars
-terraform apply -var-file stages.tfvars
+terraform -chdir=terraform plan -var-file stages.tfvars
+terraform -chdir=terraform apply -var-file stages.tfvars
 ```
 
 Expected plan summary with only Stage A enabled:
@@ -190,13 +207,11 @@ If your shell reports "Too many command line arguments", retype the command manu
 
 ### Step 6 - Enable Stage B, then C, then D, then E
 
-Flip one stage flag at a time in `stages.tfvars` and re-run plan/apply. Each new `terraform plan` should show exactly one additional `azapi_resource.stage_*` add when you enable the next stage.
+Flip one stage flag at a time in `stages.tfvars` and rerun plan/apply. Stage B adds both its ARM deployment and `terraform_data.console_ready`. This completion hook publishes the app and AKS workloads and automatically provisions console sign-in, health permissions, the registry/image/job, and selected agent integrations. Do not run another post-deployment command after a successful apply.
 
-After applying Stage B, run the local post-deployment setup. This publishes the sample App Service, applies the AKS demo workloads, creates the summary rule, and provisions the health model and SLI prerequisites. The script discovers the suffixed resource names automatically:
+The machine running apply needs PowerShell 7, Azure CLI signed into the selected subscription, the .NET 8 SDK, and the lab workload tools. The deployer needs Azure role-definition/assignment and Entra registration permissions. Optional AI/SRE packaging also needs Python/npm/tar. For a service-principal deployment, set `console_operator_object_ids` to approved tenant user object IDs. See [console prerequisites](../workloads/webapp/LAB-OPERATIONS.md#prerequisites).
 
-```powershell
-./scripts/post-staged-deploy.ps1 -ResourceGroup $rg
-```
+Changes to relevant stages or source files rerun initialization. Terraform passes Stage E and SRE selections explicitly, including false, so stale central config cannot enable or skip that completion work. A failed completion hook fails apply, so incomplete setup is not reported as deployment success. The hook has no destroy-time provisioner: the registry/job and other nested resources follow the lab's existing resource-group cleanup model.
 
 ### Step 7 - Enable Stage AI (optional)
 
@@ -210,45 +225,76 @@ ai_location = "swedencentral"
 router_model_version = "2025-08-07"  # verify with: az cognitiveservices account list-models -l swedencentral
 ```
 
-Then apply the stage and run the post-deployment setup:
+Then apply the stage:
 
 ```powershell
-terraform plan -var-file stages.tfvars
-terraform apply -var-file stages.tfvars
-./scripts/setup-ai.ps1 -g $rg   # match `resource_group_name` in stages.tfvars; creates demo agents and simulates traffic
+terraform -chdir=terraform plan -var-file stages.tfvars
+terraform -chdir=terraform apply -var-file stages.tfvars
 ```
 
-`setup-ai.ps1` pip-installs the packages listed in [`workloads/ai/requirements.txt`](../workloads/ai/requirements.txt) before creating the agents and simulating traffic.
+When Stage B is enabled, apply automatically installs the [AI dependencies](../workloads/ai/requirements.txt), prepares four matching agents, and refreshes the published console inventory and access without simulated conversations. This also happens when AI is added after an earlier Stage B apply; do not run another console wrapper.
 
-The AI stage creates the Foundry account, project, four model deployments, App Insights connection, token alerts, AI FinOps query pack and workbook, and the AI tier in the workload health model. It requires the Stage A Application Insights resource but does not require Stages B to E.
+To generate optional AI telemetry from the repo root, run the account-scoped helper below. Use the deployed prefix if it is not `amlab`:
 
-### Step 8 - Enable Stage Fabric (optional)
+```powershell
+./scripts/setup-ai-cloud-shell.ps1 -SubscriptionId $sub -ResourceGroup $rg -NamePrefix amlab
+```
+
+This helper also works locally. It verifies and forwards the subscription and tenant, discovers Foundry and App Insights through core ARM commands, and starts a finite 150-conversation batch in the background. Add `-SkipTraffic` to prepare agents without traffic, or `-Conversations <count>` to select a finite batch size. Keep the host/sign-in available; see [background traffic details](POST-DEPLOYMENT.md#background-ai-traffic).
+
+An AI-only deployment without Stage B has no Web App completion hook and uses the same helper to prepare its standalone scenario. Stage AI creates the Foundry resources, model deployments, tracing connection, token alerts, query pack, and workbook. Its workload health tier is present only when Stage E is also enabled.
+
+### Step 8 - Enable Stage SRE Agent (optional)
+
+Terraform deploys the compiled Stage 60 Bicep template through AzAPI. The stage depends on Stage A, remains off by default, and hard pins the SRE Agent to `swedencentral`. Enable it in `stages.tfvars`:
+
+```hcl
+enable_stage_sre_agent = true
+```
+
+The deploying identity needs subscription-scope resource deployment and role-assignment permission, for example Owner, because Stage 60 grants the agent connector identity Monitoring Contributor. Review the plan and apply it:
+
+```powershell
+terraform -chdir=terraform plan -var-file stages.tfvars
+terraform -chdir=terraform apply -var-file stages.tfvars
+```
+
+The stage creates the preview `Microsoft.App/agents` resource, managed identities, Azure Monitor, Application Insights, and Log Analytics connectors, and required RBAC. With Stage B, `terraform_data.console_ready` refreshes the console and invokes SRE validation with Terraform's explicit flag. Without B, `terraform_data.sre_ready` runs the same standalone validator without requiring App Service or AKS. Validation failure fails apply. No second setup or post-deployment wrapper is needed after success.
+
+SRE-only completion requires PowerShell 7 and Azure CLI signed into the selected subscription, but no Web App build tools. The validator is read-only by default; it does not start investigations or auto-grant missing roles. Active usage is billable and always-on billing can begin after an eligible trial.
+
+> Setting `enable_stage_sre_agent = false` or running `terraform destroy` removes the ARM deployment record but does not delete resources created by that nested deployment. Run `./scripts/teardown.ps1 -ResourceGroup $rg` or delete the SRE Agent explicitly before the trial ends to stop billing.
+
+Follow [Stage SRE Agent](STAGE-SRE-AGENT.md) for optional portal investigators and Review-mode response plans. Those are separate scenarios, not prerequisites for the Control Center's MCP questions and approved operations.
+
+### Step 9 - Enable Stage Fabric (optional)
 
 Stage Fabric deploys an F2 capacity pinned to `swedencentral`. It is off by default because indicative PAYG retail pricing while active is about $0.36/hour, $8.64/day, or $262.80/month, plus possible OneLake storage and other usage charges.
 
-Set the Fabric flag in `stages.tfvars`:
+Set the Fabric flag and a tenant user UPN in `stages.tfvars`:
 
 ```hcl
 enable_stage_fabric = true
+fabric_admin_email = "<FABRIC-ADMIN-UPN>"
 ```
 
-Then apply and create the tenant-scoped Fabric items:
+Then apply from the repository root and create the tenant-scoped Fabric items:
 
 ```powershell
-terraform plan -var-file stages.tfvars
-terraform apply -var-file stages.tfvars
-./scripts/setup-fabric.ps1 -SubscriptionId <subscription-id> -ResourceGroup $rg
+terraform -chdir=terraform plan -var-file stages.tfvars
+terraform -chdir=terraform apply -var-file stages.tfvars
+./scripts/setup-fabric.ps1 -SubscriptionId $sub -ResourceGroup $rg
 ```
 
 The setup script attempts to create the Event Hubs connection and publish the complete topology. If the tenant rejects public API connection creation, create only the connection once in Fabric and rerun the setup script. Follow the [Fabric post-deploy checklist](STAGE-FABRIC.md#after-deployps1-checklist), then suspend F2 when the demo is idle:
 
 ```powershell
-./scripts/suspend-fabric.ps1 -SubscriptionId <subscription-id> -ResourceGroup $rg
+./scripts/suspend-fabric.ps1 -SubscriptionId $sub -ResourceGroup $rg
 ```
 
 See [STAGE-FABRIC.md](STAGE-FABRIC.md) for permissions, setup, and demo flow.
 
-### Step 9 - Security stage validation
+### Step 10 - Security stage validation
 
 After Stage D, verify Activity Log ingestion:
 
@@ -292,7 +338,7 @@ For each stage:
 
 ## 10) Tearing down the lab
 
-The resource group is BYO (Terraform does not own it via data source), so `terraform destroy` alone will not cascade-delete the LAWs, VMs, AKS, alerts, etc. — it only removes the five staged deployment records. Use Option A.
+The resource group is BYO (Terraform does not own it via data source), so `terraform destroy` alone will not cascade-delete the LAWs, VMs, AKS, alerts, etc. - it only removes the seven staged deployment records. Use Option A.
 
 ### Option A - run the teardown wrapper (recommended)
 
@@ -309,8 +355,7 @@ az account show --query "{name:name,id:id,tenantId:tenantId}" -o table
 After the asynchronous resource-group deletion completes, clear the Terraform deployment records so the next apply starts clean:
 
 ```powershell
-cd terraform
-terraform state list | ForEach-Object { terraform state rm $_ }
+terraform -chdir=terraform state list | ForEach-Object { terraform -chdir=terraform state rm $_ }
 ```
 
 ### Option B - terraform destroy + manual RG cleanup
@@ -318,9 +363,8 @@ terraform state list | ForEach-Object { terraform state rm $_ }
 Use this if you want to drive teardown through Terraform first (e.g. for state-machine cleanliness in CI), then clean the RG yourself.
 
 ```powershell
-cd terraform
-terraform destroy -var-file stages.tfvars   # removes the 5 deployment records only
-az group delete -n rg-azure-monitor-lab --yes --no-wait   # nukes the actual resources
+terraform -chdir=terraform destroy -var-file stages.tfvars
+az group delete --subscription $sub -n $rg --yes --no-wait
 ```
 
 ### Post-teardown: cleanup of artifacts that live outside the RG

@@ -1,4 +1,4 @@
-# Azure Monitor Demo Lab — Demo Scenarios
+# Azure Monitor Lab — Demo Scenarios
 
 A curated set of demo scenarios you can run with this lab. Each one has a **story**, a **click-path / commands**, and **what to point at** so the audience walks away with the value.
 
@@ -25,7 +25,8 @@ Pick a workload (or theme) and run only those scenarios. Each row links to the n
 | **Security** | <ul><li>[27](#s27) Granular RBAC</li><li>[43](#s43) Sentinel</li><li>[44](#s44) Search jobs + Restore</li><li>[47](#s47) Control-plane drift watch</li><li>[48](#s48) Privilege escalation watch</li><li>[49](#s49) Exfil early warning</li></ul> |
 | **AI / ML in Azure Monitor** | <ul><li>[16](#s16) Copilot</li><li>[13](#s13) Smart Detection</li><li>[17](#s17) Dynamic Thresholds</li><li>[18](#s18) Code Optimizations</li><li>[19](#s19) Predictive autoscale</li></ul> |
 | **GenAI observability (optional AI stage)** | <ul><li>[53](#s53) AI FinOps — token / trace / cost</li></ul> |
-| **Microsoft Fabric (optional Stage Fabric)** | <ul><li>[54](#s54) Event Hubs to Real-Time Intelligence</li><li>[55](#s55) Eventhouse telemetry</li><li>[56](#s56) Real-Time Dashboard</li><li>[57](#s57) Business-event correlation</li><li>[58](#s58) Capacity monitoring</li><li>[59](#s59) Suspend and resume</li><li>[60](#s60) Mirror Azure Monitor data (preview)</li></ul> |
+| **Azure SRE Agent (optional trial)** | <ul><li>[54](#s54) Trial readiness</li><li>[55](#s55) Alert-driven App Service investigation</li><li>[56](#s56) AKS crash-loop diagnosis</li><li>[57](#s57) Change correlation</li><li>[58](#s58) Alert merging and verified recovery</li><li>[59](#s59) Automatic incident command brief</li></ul> |
+| **Microsoft Fabric (optional Stage Fabric)** | <ul><li>[60](#s60) Event Hubs to Real-Time Intelligence</li><li>[61](#s61) Eventhouse telemetry</li><li>[62](#s62) Real-Time Dashboard</li><li>[63](#s63) Business-event correlation</li><li>[64](#s64) Capacity monitoring</li><li>[65](#s65) Suspend and resume</li><li>[66](#s66) Mirror Azure Monitor data (preview)</li></ul> |
 | **Platform foundations** | <ul><li>[5](#s5) Policy auto-onboard</li><li>[6](#s6) Cross-workspace KQL</li><li>[24](#s24) Custom Logs Ingestion API</li><li>[26](#s26) KQL Functions</li><li>[51](#s51) Platform logs at scale (DCR)</li></ul> |
 
 > **Suggested 25-min "by-workload" demos:** App Service → 3, 22, 28, 29, 33 · AKS → 4, 14, 30, 31 · Cost → 9, 11, 20, 39, 42 · Security → 27, 47, 48 · Workload health → 1 + 45 + 46.
@@ -37,7 +38,7 @@ Pick a workload (or theme) and run only those scenarios. Each row links to the n
 
 > *"This is one resource group with a Linux VM, a Windows VM, an AKS cluster, and an App Service. All telemetry flows to two Log Analytics workspaces: one **central** workspace for infrastructure logs, and one **dedicated** to Application Insights. Azure Policy ensures every new resource is auto-wired with diagnostic settings. Everything you see today is built on top of that pipeline."*
 
-Open the resource group → expand the resource list → **show the count**: ~30 resources, all tagged `purpose=azure-monitor-demo-lab`.
+Open the resource group → expand the resource list → **show the count**: ~30 resources, all tagged `purpose=azure-monitor-lab`.
 
 ---
 
@@ -51,7 +52,7 @@ Open the resource group → expand the resource list → **show the count**: ~30
 Modern teams don't want to chain through 10 portal blades to know "is anything broken right now?". This workbook answers that in one screen, with a clear per-resource threshold legend.
 
 ### Click-path
-1. **Monitor → Workbooks** → search **"Azure Monitor Demo Lab"** → open *Traffic Lights*.
+1. **Monitor > Workbooks** > search **"Azure Monitor Lab"** > open *Traffic Lights*.
 2. If Stage Fabric is enabled, scroll to **Microsoft Fabric Real-Time Intelligence Health** and show the dynamically discovered F2 capacity state. Suspended appears Orange; a failed provisioning state appears Red.
 3. Read the **legend table** out loud (Green/Orange/Red thresholds per resource type).
 4. Click any Red or Orange row → scroll down to the matching detail pane (VM heartbeat / AKS pods / App Service status codes / App Insights timechart).
@@ -652,16 +653,23 @@ Static thresholds break the moment your traffic pattern changes — CPU 70% is f
 
 ### What's deployed
 
-The lab includes a pre-deployed dynamic threshold alert:
+The main Bicep/ARM deployment includes this dynamic threshold alert. The staged Stage C template does not currently define it.
 
 | Resource | Value |
 |---|---|
 | Alert rule | `alert-vm-cpu-dynamic` |
 | Metric | `Percentage CPU` (multi-resource, both VMs) |
 | Criterion type | `DynamicThresholdCriterion` |
+| Operator | Greater than the learned upper threshold |
+| Aggregation | Average |
 | Sensitivity | Medium |
-| Failing periods | 3 of 4 evaluations |
+| Check every | 5 minutes |
+| Lookback period | 15 minutes |
+| Failing periods | 1 of 1 aggregated point (within 15 minutes) |
+| Ignore data before | Not set |
 | Severity | Sev3 (Informational) |
+
+A 10-minute CPU simulation can raise the 15-minute average above the learned upper threshold; the load does not need to last the full lookback period. This one-violation setting favors a short lab demonstration over filtering transient spikes. Dynamic thresholds still require at least three days and 30 metric samples, and a load run is not guaranteed to exceed the learned threshold.
 
 A **static** alert (`alert-vm-cpu-high`, threshold 80%) is deployed alongside it — perfect for a side-by-side comparison.
 
@@ -670,14 +678,16 @@ A **static** alert (`alert-vm-cpu-high`, threshold 80%) is deployed alongside it
 1. **Monitor → Alerts → Alert rules** → filter RG `rg-azure-monitor-lab`.
 2. Open **`alert-vm-cpu-dynamic`** → show the condition:
    - **Threshold type** = `Dynamic` (not Static).
+   - **Value is** = Greater than; **Aggregation** = Average.
    - **Sensitivity** = Medium.
-   - **Failing periods** = 3 of 4.
-3. Click **Preview** → the chart shows the metric line with **upper and lower ML bounds** shaded in blue. Show how the bounds *move* with the daily pattern (wider at night, tighter during peak hours).
+   - **Check every** = 5 minutes; **Lookback period** = 15 minutes.
+   - **Failing periods** = 1 of 1 aggregated point within 15 minutes.
+3. Click **Preview** and compare the CPU average with the learned upper threshold. Look for normal samples below that bound and the simulation spike above it; confirm actual fired alerts separately in **Monitor > Alerts**.
 4. Now open **`alert-vm-cpu-high`** (static, threshold 80%) side-by-side → show the rigid flat line vs the dynamic ML band.
 5. Point out:
    - **Sensitivity**: High / Medium / Low — controls how tight the band is.
-   - **Look-back period**: how much history the model uses (default: 4 evaluation periods).
-   - **Number of violations**: how many consecutive breaches before firing.
+   - **Lookback period**: the window used to average the metric at each check, not the model's historical learning period or a required duration of continuous load.
+   - **Number of violations**: how many aggregated points must breach the threshold within the configured period; this lab default requires one of one.
 
 ### Deeper story: when dynamic beats static
 
@@ -831,7 +841,7 @@ ML model (same engine as dynamic thresholds)
 **Time:** 3–4 min.
 
 ### Story
-Not every log table needs full KQL power. **Basic Logs** costs ~8× less per GB — with the trade-off of 8-day retention and limited KQL operators (no `join`, `summarize`, `union`). For high-volume, low-query tables like `ContainerLogV2`, it's a massive cost win.
+Not every log table needs full KQL power. **Basic Logs** costs ~8× less per GB — with the trade-off of 30-day interactive retention and limited KQL operators (no `join`, `summarize`, `union`). For high-volume, low-query tables like `ContainerLogV2`, it's a massive cost win.
 
 ### Click-path
 
@@ -843,14 +853,14 @@ Not every log table needs full KQL power. **Basic Logs** costs ~8× less per GB 
    ```
 3. Toggle to Basic:
    ```powershell
-   ./scripts/toggle-table-plan.ps1 -Plan Basic
+   ./scripts/toggle-table-plan.ps1 -ResourceGroup $resourceGroup -Plan Basic
    ```
 4. Show what changes:
    - **Works:** `ContainerLogV2 | where LogMessage has "error" | take 10`
    - **Fails:** `ContainerLogV2 | summarize count() by PodName` → error: *summarize not supported on Basic Logs*
 5. Toggle back:
    ```powershell
-   ./scripts/toggle-table-plan.ps1 -Plan Analytics
+   ./scripts/toggle-table-plan.ps1 -ResourceGroup $resourceGroup -Plan Analytics
    ```
 
 ### Key comparison
@@ -858,7 +868,7 @@ Not every log table needs full KQL power. **Basic Logs** costs ~8× less per GB 
 | | Analytics Logs | Basic Logs |
 |---|---|---|
 | **Ingestion cost** | ~$2.76/GB | ~$0.55/GB (8× cheaper) |
-| **Retention** | 30d–730d interactive | 8 days fixed |
+| **Retention** | 30d–730d interactive | 30 days interactive |
 | **KQL** | Full | where, extend, parse, project only |
 | **Alerts** | Standard log search alerts | Supported (higher per-eval cost) |
 | **Search Jobs** | N/A | Use for ad-hoc complex queries |
@@ -1475,13 +1485,13 @@ Every chart in App Insights now sprouts **vertical lines** at the exact second t
 
 ### What's deployed
 
-| Script | Annotation name | Category |
+| Script | Annotation name | Event category |
 |---|---|---|
 | `scripts/post-deploy.ps1` | `deploy-YYYYMMDD-HHMMSS` | Deployment |
 | `scripts/break-the-lab.ps1` | `break-the-lab-YYYYMMDD-HHMMSS` | Incident |
 | `scripts/restore-the-lab.ps1` | `restore-YYYYMMDD-HHMMSS` | Deployment |
 
-All three call `scripts/send-release-annotation.ps1` which PUTs to `…/Annotations?api-version=2015-05-01`.
+All three call `scripts/send-release-annotation.ps1`, which PUTs to `…/Annotations?api-version=2015-05-01`. Application Insights only displays markers whose wire-level category is `Deployment`, so the helper uses that display category for every marker and stores the logical value above as `EventCategory` metadata. Release annotations are chart metadata, not `customEvents`, and cannot be found with a `customEvents` KQL query.
 
 ### Click-path
 
@@ -1730,13 +1740,15 @@ The App Service has **three** diagnostic settings stacked on it — same source 
 ---
 
 <a id="s41"></a>
-## 41 · Cost — LAW cross-region replication (BCDR knob)
+## 41 · Cost: LAW cross-region replication (BCDR knob)
 
 **Audience:** BCDR architects, regulated industries.
-**Time:** 2 min — fact-check + click-path.
+**Time:** 2 min: fact-check + click-path.
 
 ### Story
-LAW now supports **active-active workspace replication** — the workspace is synchronously copied into a second region, query/ingest endpoints continue to work if either region is down. **Off by default in this lab** (it doubles ingest cost) but the Bicep param is wired and ready.
+LAW workspace replication creates a secondary shadow instance in another supported region. New logs are copied to it, but switching ingestion and queries to that region is a manual operation. **Off by default in this lab** because replication adds a charge for all billable ingested data. The Bicep parameter and a focused command for existing workspaces are both available.
+
+Source: [Enhance resilience by replicating your Log Analytics workspace across regions](https://learn.microsoft.com/azure/azure-monitor/logs/workspace-replication?tabs=azure-cli#enable-workspace-replication).
 
 ### What's wired
 
@@ -1753,23 +1765,31 @@ When `enableReplication = true`, the property `replication: { enabled: true, loc
 
 1. Show current state (replication off):
    ```powershell
-   az resource show -g rg-azure-monitor-lab `
-     --resource-type Microsoft.OperationalInsights/workspaces -n law-amlab-central `
-     --query "properties.replication"
+    $workspaceName = az monitor log-analytics workspace list `
+       --resource-group $resourceGroup `
+       --query "[?starts_with(name, 'law-amlab-central-')].name | [0]" -o tsv
+
+    az monitor log-analytics workspace show `
+       --resource-group $resourceGroup `
+       --workspace-name $workspaceName `
+       --query "replication"
    ```
 2. Enable for the demo:
    ```powershell
-   az deployment group create -g rg-azure-monitor-lab `
-     --template-file infra/main.bicep `
-     --parameters @infra/main.parameters.json `
-                  enableLawReplication=true `
-                  lawReplicationLocation=westeurope
+   ./scripts/enable-law-replication.ps1 `
+     -SubscriptionId $subscriptionId `
+     -ResourceGroup $resourceGroup `
+     -ReplicationLocation westeurope
    ```
-3. **`law-amlab-central` → Overview** → wait ~15 min → the *Replication* tile flips to **Active** with a second region listed.
-4. Failover query (set workspace context to the secondary): same KQL, no change.
+   This uses the documented `az rest --method put` request with API `2025-02-01` and updates only the existing central workspace. Historical logs remain in the primary workspace, but only new logs ingested after replication becomes active are copied to the secondary region.
+3. **`law-amlab-central-*` → Overview** → wait for the *Replication* tile to become **Active** with the second region listed. Individual data types can take up to one hour to begin replicating.
+4. Before demonstrating switchover, associate eligible DCRs with the workspace system DCE and confirm each DCR targets only this workspace. This is required for DCR-based ingestion continuity.
+5. Trigger switchover explicitly when the secondary contains enough useful data. Microsoft recommends waiting at least one week after enablement before relying on it for a planned switchover.
+
+> **Compatibility note:** The cited Microsoft Learn page currently lists Container Insights, VM Insights, and Application Insights over Log Analytics workspaces as unsupported for replication and switchover. Do not present those lab paths as protected by this feature.
 
 ### Killer line
-> *"Two regions, one workspace, one KQL surface — and a single Bicep parameter to turn it on the day you need it."*
+> *"Two regions, one workspace, one KQL surface, and one focused command to turn it on for an existing environment."*
 
 ---
 
@@ -1792,7 +1812,7 @@ Every workbook in the lab so far has been about **the workload's** health. This 
 
 ### Click-path
 
-1. **Monitor → Workbooks** → category **Azure Monitor Demo Lab** → *Cost of monitoring · amlab*.
+1. **Monitor → Workbooks** → category **Azure Monitor Lab** → *Cost of monitoring · amlab*.
 2. Walk the panels:
    - **Daily ingest** — flat line vs spike days.
    - **Top tables** — usually `ContainerLogV2`, `Perf`, `AzureActivity` — the candidates for Basic Logs (scenario 20) or DCR transforms (scenario 11).
@@ -2058,7 +2078,7 @@ Health Models *require* Service Groups precisely because the same resource may h
 ---
 
 <a id="s46"></a>
-## 46 · Service Level Indicators (SLIs / SLOs) — error budgets on the workload (preview)
+## 46 · Service Level Indicators (SLIs / SLOs) - error budgets on the workload (preview)
 
 **Audience:** SRE leads, platform owners — same crowd as #45, one layer up from "healthy yes/no".
 **Time:** 4–5 min.
@@ -2075,61 +2095,131 @@ Health Models *require* Service Groups precisely because the same resource may h
 | UAMI `id-sli-amlab` + Monitoring Reader + Monitoring Metrics Publisher on `amw-amlab` | `infra/modules/sli-identity.bicep` (auto) | SLI plane needs a UAMI with read on the source AMW and write back to the destination AMW. |
 | Monitoring Metrics Publisher on AMW default DCR + DCE | `scripts/setup-slis.ps1` (auto) | The AMW's auto-created DCR/DCE live in `MA_amw-amlab_<region>_managed`. SLI ingestion fails without grants here too. |
 | Service group `amlab-workload` | `scripts/setup-health-model.ps1` (auto) | Same SG that hosts the Health Model. |
-| SLIs themselves — **created manually in the portal for now** | _(see below)_ | The `Microsoft.Monitor/slis@2025-03-01-preview` RP currently rejects the enum wire values documented in the Bicep schema and the .NET SDK. The lab pre-stages everything the SLI needs; you create the two SLIs in the portal with one click each. |
+| AKS Managed Prometheus source metrics | AKS monitoring add-on (auto) | The setup script verifies `up`, `kube_pod_status_phase`, and the pod-start histogram bucket/count series before the demo. |
+| Sample SLIs | Azure portal (manual) | Create the two preview resources using the field values below. The script intentionally avoids depending on a changing preview API contract. |
 
-> **Why portal-only right now?** This is a preview API. The published schema and the live control-plane validator disagree on enum spellings for `operator` / `comparator`. `setup-slis.ps1` keeps the helper functions in place for the day the spec settles; today it prints a portal URL plus the exact UAMI + AMW IDs you need to paste.
+> The `Microsoft.Monitor/slis` API remains in preview. Portal creation is intentional: the portal tracks current control-plane validation while the script provides stable prerequisite, RBAC, and metric-flow checks.
 
-### Pre-demo: create the two SLIs (one-time, ≈2 min)
+### Pre-demo: verify metrics and create the two SLIs
 
-`scripts/setup-slis.ps1` runs as part of `deploy.ps1` and prints a portal URL + the exact field values. Open the URL it gives you:
+`scripts/setup-slis.ps1` runs as part of `deploy.ps1`, `post-staged-deploy.ps1`, and the Cloud Shell post-deployment wrapper. It verifies the service group, identity, destination permissions, and source metric series, then prints the portal URL and resource IDs:
+
+```powershell
+$subscriptionId = '<subscription-id>'
+$resourceGroup = '<resource-group>'
+
+./scripts/start-the-lab.ps1 `
+   -ResourceGroup $resourceGroup `
+   -Wait
+
+./scripts/setup-slis.ps1 `
+   -SubscriptionId $subscriptionId `
+   -ResourceGroup $resourceGroup `
+   -ServiceGroupId amlab-workload
+```
+
+The AKS cluster must be running before the portal can preview these signals. After a stopped cluster starts, allow Managed Prometheus time to emit fresh samples. Do not continue if `setup-slis.ps1` reports a missing metric. A successful run confirms that all four documented source metric families currently return at least one series from `amw-amlab`.
 
 > `https://portal.azure.com/#@<tenant>/resource/providers/Microsoft.Management/serviceGroups/amlab-workload/serviceLevelIndicators`
 
-Click **+ Add SLI** twice and fill the two forms with the values the script printed. The cheat-sheet:
+Open the URL, select **+ Add SLI**, and create these definitions:
 
-**SLI #1 — `sli-aks-pods-running`** (Availability, Window-Based)
-- Source AMW: `amw-amlab`, identity = UAMI `id-sli-amlab` (client-ID GUID from the script)
-- Signal s1: `kube_pod_status_phase`, filter `phase == Running`, temporal Average / 5 min, spatial Sum
-- Signal s2: `kube_pod_status_phase`, temporal Average / 5 min, spatial Sum
-- **Important:** keep both signal sources' spatial dimensions identical (both empty, or both `[cluster]`). Mis-aligned dimensions fail validation.
-- Signal formula: `(100 * $s1) / $s2`
+> Resource names are reused across lab deployments. In both portal pickers, verify the full resource ID and select `amw-amlab` and `id-sli-amlab` from the target resource group. Selecting identically named resources from another RG can leave Signal Preview empty.
+
+**SLI #1: `sli-aks-pods-running`** (Availability, Window-Based)
+- Source AMW: `amw-amlab`, identity = UAMI `id-sli-amlab`
+- Signal A: metric `kube_pod_status_phase`, metric aggregation `Average`, filter `phase eq running`, **Summarize `Sum` for dimension `cluster`**
+- Signal B: metric `kube_pod_status_phase`, metric aggregation `Average`, no filter, **Summarize `Sum` for dimension `cluster`**
+- Signal formula: `(100 * A) / B`. Signal IDs are uppercase and the formula must use uppercase letters.
 - Window uptime criteria: `>= 95`
 - Baseline: `99` / `7d` / RollingDays
 - Destination AMW: `amw-amlab` (same UAMI)
 
-**SLI #2 — `sli-aks-pod-start-latency`** (Latency, Window-Based)
+**SLI #2: `sli-aks-pod-start-latency`** (Latency, Window-Based)
 - Same source AMW + identity
-- Signal s1: `kubelet_pod_start_duration_seconds_bucket`, filter `le == 30`, temporal Rate / 5 min, spatial Sum
-- Signal s2: `kubelet_pod_start_duration_seconds_count`, temporal Rate / 5 min, spatial Sum
-- Same dimensions rule.
-- Signal formula: `(100 * $s1) / $s2`
+- Signal A: metric `kubelet_pod_start_duration_seconds_bucket`, metric aggregation `Rate` over `5` minutes, filter `le eq 30`, **Summarize `Sum` for dimension `cluster`**
+- Signal B: metric `kubelet_pod_start_duration_seconds_count`, metric aggregation `Rate` over `5` minutes, no filter, **Summarize `Sum` for dimension `cluster`**
+- Signal formula: `(100 * A) / B`. Signal IDs are uppercase and the formula must use uppercase letters.
 - Window uptime criteria: `>= 95`
 - Baseline: `95` / `7d` / RollingDays
 - Destination AMW: `amw-amlab`
 
-> First data points appear ~10-15 min after the SLI saves, once the streaming rule provisions and the destination metrics start emitting in the AMW.
+> The portal requires every signal in a formula to use the same spatial aggregation configuration. For both Signal A and Signal B, select **Summarize = Sum** and **dimension = cluster**. Choosing Average for one signal and Sum for the other produces the "different spatial aggregation types" validation error.
+
+> Select **Validate** after entering the signals and formula. The Signal Preview pane is populated by validation and can show "Could not find appropriate columns for Line Chart" before the first successful validation. Treat an error returned by **Validate**, rather than the pre-validation preview placeholder, as the configuration result.
+
+The pod-start histogram counters only change when pods start. A rolling restart generates fresh samples while keeping the deployment available, but healthy starts normally leave the latency SLI at 100%:
+
+```powershell
+kubectl -n demo rollout restart deployment/hello-frontend
+kubectl -n demo rollout status deployment/hello-frontend
+```
+
+First data points can take 10-15 minutes to appear after a valid source window, once the streaming rule provisions and the destination metrics start emitting in the AMW.
+
+### Reading error budget and burn rate
+
+Azure Monitor compares the measured SLI with the **baseline target**, which is the SLO. The gap between perfect reliability and that target is the allowed unreliability. For example, a `99%` baseline provides a `1%` error budget over the selected evaluation period.
+
+- **Error Budget Remaining** shows how much of that allowed unreliability is still available before the service misses its baseline target. It answers: *"How much more failure can we absorb?"* A falling value means unsuccessful requests or bad windows are consuming the budget. An exhausted budget means there is no remaining tolerance for failure within the evaluation period.
+- **Burn Rate** shows how quickly the error budget is being consumed. It answers: *"At the current rate, how urgently do we need to act?"* A fast-burn condition usually indicates a sudden regression. A slow-burn condition indicates sustained degradation that can still cause an SLO miss if it continues.
+- **Use them together:** Error Budget Remaining describes the reliability margin left; Burn Rate describes the urgency. A healthy remaining budget with a sharp fast burn can require immediate action, while a gradual slow burn calls for investigation before it becomes an SLO miss.
+
+Azure Monitor can alert when the SLI falls below its baseline, when a fast burn consumes budget rapidly over a short lookback, or when a slow burn persists over a longer lookback. See [Service level indicators in Azure Monitor](https://learn.microsoft.com/azure/azure-monitor/fundamentals/service-level-indicators-create#understand-baseline-target-error-budget-and-burn-rate).
 
 ### Click-through (4 min)
-1. **Portal → Service groups → `amlab-workload` → Service Level Indicators**. You'll see both SLIs created above.
+1. **Portal > Service groups > `amlab-workload` > Service Level Indicators**. Open the two manually created SLIs.
 2. Open `sli-aks-pods-running`:
-   - **Definition** tab — show the formula `(100 × $s1) / $s2`, the two signal sources (running vs total), the uptime criteria `>= 95`, and the SLO baseline (`99` / 7d rolling).
-   - **Compliance** tab — current compliance %, error budget remaining as a sparkline.
-3. Open `sli-aks-pod-start-latency` — same layout, but on a histogram-derived ratio. Point out that Window-Based is the answer for histogram metrics where Request-Based doesn't fit.
-4. Show the **destination metrics** the SLI emits back into the AMW (sliComplianceRatio, sliBaselineRatio, sliErrorBudgetRatio). These can be graphed in Grafana or fed back into the Health Model as additional signals — the "SLO → workload health" closing loop.
+   - **Definition** tab - show the `(100 * A) / B` formula, uptime criteria `>= 95`, and SLO baseline (`99` / 7d rolling).
+   - **Compliance** tab - show current compliance and error budget remaining. Explain that remaining budget is the failure margin left before the SLO is missed.
+   - **Burn Rate** - explain that this is the speed of budget consumption: fast burn points to a sudden regression; slow burn points to sustained degradation.
+3. Open `sli-aks-pod-start-latency` - show the percentage of pod starts completed within 30 seconds.
+4. Show the **destination metrics** the SLI emits back into the AMW: `<sli-name>:Value`, `<sli-name>:Uptime`, and `<sli-name>:Downtime`, in the service-group metric namespace. These can be graphed in Grafana or fed back into the Health Model as additional signals, closing the SLO-to-workload-health loop.
 
 ### Break-the-lab story (≈90 s)
-1. `kubectl scale deployment frontend --replicas=0 -n frontend` — pods stop, `kube_pod_status_phase{phase=Running}` drops.
-2. Wait one or two 5-min windows. `sli-aks-pods-running` compliance drops below `95`. Baseline compliance % starts trending down; error-budget burn becomes visible.
-3. Restore with `kubectl scale deployment frontend --replicas=2 -n frontend`. Compliance recovers within 1–2 windows.
+Use the dedicated helper to move both SLIs without changing `hello-frontend`:
+
+```powershell
+./scripts/demo-slis.ps1 `
+   -SubscriptionId $subscriptionId `
+   -ResourceGroup $resourceGroup `
+   -Mode Degrade
+```
+
+The script replaces two temporary deployments in the `demo` namespace, so each `Degrade` run generates fresh pod-start samples:
+
+- `sli-unavailable` creates five pods that remain Pending because the image tag intentionally does not exist. This adds non-running pod states and lowers `sli-aks-pods-running`.
+- `sli-slow-start` creates three pods with a 45-second init-container delay. These starts fall outside the SLI's 30-second latency bucket and lower `sli-aks-pod-start-latency` during the active rate window.
+
+Inspect the test workloads at any time:
+
+```powershell
+./scripts/demo-slis.ps1 `
+   -SubscriptionId $subscriptionId `
+   -ResourceGroup $resourceGroup `
+   -Mode Status
+```
+
+Allow one or two 5-minute source windows plus the SLI processing delay. The live latency value is event-driven and can recover after the slow starts leave the five-minute source window. Seven-day compliance and error-budget changes are more gradual.
+
+Restore both signals by deleting only the temporary test deployments:
+
+```powershell
+./scripts/demo-slis.ps1 `
+   -SubscriptionId $subscriptionId `
+   -ResourceGroup $resourceGroup `
+   -Mode Restore
+```
+
+Do not scale `hello-frontend` to zero for this test. When its pod series disappear, the formula can lose both numerator and denominator instead of producing a clear bad ratio.
 
 ### Where it lives in the code
 ```
 infra/modules/sli-identity.bicep   UAMI + role assignments on AMW
 infra/main.bicep                   Wires sliIdentity in + exports outputs
-scripts/setup-slis.ps1             Grants Metrics Publisher on AMW DCR/DCE
-                                   + prints portal handoff (URL + UAMI/AMW IDs).
-                                   SLI PUTs are parked behind a comment until
-                                   the preview-RP enum wire format stabilizes.
+scripts/setup-slis.ps1             Verifies source and destination RBAC on the AMW/DCR/DCE
+                                   + verifies source metrics + prints portal inputs.
+scripts/demo-slis.ps1              Creates, inspects, or removes temporary SLI degradation workloads.
 scripts/deploy.ps1                 Chains setup-health-model.ps1 + setup-slis.ps1
 scripts/teardown.ps1               Tears SLIs down before deleting the RG (idempotent)
 ```
@@ -2143,7 +2233,7 @@ scripts/teardown.ps1               Tears SLIs down before deleting the RG (idemp
 
 ```powershell
 ./scripts/setup-slis.ps1 -Teardown
-# DELETEs both SLI extension resources on the service group. Idempotent.
+# Deletes the two documented portal-created SLIs. Idempotent.
 ```
 
 ### Killer line
@@ -2450,7 +2540,203 @@ Every other scenario watches infra/platform telemetry. This one points the **exa
 ---
 
 <a id="s54"></a>
-## 54 · Azure Event Hubs to Fabric Real-Time Intelligence
+## 54 · Azure SRE Agent trial readiness
+
+**Audience:** SRE leads, operations teams, platform engineers.
+**Time:** 3 min.
+
+### Story
+Start with one known workload and a bounded cost envelope. The trial removes the fixed always-on charge for 30 days, but agent processing still consumes billable Azure Agent Units. The setup check proves that the agent can see the lab without granting broad write access.
+
+### Click-path / commands
+
+1. Run `./scripts/setup-sre-agent.ps1 -SubscriptionId <subscription-id> -ResourceGroup <resource-group>`.
+2. In `sre.azure.com`, show the trial banner and its remaining days.
+3. Show that the agent location is **Sweden Central** (`swedencentral`), the lab's required SRE Agent region.
+4. Open **Settings > Agent consumption** and show the active-flow allocation and usage by thread.
+5. Run the setup script again without `-AgentPrincipalId`; it discovers the agent's user-assigned identity automatically. Show the three action-UAMI checks and four connector-system-identity checks.
+
+   <details>
+   <summary><b>Optional: find the action UAMI object ID</b></summary>
+
+   Open the agent in `sre.azure.com`, select **Settings > Azure settings > Go to Identity**, and copy **Object (principal) ID** from the managed identity Overview page. Alternatively, retrieve it with Azure CLI:
+
+    ```powershell
+    $agentId = az resource list `
+       --subscription <subscription-id> `
+       --resource-group <resource-group> `
+       --resource-type Microsoft.App/agents `
+       --query '[0].id' -o tsv
+
+    $identityId = az resource show `
+       --subscription <subscription-id> `
+       --ids $agentId `
+       --api-version 2025-05-01-preview `
+       --query 'identity.userAssignedIdentities | keys(@)[0]' -o tsv
+
+    az identity show `
+       --subscription <subscription-id> `
+       --ids $identityId `
+       --query principalId -o tsv
+    ```
+
+    Passing the returned value with `-AgentPrincipalId` is optional and is mainly useful when validating a specific identity explicitly.
+
+   </details>
+
+6. Open **Incidents > Triggers & response plans** and show Azure Monitor connected to the lab subscription. If **Connect an incident platform** is displayed, connect Azure Monitor before continuing.
+
+### Required setup before Scenario 55
+
+Complete this setup once before triggering any alerts:
+
+1. Open **Builder > Agent Canvas**, select **Create > Custom Agent**, and create `amlab-app-investigator`. Custom-agent names can contain only letters, numbers, or hyphens and must be 36 characters or fewer. Paste the instructions from [Stage SRE Agent - Application Investigator](STAGE-SRE-AGENT.md#application-investigator), leave Skills, Tools, and Hooks at their inherited defaults, and select **Create**.
+2. Create `amlab-platform-investigator` the same way with the instructions from [Stage SRE Agent - Platform Investigator](STAGE-SRE-AGENT.md#platform-investigator). A handoff description is not required for this lab because each response plan explicitly selects its response subagent.
+3. Open **Incidents > Triggers & response plans** and select **Create a response plan**. If the button is disabled, connect Azure Monitor first and wait for the green connected status.
+4. Create the application plan:
+   - **Incident response plan name:** `amlab-app-alerts`
+   - **Severity:** `Sev2`
+   - **Title contains:** `webapp`
+   - **Response subagent:** `amlab-app-investigator`
+   - **Agent autonomy level:** `Review` (the default is Autonomous)
+5. Select **Next**, choose **Last 7 days** for the incidents preview, review any matches, and select **Create**. An empty preview does not block creation when no matching alert has fired yet.
+6. Repeat the wizard for the platform plan:
+   - **Incident response plan name:** `amlab-platform-alerts`
+   - **Severity:** `Sev2` and `Sev3`
+   - **Title contains:** `aks`
+   - **Response subagent:** `amlab-platform-investigator`
+   - **Agent autonomy level:** `Review`
+7. Confirm both rows show status **On** and mode **Review**. Delete or turn off any generated quickstart response plan to prevent duplicate routing.
+
+The portal currently accepts one **Title contains** value per plan. To route the `failed-requests`, `pod`, or `vm` title variants as well, clone the appropriate plan with a unique name and replace the title filter.
+
+### Killer line
+> *"The trial removes idle agent cost for 30 days, while this scope and consumption view keep every investigation deliberate, measurable, and attributable."*
+
+**Reference:** [Stage SRE Agent](STAGE-SRE-AGENT.md)
+
+---
+
+<a id="s55"></a>
+## 55 · Alert-driven App Service investigation
+
+**Audience:** application teams, incident commanders, SREs.
+**Time:** 5 min plus alert evaluation delay.
+
+### Story
+An Azure Monitor alert should begin an evidence-based investigation without an engineer opening several portal blades. The agent acknowledges the alert, opens a thread, and correlates App Service metrics with Application Insights telemetry.
+
+### Click-path / commands
+
+1. In `sre.azure.com`, open the lab agent and select **Incidents > Triggers & response plans**. Confirm the `amlab-app-alerts` row created in Scenario 54 is **On** and its mode is **Review**. If it is absent, complete the required setup in Scenario 54 before continuing.
+2. Run `./scripts/break-the-lab.ps1 -ResourceGroup <resource-group>`.
+3. Wait for `alert-webapp-5xx` to fire. If you also cloned the plan with the `failed-requests` title filter, `alert-appinsights-failed-requests` can start the same workflow.
+4. In the SRE Agent portal, open the new incident thread.
+5. Ask: `Which endpoint failed, when did impact begin, and what evidence supports the likely cause?`
+6. Point out evidence from App Service metrics plus Application Insights requests, exceptions, traces, or dependencies.
+
+### Killer line
+> *"The alert is no longer a notification. It is the start of a grounded investigation with the relevant telemetry already correlated."*
+
+---
+
+<a id="s56"></a>
+## 56 · AKS crash-loop diagnosis
+
+**Audience:** Kubernetes operators, platform teams, SREs.
+**Time:** 4 min.
+
+### Story
+The same break action gives the AKS frontend an invalid image and raises pod health signals. A specialized platform investigator follows the Kubernetes evidence instead of applying an App Service runbook to every incident.
+
+### Click-path / commands
+
+1. Keep the lab broken from scenario 55, or run `break-the-lab.ps1` again after restoring it.
+2. Wait for `alert-aks-pod-restart-spike` or `amba-aks-pods-not-ready` to fire.
+3. Open the SRE Agent investigation routed to `amlab-platform-investigator`.
+4. Ask: `Identify the failing Kubernetes object and show the pod status, event, and log evidence.`
+5. Confirm that the agent inspects `KubePodInventory`, `ContainerLogV2`, Kubernetes events, and relevant metrics.
+6. Do not approve remediation yet.
+
+### Killer line
+> *"The response plan selects Kubernetes expertise automatically, while Review mode keeps resource changes under human control."*
+
+---
+
+<a id="s57"></a>
+## 57 · Correlate changes with the incident
+
+**Audience:** incident commanders, application owners, change managers.
+**Time:** 3 min.
+
+### Story
+Symptoms alone do not establish cause. The agent checks Activity Logs, deployment operations, and telemetry around the first failure, then separates observed changes from its inference about causality. The presenter independently verifies the release annotation in the Application Insights chart because release annotations are chart metadata rather than KQL telemetry.
+
+### Click-path / commands
+
+1. Continue in either investigation from scenarios 55 or 56.
+2. Ask: `What changed in the 15 minutes before this incident, and which change is most likely related? Separate evidence from inference.`
+3. Show the VM deallocation operations in Activity Logs.
+4. Open Application Insights **Performance** or **Failures** and show the `break-the-lab-*` annotation. Do not ask the agent to find it in `customEvents`; release annotations are not stored there.
+5. Compare each timestamp with the first failed request and unhealthy pod signal.
+
+### Killer line
+> *"The agent does not merely find a nearby change. It builds a timestamped evidence chain and tells us how confident it is that the change caused the impact."*
+
+---
+
+<a id="s58"></a>
+## 58 · Repeated-alert merging and verified recovery
+
+**Audience:** operations leads, incident commanders, automation owners.
+**Time:** 5 min plus alert synchronization delay.
+
+### Story
+Repeated alert firings should enrich one active investigation instead of producing duplicate toil. Recovery is not complete until the original signals return to healthy.
+
+### Click-path / commands
+
+1. While the incident is active, generate another failure cycle by rerunning `break-the-lab.ps1`.
+2. Show that repeated firings from the same alert rule merge into the active thread.
+3. Run `./scripts/restore-the-lab.ps1 -ResourceGroup <resource-group>`.
+4. Ask: `Verify recovery using the original alert condition, application failure rate, and AKS pod health. Do not close the incident until all three are healthy.`
+5. Show the investigation timeline update and Azure Monitor alert state synchronization.
+6. Turn off both lab response plans after the demo to prevent expected alerts from consuming active-flow AAUs.
+
+### Killer line
+> *"One incident thread carries the signal from detection through diagnosis to measured recovery, without multiplying tickets every time the rule fires."*
+
+**Reference:** [Stage SRE Agent](STAGE-SRE-AGENT.md)
+
+---
+
+<a id="s59"></a>
+## 59 · Automatic incident command brief
+
+**Audience:** incident commanders, SRE leads, service owners.
+**Time:** 3 min.
+
+### Story
+An incident commander should not need to interrogate the agent before the first useful update appears. The response plan automatically invokes the selected specialist, and the specialist's output contract turns its investigation into a consistent brief with status, impact, evidence, confidence, and the next safe action.
+
+### Click-path / commands
+
+1. Open either investigation created by the response plans in Scenario 55 or 56. Do not enter a prompt.
+2. Show the **Incident command brief** produced automatically by the selected custom investigator.
+3. Confirm that the brief contains the current status, customer or workload impact, affected resources, first signal, likely cause with confidence, timestamped evidence, the smallest safe next action, and missing evidence.
+4. Show that the application route cites Application Insights and App Service evidence, while the platform route cites AKS, VM, or Resource Health evidence.
+5. Compare the initial brief with the recovery evidence collected in Scenario 58, highlighting the difference between the first hypothesis and verified recovery.
+6. Point out that Review mode still requires approval for resource changes even though investigation and incident communication begin automatically.
+
+### Killer line
+> *"Nobody had to ask the first question. The alert selected the specialist, the specialist built the evidence chain, and the incident commander opened a ready-to-use brief."*
+
+**Reference:** [Stage SRE Agent](STAGE-SRE-AGENT.md)
+
+---
+
+<a id="s60"></a>
+## 60 · Azure Event Hubs to Fabric Real-Time Intelligence
 
 **Audience:** Data platform teams, SRE, architects.
 **Time:** 4 min.
@@ -2472,8 +2758,8 @@ The lab already sends platform events to Azure Event Hubs. Fabric Eventstream tu
 
 ---
 
-<a id="s55"></a>
-## 55 · Eventhouse operational telemetry
+<a id="s61"></a>
+## 61 · Eventhouse operational telemetry
 
 **Audience:** Operations analysts, data engineers, KQL users.
 **Time:** 4 min.
@@ -2493,8 +2779,8 @@ Eventhouse provides a high-volume KQL surface for streamed operational data. Tea
 
 ---
 
-<a id="s56"></a>
-## 56 · Real-Time Dashboard for application health
+<a id="s62"></a>
+## 62 · Real-Time Dashboard for application health
 
 **Audience:** NOC teams, service owners, executives.
 **Time:** 4 min.
@@ -2514,8 +2800,8 @@ A Fabric Real-Time Dashboard presents live health and throughput alongside busin
 
 ---
 
-<a id="s57"></a>
-## 57 · Correlate monitoring data with business events
+<a id="s63"></a>
+## 63 · Correlate monitoring data with business events
 
 **Audience:** Product owners, FinOps, business operations.
 **Time:** 5 min.
@@ -2535,8 +2821,8 @@ Infrastructure health matters because it affects an outcome. Fabric can join ope
 
 ---
 
-<a id="s58"></a>
-## 58 · Fabric capacity monitoring and throttling
+<a id="s64"></a>
+## 64 · Fabric capacity monitoring and throttling
 
 **Audience:** Fabric administrators, FinOps, platform engineering.
 **Time:** 4 min.
@@ -2556,8 +2842,8 @@ F2 is intentionally small and can throttle under sustained demand. Capacity Metr
 
 ---
 
-<a id="s59"></a>
-## 59 · Fabric suspend and resume cost control
+<a id="s65"></a>
+## 65 · Fabric suspend and resume cost control
 
 **Audience:** FinOps, lab owners, platform administrators.
 **Time:** 3 min.
@@ -2586,8 +2872,8 @@ Fabric F2 bills while active. The lab makes lifecycle control part of the demo, 
 
 ---
 
-<a id="s60"></a>
-## 60 · Mirror Azure Monitor data in Microsoft Fabric (preview)
+<a id="s66"></a>
+## 66 · Mirror Azure Monitor data in Microsoft Fabric (preview)
 
 **Audience:** Data platform teams, observability architects, analytics teams.
 **Time:** 5 min.
@@ -2604,7 +2890,7 @@ Mirror Azure Monitor exposes selected Log Analytics tables to Fabric without an 
 3. Select useful tables such as `AzureActivity`, `ContainerLogV2`, `AppServiceHTTPLogs`, and `Perf`, then create the mirrored item.
 4. Allow about 15 minutes for new data to appear. Preview does not backfill historical rows, and the mirrored tables are read-only in Fabric.
 5. Open the generated Eventhouse endpoint or create an Eventhouse shortcut. Query a mirrored table and join it with business data already in OneLake.
-6. Contrast this with [scenario 54](#s54): Eventstream consumes a live Event Hub feed into `AzureDiagnosticsRaw`; mirroring exposes Log Analytics tables without copying them.
+6. Contrast this with [scenario 60](#s60): Eventstream consumes a live Event Hub feed into `AzureDiagnosticsRaw`; mirroring exposes Log Analytics tables without copying them.
 
 ### Watch-outs
 
@@ -2659,8 +2945,9 @@ Mirror Azure Monitor exposes selected Log Analytics tables to Fabric without an 
 | **FinOps** | 9 → 11 → 20 → 21 → 39 → 42 → 51 → 52 |
 | **SecOps** | 27 → 47 → 48 → 49 → 44 |
 | **AI/ML curious** | 16 → 13 → 17 → 18 → 19 → 53 |
-| **Microsoft Fabric / Real-Time Intelligence** | 54 → 55 → 56 → 57 → 60 → 58 → 59 |
+| **Microsoft Fabric / Real-Time Intelligence** | 60 > 61 > 62 > 63 > 66 > 64 > 65 |
 | **Workload owners / SRE leads** | 1 → 45 → 12 → 7 → 8 (Root entity flips Unhealthy) |
+| **SRE Agent evaluation** | 54 → 55 → 56 → 57 → 58 → 59 |
 
 ## Reset between demos
 

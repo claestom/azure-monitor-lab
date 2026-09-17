@@ -47,16 +47,17 @@ resource "azapi_resource" "stage_b" {
       mode     = "Incremental"
       template = sensitive(jsondecode(file("${path.module}/../infra/stages/10-workloads.json")))
       parameters = {
-        location        = { value = var.location }
-        namePrefix      = { value = var.name_prefix }
-        vmAdminUsername = { value = var.vm_admin_username }
-        vmAdminPassword = { value = var.vm_admin_password }
-        deployWindowsVm = { value = var.deploy_windows_vm }
-        deployLinuxVm   = { value = var.deploy_linux_vm }
-        vmSize          = { value = var.vm_size }
-        aksNodeVmSize   = { value = var.aks_node_vm_size }
-        aksNodeCount    = { value = var.aks_node_count }
-        ownerTag        = { value = var.owner_tag }
+        location             = { value = var.location }
+        namePrefix           = { value = var.name_prefix }
+        vmAdminUsername      = { value = var.vm_admin_username }
+        vmAdminPassword      = { value = var.vm_admin_password }
+        deployWindowsVm      = { value = var.deploy_windows_vm }
+        deployLinuxVm        = { value = var.deploy_linux_vm }
+        vmSize               = { value = var.vm_size }
+        aksNodeVmSize        = { value = var.aks_node_vm_size }
+        aksNodeCount         = { value = var.aks_node_count }
+        grafanaAdminObjectId = { value = var.grafana_admin_object_id }
+        ownerTag             = { value = var.owner_tag }
       }
     }
   }
@@ -192,6 +193,29 @@ resource "azapi_resource" "stage_fabric" {
         namePrefix       = { value = var.name_prefix }
         fabricAdminEmail = { value = var.fabric_admin_email }
         ownerTag         = { value = var.owner_tag }
+      }
+    }
+  }
+}
+
+# Optional SRE Agent stage: Azure SRE Agent, managed identities, Azure Monitor,
+# Application Insights and Log Analytics connectors, and required RBAC. The shared
+# Bicep module hard pins the agent to swedencentral. It references Stage A resources.
+resource "azapi_resource" "stage_sre_agent" {
+  count     = var.enable_stage_sre_agent ? 1 : 0
+  type      = "Microsoft.Resources/deployments@2022-09-01"
+  name      = "stage-sre-agent"
+  parent_id = data.azurerm_resource_group.lab.id
+
+  depends_on = [azapi_resource.stage_a]
+
+  body = {
+    properties = {
+      mode     = "Incremental"
+      template = sensitive(jsondecode(file("${path.module}/../infra/stages/60-sre-agent.json")))
+      parameters = {
+        namePrefix = { value = var.name_prefix }
+        ownerTag   = { value = var.owner_tag }
       }
     }
   }

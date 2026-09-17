@@ -19,6 +19,7 @@ resource_group_name = "rg-azure-monitor-lab"
 location            = "northeurope"
 alert_email         = "your.alias@example.com"
 vm_admin_password   = "<STRONG-PASSWORD>"
+grafana_admin_object_id = ""
 
 # Stage toggles - enable one at a time the first time through, then flip the
 # next one and re-run plan/apply. Each new stage adds exactly one
@@ -45,6 +46,12 @@ fabric_admin_email  = "admin@yourtenant.onmicrosoft.com" # tenant user UPN, not 
 enable_stage_ai      = false            # AI (Foundry + models + token alerts)
 ai_location          = "swedencentral"  # region for the Foundry account + models
 router_model_version = "2025-08-07"     # VERIFY: az cognitiveservices account list-models
+
+# Optional SRE Agent stage - preview Azure SRE Agent, connectors, identities, and RBAC.
+# Hard pinned to swedencentral by the Stage 60 Bicep module; depends on Stage A.
+# Off by default because active usage is billable and always-on billing can begin
+# after an eligible trial. The deploying identity needs subscription role-assignment permission.
+enable_stage_sre_agent = false
 
 # Optional preview/GA telemetry features (part of Stage E). Off by default because
 # the DCR and the central LAW must be in the same region and the platform-logs DCR

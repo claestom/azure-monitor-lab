@@ -78,6 +78,14 @@ $fabricAdminEmail = Coalesce $cfg.fabricAdminEmail ''
 $subscriptionName = Coalesce $cfg.subscriptionName '<unset>'
 $forbiddenSubs    = if ($null -eq $cfg.forbiddenSubscriptionIds) { @() } else { @($cfg.forbiddenSubscriptionIds) }
 
+$grafanaAdminObjectId = Coalesce $cfg.grafanaAdminObjectId ''
+if ($grafanaAdminObjectId -ne '') {
+  $parsedGrafanaAdmin = [guid]::Empty
+  if (-not [guid]::TryParseExact($grafanaAdminObjectId, 'D', [ref]$parsedGrafanaAdmin) -or $parsedGrafanaAdmin -eq [guid]::Empty) {
+    throw 'grafanaAdminObjectId must be empty or a nonzero Microsoft Entra user or group object ID in GUID format.'
+  }
+}
+
 $enableLawReplication   = if ($null -eq $cfg.enableLawReplication) { $false } else { [bool]$cfg.enableLawReplication }
 $lawReplicationLocation = Coalesce $cfg.lawReplicationLocation ''
 if ($enableLawReplication -and [string]::IsNullOrWhiteSpace($lawReplicationLocation)) {
@@ -86,7 +94,7 @@ if ($enableLawReplication -and [string]::IsNullOrWhiteSpace($lawReplicationLocat
 }
 
 $stages = $cfg.stageToggles
-if ($null -eq $stages) { $stages = [pscustomobject]@{ enableStageA=$true; enableStageB=$true; enableStageC=$true; enableStageD=$true; enableStageE=$true; enableStageAI=$false; enableStageFabric=$false } }
+if ($null -eq $stages) { $stages = [pscustomobject]@{ enableStageA=$true; enableStageB=$true; enableStageC=$true; enableStageD=$true; enableStageE=$true; enableStageAI=$false; enableStageFabric=$false; enableStageSreAgent=$false } }
 # AI and Fabric stages are optional and default off when absent from the config.
 $enableStageAI = if ($null -eq $stages.enableStageAI) { $false } else { [bool]$stages.enableStageAI }
 $enableStageFabric = if ($null -eq $stages.enableStageFabric) { $false } else { [bool]$stages.enableStageFabric }
@@ -94,6 +102,8 @@ if ($enableStageFabric -and [string]::IsNullOrWhiteSpace($fabricAdminEmail)) {
   Write-Error 'lab.config.json has enableStageFabric=true but fabricAdminEmail is empty. Set it to a Microsoft Entra user UPN in the deployment tenant; do not use an external alert alias.'
   return
 }
+# SRE Agent is optional and defaults off when absent from the config.
+$enableStageSreAgent = if ($null -eq $stages.enableStageSreAgent) { $false } else { [bool]$stages.enableStageSreAgent }
 
 # ---------------------------------------------------------------------------
 # Resolve target paths
@@ -109,7 +119,7 @@ $tfVarsPath       = Join-Path $repoRoot 'terraform' 'stages.tfvars'
 Write-Step "Writing $azureTargetPath"
 $azureTarget = [ordered]@{
   '$schema'                 = 'https://json-schema.org/draft/2020-12/schema'
-  'title'                   = 'Azure Monitor Demo Lab — allowed targets'
+  'title'                   = 'Azure Monitor Lab — allowed targets'
   'description'             = 'Auto-generated from lab.config.json by scripts/sync-config.ps1. Edit lab.config.json, not this file.'
   'expectedSubscriptionId'  = $cfg.subscriptionId
   'expectedSubscriptionName'= $subscriptionName
@@ -136,9 +146,11 @@ $bicepParams = [ordered]@{
     'deployLinuxVm'   = @{ value = $deployLinuxVm }
     'dailyCapGb'      = @{ value = [int]$dailyCapGb }
     'aksNodeCount'    = @{ value = [int]$aksNodeCount }
+    'grafanaAdminObjectId' = @{ value = $grafanaAdminObjectId }
     'enableAi'        = @{ value = $enableStageAI }
     'enableFabric'    = @{ value = $enableStageFabric }
     'fabricAdminEmail'= @{ value = $fabricAdminEmail }
+    'enableSreAgent'  = @{ value = $enableStageSreAgent }
     'enableLawReplication'   = @{ value = $enableLawReplication }
     'lawReplicationLocation' = @{ value = $lawReplicationLocation }
   }
@@ -167,6 +179,7 @@ $tfLines = @(
   "vm_admin_password   = `"$(Esc $cfg.vmAdminPassword)`""
   "daily_cap_gb        = $([int]$dailyCapGb)"
   "aks_node_count      = $([int]$aksNodeCount)"
+  "grafana_admin_object_id = `"$(Esc $grafanaAdminObjectId)`""
   "deploy_windows_vm   = $($deployWindowsVm.ToString().ToLower())"
   "deploy_linux_vm     = $($deployLinuxVm.ToString().ToLower())"
   "siem_webhook_url    = `"$(Esc $siemWebhookUrl)`""
@@ -181,6 +194,7 @@ $tfLines = @(
   "enable_stage_ai = $($enableStageAI.ToString().ToLower())"
   "enable_stage_fabric = $($enableStageFabric.ToString().ToLower())"
   "fabric_admin_email = `"$(Esc $fabricAdminEmail)`""
+  "enable_stage_sre_agent = $($enableStageSreAgent.ToString().ToLower())"
 )
 Set-Content -Path $tfVarsPath -Value ($tfLines -join "`r`n") -Encoding UTF8
 Write-Done "OK"
@@ -190,3 +204,6 @@ Write-Host "✅ Config synced. Derived files (all gitignored):" -ForegroundColor
 Write-Host "   - $azureTargetPath" -ForegroundColor DarkGray
 Write-Host "   - $bicepParamsPath" -ForegroundColor DarkGray
 Write-Host "   - $tfVarsPath"      -ForegroundColor DarkGray
+if ($enableStageSreAgent) {
+  Write-Host "   - SRE Agent deployment enabled (swedencentral)" -ForegroundColor DarkGray
+}

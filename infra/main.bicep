@@ -1,5 +1,5 @@
 // =====================================================================================
-// Azure Monitor Demo Lab - main template (Resource Group scope)
+// Azure Monitor Lab - main template (Resource Group scope)
 // Deploys: 2x Log Analytics workspaces, App Insights, VNet, Linux+Windows VMs with VM
 // Insights, AKS with Container Insights + Managed Prometheus + Managed Grafana,
 // App Service with .NET sample app + auto-instrumented App Insights, Action Group,
@@ -44,6 +44,9 @@ param aksNodeVmSize string = 'Standard_B2s'
 @description('AKS node count.')
 param aksNodeCount int = 1
 
+@description('Optional Microsoft Entra object ID of the Grafana lab operator or group. Empty grants Grafana Admin to the deployment identity; set explicitly for CI deployments.')
+param grafanaAdminObjectId string = ''
+
 @description('Public GitHub repo deployed to the App Service (Microsoft .NET hello world sample).')
 param appServiceRepoUrl string = 'https://github.com/Azure-Samples/dotnetcore-docs-hello-world-linux'
 
@@ -71,6 +74,9 @@ param enableMetricsExportDcr bool = false
 
 @description('Enable the optional AI stage — Microsoft Foundry workload (account, project, chat/embed/optimize/model-router deployments) + App Insights connection + token alerts + query pack/workbook/health model. Off by default (billable models, region-limited).')
 param enableAi bool = false
+
+@description('Deploy Azure SRE Agent in Sweden Central with Azure Monitor, Application Insights, and Log Analytics connectors. Off by default (billable usage).')
+param enableSreAgent bool = false
 
 @description('Model Router deployment version for the AI feature. VERIFY for your region with "az cognitiveservices account list-models".')
 param routerModelVersion string = '2025-08-07'
@@ -119,6 +125,7 @@ var sliUamiName         = 'id-sli-${namePrefix}'
 var platformLogsDcrName = 'dcr-${namePrefix}-platformlogs'
 var metricsExportDcrName = 'dcr-${namePrefix}-metricsexport'
 var fabricCapacityName  = toLower('fab${namePrefix}${take(suffix, 8)}')
+var sreAgentName         = 'sre-${namePrefix}-${take(suffix, 5)}'
 
 // AI feature (Foundry) is pinned to swedencentral, independent of the lab region —
 // the gpt-5-* / model-router SKUs + Foundry portal + CloudHealth preview are region-limited.
@@ -135,7 +142,7 @@ var appServiceLocation = 'westeurope'
 
 var commonTags = {
   owner: ownerTag
-  purpose: 'azure-monitor-demo-lab'
+  purpose: 'azure-monitor-lab'
   costCenter: 'demo'
 }
 
@@ -175,6 +182,27 @@ module appInsights 'modules/appinsights.bicep' = {
     location: location
     workspaceId: lawAppInsights.outputs.id
     tags: commonTags
+  }
+}
+
+module sreAgent 'modules/sre-agent.bicep' = if (enableSreAgent) {
+  name: 'sre-agent'
+  params: {
+    name: sreAgentName
+    appInsightsId: appInsights.outputs.id
+    appInsightsAppId: appInsights.outputs.appId
+    appInsightsConnectionString: appInsights.outputs.connectionString
+    logAnalyticsId: lawCentral.outputs.id
+    managedResourceGroupId: resourceGroup().id
+    tags: commonTags
+  }
+}
+
+module sreAgentSubscriptionRbac 'modules/sre-agent-subscription-rbac.bicep' = if (enableSreAgent) {
+  name: 'sre-agent-subscription-rbac'
+  scope: subscription()
+  params: {
+    principalId: sreAgent!.outputs.systemPrincipalId
   }
 }
 
@@ -394,6 +422,7 @@ module grafana 'modules/grafana.bicep' = {
   name: 'grafana'
   params: {
     name: grafanaName
+    adminObjectId: grafanaAdminObjectId
     location: location
     azureMonitorWorkspaceId: amw.outputs.id
     tags: commonTags
@@ -417,6 +446,17 @@ module appService 'modules/appservice.bicep' = {
     diagEventHubAuthRuleId: eventHub.outputs.sendRuleId
     diagEventHubName: eventHub.outputs.hubName
     tags: commonTags
+  }
+}
+
+module consolePlatform 'modules/lab-console-platform.bicep' = {
+  name: 'lab-console-platform'
+  params: {
+    webAppName: appService.outputs.webAppName
+    centralLawId: lawCentral.outputs.id
+    location: appServiceLocation
+    tags: commonTags
+    cpuVmNames: deployLinuxVm && deployWindowsVm ? [vmLinux!.outputs.vmName, vmWindows!.outputs.vmName] : []
   }
 }
 
@@ -556,7 +596,7 @@ resource alertVmCpuDynamic 'Microsoft.Insights/metricAlerts@2018-03-01' = if (de
   location: 'global'
   tags: commonTags
   properties: {
-    description: 'Lab VM CPU anomaly detected by ML-learned dynamic thresholds (medium sensitivity)'
+    description: 'Lab VM CPU above its ML-learned baseline (medium sensitivity)'
     severity: 3
     enabled: true
     scopes: filter([
@@ -566,7 +606,7 @@ resource alertVmCpuDynamic 'Microsoft.Insights/metricAlerts@2018-03-01' = if (de
     targetResourceType: 'Microsoft.Compute/virtualMachines'
     targetResourceRegion: location
     evaluationFrequency: 'PT5M'
-    windowSize: 'PT10M'
+    windowSize: 'PT15M'
     criteria: {
       'odata.type': 'Microsoft.Azure.Monitor.MultipleResourceMultipleMetricCriteria'
       allOf: [
@@ -574,13 +614,13 @@ resource alertVmCpuDynamic 'Microsoft.Insights/metricAlerts@2018-03-01' = if (de
           name: 'CpuDynamic'
           metricNamespace: 'Microsoft.Compute/virtualMachines'
           metricName: 'Percentage CPU'
-          operator: 'GreaterOrLessThan'
+          operator: 'GreaterThan'
           timeAggregation: 'Average'
           criterionType: 'DynamicThresholdCriterion'
           alertSensitivity: 'Medium'
           failingPeriods: {
-            numberOfEvaluationPeriods: 4
-            minFailingPeriodsToAlert: 3
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
           }
         }
       ]
@@ -665,6 +705,19 @@ module lawRbac 'modules/law-rbac.bicep' = {
     centralLawId: lawCentral.outputs.id
     centralLawName: lawCentral.outputs.name
     location: location
+    tags: commonTags
+  }
+}
+
+// ---------------------------------------------------------------------------------
+// FEATURE 12 — Security posture alerts (control-plane drift, privilege, exfiltration)
+// ---------------------------------------------------------------------------------
+module securityPostureAlerts 'modules/security-posture-alerts.bicep' = {
+  name: 'security-posture-alerts'
+  params: {
+    location: location
+    workspaceId: lawCentral.outputs.id
+    actionGroupId: actionGroup.outputs.id
     tags: commonTags
   }
 }
@@ -973,6 +1026,12 @@ output fabricEnabled bool            = enableFabric
 output fabricCapacityId string       = enableFabric ? fabricCapacity!.outputs.id : ''
 output fabricCapacityName string     = enableFabric ? fabricCapacity!.outputs.name : ''
 output fabricCapacityLocation string = enableFabric ? fabricCapacity!.outputs.location : ''
+
+// Optional SRE Agent stage (empty unless enableSreAgent = true)
+output sreAgentEnabled bool            = enableSreAgent
+output sreAgentName string             = enableSreAgent ? sreAgent!.outputs.name : ''
+output sreAgentEndpoint string         = enableSreAgent ? sreAgent!.outputs.endpoint : ''
+output sreAgentPortalUrl string        = enableSreAgent ? sreAgent!.outputs.portalUrl : ''
 
 // NEW — Alert Processing Rules nightly window
 output nightlyMaintenanceRuleName string = alertProcessingRules.outputs.nightlyMaintenanceRuleName

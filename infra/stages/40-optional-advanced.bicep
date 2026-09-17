@@ -49,7 +49,7 @@ var sliUamiName = 'id-sli-${namePrefix}'
 
 var commonTags = {
   owner: ownerTag
-  purpose: 'azure-monitor-demo-lab'
+  purpose: 'azure-monitor-lab'
   costCenter: 'demo'
 }
 

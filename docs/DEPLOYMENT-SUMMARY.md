@@ -1,4 +1,4 @@
-# Azure Monitor Demo Lab — Deployment Summary
+# Azure Monitor Lab — Deployment Summary
 
 **Deployed:** _yyyy-mm-dd_
 **Subscription:** `<your-subscription-name>` (`<your-subscription-id>`)
@@ -29,13 +29,13 @@
 | App Service diag sinks (**West Europe**) | `stapp-amlab<suffix>` (archive) · `evhns-amlab-<suffix>` (stream) |
 | AKS frontend (LoadBalancer) | http://<public-ip> |
 | Action Group | `ag-amlab-email` → `<your-alert-email>` |
-| Workbook | **Azure Monitor Demo Lab — Traffic Lights** |
+| Workbook | **Azure Monitor Lab — Traffic Lights** |
 
 > **Optional AI stage** (off by default) adds, in **Sweden Central**: a Microsoft Foundry account `ai<amlab><suffix>` + project `amlab-ai-proj`, `gpt-5-mini` / `text-embedding-3-small` / `gpt-5.4` / `model-router` deployments, `gen_ai.*` App Insights tracing, token anomaly + spike alerts, an AI FinOps query pack + workbook, and an AI tier in the workload health model.
 
 ### Endpoints on the App Service (.NET 8 minimal API)
 
-- `GET /` — 200 "Hello from Azure Monitor Demo Lab"
+- `GET /` — 200 "Hello from Azure Monitor Lab"
 - `GET /healthz` — 200 "OK"
 - `GET /api/slow` — 200 after 1.5–3 s (slow-trace demo)
 - `GET /api/dep` — outbound HTTPS call → produces `AppDependencies`

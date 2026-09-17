@@ -17,7 +17,7 @@ var actionGroupName = 'ag-${namePrefix}-email'
 
 var commonTags = {
   owner: ownerTag
-  purpose: 'azure-monitor-demo-lab'
+  purpose: 'azure-monitor-lab'
   costCenter: 'demo'
 }
 

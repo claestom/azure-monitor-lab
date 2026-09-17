@@ -13,7 +13,8 @@
   Lab RG.
 
 .PARAMETER Category
-  Annotation category (default: 'Deployment'). Common values: Deployment, Incident, Other.
+  Logical event category stored in annotation metadata. Application Insights
+  requires the display category to be Deployment for the marker to appear.
 
 .PARAMETER Name
   Annotation display name.
@@ -45,17 +46,18 @@ $body = @{
   Id            = $annotationId
   AnnotationName = $Name
   EventTime     = (Get-Date).ToUniversalTime().ToString('o')
-  Category      = $Category
+  Category      = 'Deployment'
   Properties    = (@{
     ReleaseName = $Name
     BuildNumber = (Get-Date -Format 'yyyyMMddHHmmss')
     Source      = 'amlab-demo'
+    EventCategory = $Category
   } | ConvertTo-Json -Compress)
 } | ConvertTo-Json -Depth 5
 
 $uri = "https://management.azure.com/subscriptions/$subId/resourceGroups/$ResourceGroup/providers/microsoft.insights/components/$appi/Annotations?api-version=2015-05-01"
 $token = az account get-access-token --resource 'https://management.azure.com' --query accessToken -o tsv
 
-Write-Host "==> Posting release annotation '$Name' ($Category) to $appi" -ForegroundColor Cyan
+Write-Host "==> Posting release annotation '$Name' (event category: $Category) to $appi" -ForegroundColor Cyan
 Invoke-RestMethod -Method PUT -Uri $uri -Headers @{ Authorization = "Bearer $token"; 'Content-Type' = 'application/json' } -Body $body | Out-Null
 Write-Host "✅ Annotation created. Visible as a vertical line on App Insights charts within ~30 s." -ForegroundColor Green

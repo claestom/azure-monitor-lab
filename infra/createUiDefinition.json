@@ -6,7 +6,7 @@
     "config": {
       "isWizard": false,
       "basics": {
-        "description": "**Azure Monitor Demo Lab** — full portal deployment. Every setting is provided here in the UI; no local config file is required. Pick a **Resource group** and **Region**, then step through the tabs to tune workloads, monitoring, and advanced options. Sensible defaults are pre-filled everywhere.",
+        "description": "**Azure Monitor Lab** — full portal deployment. Every setting is provided here in the UI; no local config file is required. Pick a **Resource group** and **Region**, then step through the tabs to tune workloads, monitoring, and advanced options. Sensible defaults are pre-filled everywhere.",
         "resourceGroup": {
           "allowExisting": true,
           "constraints": {
@@ -257,6 +257,18 @@
         "label": "Advanced",
         "elements": [
           {
+            "name": "grafanaAdminObjectId",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Grafana administrator object ID (optional)",
+            "defaultValue": "",
+            "toolTip": "Leave empty to grant your deployment identity Grafana Admin. For automation or a different lab operator, enter the Microsoft Entra user or group object ID, not an application client ID.",
+            "constraints": {
+              "required": false,
+              "regex": "^$|^(?!00000000-0000-0000-0000-000000000000$)[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+              "validationMessage": "Enter a nonzero Microsoft Entra user or group object ID in GUID format, or leave empty."
+            }
+          },
+          {
             "name": "ownerTag",
             "type": "Microsoft.Common.TextBox",
             "label": "Owner tag",
@@ -330,6 +342,21 @@
             "options": {
               "text": "Cost warning: Fabric F2 is pinned to swedencentral and bills while active at an indicative PAYG retail cost of about $0.36/hour, $8.64/day, or $262.80/month. Actual pricing varies and additional Fabric usage may add charges. The deployment creates only the ARM capacity. Run ./scripts/setup-fabric.ps1 afterward to create Fabric SaaS items, and suspend the capacity when the demo is idle."
             }
+          },
+          {
+            "name": "enableSreAgent",
+            "type": "Microsoft.Common.CheckBox",
+            "label": "Enable optional SRE Agent stage",
+            "defaultValue": false,
+            "toolTip": "Deploys the preview Azure SRE Agent and connectors in swedencentral. Active usage is billable and always-on billing can begin after an eligible trial. Requires subscription-level role-assignment permission."
+          },
+          {
+            "name": "sreAgentInfo",
+            "type": "Microsoft.Common.TextBlock",
+            "visible": "[equals(steps('advanced').enableSreAgent, true)]",
+            "options": {
+              "text": "Azure SRE Agent uses a preview API, is pinned to swedencentral, and creates a subscription-scope Monitoring Contributor assignment for its connector identity. After deployment, run ./scripts/setup-sre-agent.ps1 -SubscriptionId <subscription-id> -ResourceGroup <resource-group> to validate the agent and print its portal URL. Delete the agent before the trial ends if you do not intend to continue with paid usage. Custom investigators and response plans are configured after deployment."
+            }
           }
         ]
       }
@@ -352,11 +379,13 @@
       "enableLawReplication": "[steps('monitoring').enableLawReplication]",
       "lawReplicationLocation": "[steps('monitoring').lawReplicationLocation]",
       "ownerTag": "[steps('advanced').ownerTag]",
+      "grafanaAdminObjectId": "[steps('advanced').grafanaAdminObjectId]",
       "appServiceRepoUrl": "[steps('advanced').appServiceRepoUrl]",
       "siemWebhookUrl": "[steps('advanced').siemWebhookUrl]",
       "enableAi": "[steps('advanced').enableAi]",
       "enableFabric": "[steps('advanced').enableFabric]",
-      "fabricAdminEmail": "[steps('advanced').fabricAdminEmail]"
+      "fabricAdminEmail": "[steps('advanced').fabricAdminEmail]",
+      "enableSreAgent": "[steps('advanced').enableSreAgent]"
     }
   }
 }

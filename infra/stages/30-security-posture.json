@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.37.4.10188",
-      "templateHash": "931060346002166416"
+      "templateHash": "15889074906901526311"
     }
   },
   "parameters": {
@@ -39,7 +39,7 @@
     "actionGroupName": "[format('ag-{0}-email', parameters('namePrefix'))]",
     "commonTags": {
       "owner": "[parameters('ownerTag')]",
-      "purpose": "azure-monitor-demo-lab",
+      "purpose": "azure-monitor-lab",
       "costCenter": "demo"
     }
   },

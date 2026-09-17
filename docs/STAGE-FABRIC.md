@@ -14,7 +14,7 @@ The deployment is pinned to **F2 in Sweden Central**. Indicative Microsoft PAYG 
 
 Actual pricing varies by agreement, currency, and region. OneLake storage and other Fabric meters can add charges. Suspend the capacity whenever the demo is idle.
 
-> Microsoft currently recommends at least four capacity units (F4) for Eventstreams. This lab intentionally pins to F2 to limit demo cost. F2 is suitable for light, short-lived sample traffic but can throttle under sustained ingestion; use the Capacity Metrics app in scenario 58 to show that tradeoff.
+> Microsoft currently recommends at least four capacity units (F4) for Eventstreams. This lab intentionally pins to F2 to limit demo cost. F2 is suitable for light, short-lived sample traffic but can throttle under sustained ingestion; use the Capacity Metrics app in scenario 64 to show that tradeoff.
 
 ## Architecture
 
@@ -206,6 +206,6 @@ For this sponsored lab tenant, the known working administrator format is `admin@
 
 ## Demo scenarios
 
-See scenarios 54 through 60 in [DEMO-SCENARIOS.md](DEMO-SCENARIOS.md), including the guided [Mirror Azure Monitor data](DEMO-SCENARIOS.md#s60) preview scenario.
+See scenarios 60 through 66 in [DEMO-SCENARIOS.md](DEMO-SCENARIOS.md), including the guided [Mirror Azure Monitor data](DEMO-SCENARIOS.md#s66) preview scenario.
 
 For staged Bicep deployment, deploy Stage Fabric before Stage E, or rerun `40-optional-advanced.bicep` with `enableFabric=true` afterward so the Real-Time Intelligence tier is added to the Health Model. Terraform enforces this dependency automatically.

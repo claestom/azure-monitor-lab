@@ -30,6 +30,9 @@ param aksNodeVmSize string = 'Standard_B2s'
 @description('AKS node count.')
 param aksNodeCount int = 1
 
+@description('Optional Microsoft Entra object ID of the Grafana lab operator or group. Empty grants Grafana Admin to the deployment identity; set explicitly for CI deployments.')
+param grafanaAdminObjectId string = ''
+
 @description('Tag every resource with this owner.')
 param ownerTag string = 'demo-lab'
 
@@ -57,7 +60,7 @@ var eventHubNsName = 'evhns-${namePrefix}-${take(suffix, 5)}'
 
 var commonTags = {
   owner: ownerTag
-  purpose: 'azure-monitor-demo-lab'
+  purpose: 'azure-monitor-lab'
   costCenter: 'demo'
 }
 
@@ -153,6 +156,7 @@ module grafana '../modules/grafana.bicep' = {
   name: 'grafana'
   params: {
     name: grafanaName
+    adminObjectId: grafanaAdminObjectId
     location: location
     azureMonitorWorkspaceId: amw.id
     tags: commonTags
@@ -183,6 +187,28 @@ module appService '../modules/appservice.bicep' = {
     diagStorageAccountId: appDiagStorage.outputs.id
     diagEventHubAuthRuleId: eventHubAuthRule.id
     diagEventHubName: 'diagstream'
+    tags: commonTags
+  }
+}
+
+module consolePlatform '../modules/lab-console-platform.bicep' = {
+  name: 'lab-console-platform'
+  params: {
+    webAppName: appService.outputs.webAppName
+    centralLawId: lawCentral.id
+    location: appServiceLocation
+    tags: commonTags
+    cpuVmNames: deployLinuxVm && deployWindowsVm ? [vmLinux!.outputs.vmName, vmWindows!.outputs.vmName] : []
+  }
+}
+
+module consoleCustomLogs '../modules/custom-logs.bicep' = {
+  name: 'custom-logs'
+  params: {
+    namePrefix: namePrefix
+    location: location
+    centralLawId: lawCentral.id
+    centralLawName: lawCentralName
     tags: commonTags
   }
 }

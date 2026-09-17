@@ -1,293 +1,239 @@
 <#
 .SYNOPSIS
-  Prepare the lab for demo Service Level Indicators (Microsoft.Monitor/slis
-  preview) on the lab's service group — scenario 46.
+  Prepare and verify the lab prerequisites for portal-created Service Level
+  Indicators (Microsoft.Monitor/slis preview), scenario 46.
 
 .DESCRIPTION
-  Microsoft.Monitor/slis is an *extension* resource on a tenant-scoped service
-  group, so it can't live in RG-scoped Bicep. The 2025-03-01-preview RP also
-  currently rejects the enum wire values documented in both the Bicep schema
-  and the generated .NET SDK (e.g. `operator: '=='`, `comparator: '>='`), so
-  scripted PUTs are parked until the spec stabilizes. This script does the
-  prep that the SLI plane actually needs (which is non-trivial), then prints a
-  portal URL and the exact field values to paste into the portal SLI form.
+  The SLI resource provider is preview and its control-plane contract can
+  change independently of the portal. This script deliberately does not create
+  SLIs. It verifies the service group, locates the SLI identity and Azure
+  Monitor Workspace, grants the destination ingestion permissions, confirms
+  the documented Managed Prometheus metrics are flowing, and prints the exact
+  values needed to create the sample SLIs in the Azure portal.
 
-  Steps:
-    1. Verify the service group exists (created by setup-health-model.ps1).
-    2. Look up the UAMI 'id-sli-amlab' + AMW 'amw-amlab' by name.
-    3. Grant Monitoring Metrics Publisher on the AMW's default DCR + DCE
-       (the AMW role grant from Bicep is not enough — the SLI plane writes
-        through the DCR in the managed RG `MA_<amw>_<region>_managed`).
-    4. Print the portal URL and the UAMI/AMW IDs needed to fill the SLI form.
-
-    -Teardown deletes the two SLIs by their canonical names. Idempotent —
-    safe to run whether or not SLIs were created in the portal.
+  The script is idempotent. Re-running it verifies the same prerequisites and
+  reuses existing role assignments.
 
 .PARAMETER ResourceGroup
-  Lab resource group containing the AMW + UAMI.
+  Lab resource group containing the Azure Monitor Workspace and SLI identity.
+
+.PARAMETER SubscriptionId
+  Expected Azure subscription. Required when .azure-target.json is absent.
 
 .PARAMETER ServiceGroupId
-  Service group that owns the SLIs (created by setup-health-model.ps1).
+  Service group that owns the portal-created SLIs.
 
 .PARAMETER Teardown
-  Delete the two SLIs (by canonical name). Idempotent.
+  Delete the documented sample SLIs if they were created in the portal.
 
-.NOTES
-  API version: Microsoft.Monitor/slis  2025-03-01-preview
-  RBAC required to run this script:
-    * Reader on the lab RG.
-    * User Access Administrator (or Owner) on the AMW's managed RG, so the
-      script can grant Monitoring Metrics Publisher on its DCR + DCE.
-  When PUTs are restored, you'll additionally need Owner/Contributor on the
-  service group to write the SLI extension resources.
+.PARAMETER MetricWaitMinutes
+  Maximum time to wait for all required Managed Prometheus source metrics.
 #>
 [CmdletBinding()]
 param(
   [string] $ResourceGroup  = 'rg-azure-monitor-lab',
+  [string] $SubscriptionId,
   [string] $ServiceGroupId = 'amlab-workload',
+  [ValidateRange(0, 60)]
+  [int] $MetricWaitMinutes = 10,
   [switch] $Teardown
 )
 
 $ErrorActionPreference = 'Stop'
-function Write-Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
-function Write-Info($msg) { Write-Host "    $msg" -ForegroundColor DarkGray }
-function Write-Warn($msg) { Write-Host "    $msg" -ForegroundColor Yellow }
+function Write-Step($Message) { Write-Host "`n==> $Message" -ForegroundColor Cyan }
+function Write-Info($Message) { Write-Host "    $Message" -ForegroundColor DarkGray }
 
-# --- Subscription guardrail ----------------------------------------------------
+# Subscription guardrail
 $targetFile = Join-Path $PSScriptRoot '..' '.azure-target.json'
 if (Test-Path $targetFile) {
   $target = Get-Content -Raw $targetFile | ConvertFrom-Json
-  az account set --subscription $target.expectedSubscriptionId | Out-Null
-  $active = az account show --query "{id:id, tenantId:tenantId}" -o json | ConvertFrom-Json
-  if ($active.id -ne $target.expectedSubscriptionId -or $active.tenantId -ne $target.expectedTenantId) {
-    throw "BLOCKED: not on allowed lab subscription. Aborting."
+  if ($SubscriptionId -and $SubscriptionId -ne $target.expectedSubscriptionId) {
+    throw "BLOCKED: -SubscriptionId '$SubscriptionId' does not match .azure-target.json '$($target.expectedSubscriptionId)'."
   }
+  $SubscriptionId = $target.expectedSubscriptionId
 } else {
-  $active = az account show --query "{id:id, tenantId:tenantId}" -o json | ConvertFrom-Json
+  if (-not $SubscriptionId) {
+    throw 'BLOCKED: specify -SubscriptionId when .azure-target.json is absent.'
+  }
+  $target = $null
+}
+
+az account set --subscription $SubscriptionId | Out-Null
+$active = az account show --query "{id:id, tenantId:tenantId}" -o json | ConvertFrom-Json
+if ($active.id -ne $SubscriptionId) {
+  throw "BLOCKED: active subscription '$($active.id)' does not match expected subscription '$SubscriptionId'."
+}
+if ($target -and $active.tenantId -ne $target.expectedTenantId) {
+  throw "BLOCKED: active tenant '$($active.tenantId)' does not match expected tenant '$($target.expectedTenantId)'."
 }
 Write-Info "Sub: $($active.id)"
 Write-Info "RG : $ResourceGroup"
 Write-Info "SG : $ServiceGroupId"
 
-# --- API constants -------------------------------------------------------------
 $sliApi = '2025-03-01-preview'
-$sgApi  = '2024-02-01-preview'
-$sgUrl  = "https://management.azure.com/providers/Microsoft.Management/serviceGroups/$ServiceGroupId" + "?api-version=$sgApi"
+$sgApi = '2024-02-01-preview'
+$sgUrl = "https://management.azure.com/providers/Microsoft.Management/serviceGroups/$ServiceGroupId" + "?api-version=$sgApi"
 
 function Get-SliUrl {
   param([string] $SliName)
   return "https://management.azure.com/providers/Microsoft.Management/serviceGroups/$ServiceGroupId/providers/Microsoft.Monitor/slis/$SliName" + "?api-version=$sliApi"
 }
 
-# ===============================================================================
-# TEARDOWN
-# ===============================================================================
 if ($Teardown) {
-  Write-Step "Teardown: removing demo SLIs"
-  foreach ($sli in @('sli-aks-pods-running', 'sli-aks-pod-start-latency')) {
-    $url = Get-SliUrl -SliName $sli
-    Write-Info "DELETE $url"
-    az rest --method delete --url $url --only-show-errors 2>$null | Out-Null
+  Write-Step 'Removing documented sample SLIs'
+  foreach ($sliName in @('sli-aks-pods-running', 'sli-aks-pod-start-latency')) {
+    az rest --method delete --url (Get-SliUrl -SliName $sliName) --only-show-errors 2>$null | Out-Null
+    Write-Info "Delete submitted: $sliName"
   }
-  Write-Host "`nTeardown submitted (DELETE is idempotent)." -ForegroundColor Green
+  Write-Host "`nTeardown submitted. DELETE is idempotent." -ForegroundColor Green
   return
 }
 
-# ===============================================================================
-# PREREQ — verify service group exists
-# ===============================================================================
-Write-Step "Verifying service group '$ServiceGroupId' exists"
-$sgState = az rest --method get --url $sgUrl --only-show-errors 2>$null | ConvertFrom-Json
-if (-not $sgState -or $sgState.properties.provisioningState -ne 'Succeeded') {
-  throw "Service group '$ServiceGroupId' not found or not in Succeeded state. Run scripts/setup-health-model.ps1 first."
+Write-Step "Verifying service group '$ServiceGroupId'"
+$serviceGroup = az rest --method get --url $sgUrl --only-show-errors 2>$null | ConvertFrom-Json
+if (-not $serviceGroup -or $serviceGroup.properties.provisioningState -ne 'Succeeded') {
+  throw "Service group '$ServiceGroupId' was not found in Succeeded state. Run scripts/setup-health-model.ps1 first."
 }
-Write-Info "Service group OK ($($sgState.properties.provisioningState))."
+Write-Info "Service group state: $($serviceGroup.properties.provisioningState)"
 
-# ===============================================================================
-# PREREQ — locate UAMI + AMW by name (more robust than scanning deployments)
-# ===============================================================================
-Write-Step "Locating UAMI 'id-sli-amlab' and AMW 'amw-amlab' in $ResourceGroup"
-
-$uamiId = az identity show -g $ResourceGroup -n 'id-sli-amlab' --query id -o tsv 2>$null
-if (-not $uamiId) {
-  throw "User-Assigned MI 'id-sli-amlab' not found in '$ResourceGroup'. Re-run deploy.ps1 with the latest main.bicep (the sli-identity module must have run)."
-}
-$uamiClientId = az identity show -g $ResourceGroup -n 'id-sli-amlab' --query clientId -o tsv 2>$null
-if (-not $uamiClientId) {
-  throw "Could not read clientId for UAMI 'id-sli-amlab'."
+Write-Step "Locating SLI identity and Azure Monitor Workspace in '$ResourceGroup'"
+$uami = az identity show -g $ResourceGroup -n id-sli-amlab --query '{id:id,clientId:clientId,principalId:principalId}' -o json 2>$null | ConvertFrom-Json
+if (-not $uami.id -or -not $uami.clientId -or -not $uami.principalId) {
+  throw "User-assigned identity 'id-sli-amlab' was not found or is incomplete in '$ResourceGroup'."
 }
 
-$amwId = az resource show -g $ResourceGroup -n 'amw-amlab' --resource-type 'Microsoft.Monitor/accounts' --query id -o tsv 2>$null
-if (-not $amwId) {
-  throw "Azure Monitor Workspace 'amw-amlab' not found in '$ResourceGroup'."
+$amw = az resource show -g $ResourceGroup -n amw-amlab --resource-type Microsoft.Monitor/accounts -o json 2>$null | ConvertFrom-Json
+if (-not $amw.id) {
+  throw "Azure Monitor Workspace 'amw-amlab' was not found in '$ResourceGroup'."
 }
-$amwName  = 'amw-amlab'
-$location = az group show -n $ResourceGroup --query location -o tsv
-Write-Info "UAMI    : $uamiId"
-Write-Info "UAMI cid: $uamiClientId"
-Write-Info "AMW     : $amwId ($amwName) @ $location"
+Write-Info "UAMI: $($uami.id)"
+Write-Info "AMW : $($amw.id)"
 
-$uamiPrincipalId = az identity show -g $ResourceGroup -n 'id-sli-amlab' --query principalId -o tsv 2>$null
-if (-not $uamiPrincipalId) {
-  throw "Could not read principalId for UAMI 'id-sli-amlab'."
+Write-Step 'Ensuring SLI source and destination permissions'
+$ingestion = $amw.properties.defaultIngestionSettings
+if (-not $ingestion.dataCollectionRuleResourceId) {
+  throw "Azure Monitor Workspace 'amw-amlab' has no default ingestion DCR."
 }
 
-# ===============================================================================
-# PREREQ — grant Monitoring Metrics Publisher on the AMW's default DCR + DCE
-# (the AMW role assignment is not enough; the SLI plane writes through the DCR
-#  in the managed resource group MA_<amw>_<region>_managed).
-# ===============================================================================
-Write-Step "Granting Monitoring Metrics Publisher on AMW default DCR + DCE"
+$monitoringReaderRoleId = '43d0d8ad-25c7-4714-9337-8ba259a9fe05'
+$metricsPublisherRoleId = '3913510d-42f4-4e42-8a64-420c390055eb'
+$roleRequirements = @(
+  [pscustomobject]@{ Name = 'Monitoring Reader'; Id = $monitoringReaderRoleId; Scope = $amw.id }
+  [pscustomobject]@{ Name = 'Monitoring Metrics Publisher'; Id = $metricsPublisherRoleId; Scope = $amw.id }
+  [pscustomobject]@{ Name = 'Monitoring Reader'; Id = $monitoringReaderRoleId; Scope = $ingestion.dataCollectionRuleResourceId }
+  [pscustomobject]@{ Name = 'Monitoring Metrics Publisher'; Id = $metricsPublisherRoleId; Scope = $ingestion.dataCollectionRuleResourceId }
+  [pscustomobject]@{ Name = 'Monitoring Metrics Publisher'; Id = $metricsPublisherRoleId; Scope = $ingestion.dataCollectionEndpointResourceId }
+)
 
-$ingest = az resource show --ids $amwId --query 'properties.defaultIngestionSettings' -o json | ConvertFrom-Json
-if (-not $ingest.dataCollectionRuleResourceId) {
-  throw "AMW '$amwName' has no defaultIngestionSettings.dataCollectionRuleResourceId."
-}
-$dcrId = $ingest.dataCollectionRuleResourceId
-$dceId = $ingest.dataCollectionEndpointResourceId
-$metricsPublisherRoleId = '3913510d-42f4-4e42-8a64-420c390055eb'  # Monitoring Metrics Publisher
-Write-Info "DCR : $dcrId"
-Write-Info "DCE : $dceId"
-
-foreach ($scope in @($dcrId, $dceId)) {
-  if (-not $scope) { continue }
-  $existing = az role assignment list --assignee-object-id $uamiPrincipalId --assignee-principal-type ServicePrincipal --scope $scope --role $metricsPublisherRoleId --query "[0].id" -o tsv 2>$null
+foreach ($requirement in $roleRequirements) {
+  if (-not $requirement.Scope) { continue }
+  $assignments = az role assignment list --assignee-object-id $uami.principalId --scope $requirement.Scope -o json 2>$null | ConvertFrom-Json
+  $existing = $assignments | Where-Object { $_.roleDefinitionId -like "*/$($requirement.Id)" } | Select-Object -First 1
   if ($existing) {
-    Write-Info "Already assigned on $($scope.Split('/')[-3..-1] -join '/')"
-  } else {
-    Write-Info "Assigning Monitoring Metrics Publisher on $($scope.Split('/')[-3..-1] -join '/')"
-    az role assignment create --assignee-object-id $uamiPrincipalId --assignee-principal-type ServicePrincipal --role $metricsPublisherRoleId --scope $scope --only-show-errors | Out-Null
+    Write-Info "$($requirement.Name) already assigned on $($requirement.Scope)"
+    continue
   }
-}
-Write-Info "Waiting 30s for role propagation..."
-Start-Sleep -Seconds 30
 
-# ===============================================================================
-# Helper to build + PUT an SLI body
-# ===============================================================================
-function New-SignalSource {
-  param(
-    [string] $Id,
-    [string] $MetricName,
-    [string] $MetricNamespace = 'default',
-    [array]  $Filters = @(),
-    [string] $TemporalType = 'Increase',
-    [int]    $WindowSizeMinutes = 5,
-    [string] $SpatialType = 'Sum'
-  )
-  return [pscustomobject]@{
-    signalSourceId                  = $Id
-    metricName                      = $MetricName
-    metricNamespace                 = $MetricNamespace
-    filters                         = @($Filters)
-    sourceAmwAccountResourceId      = $amwId
-    sourceAmwAccountManagedIdentity = $uamiClientId
-    temporalAggregation             = @{ type = $TemporalType; windowSizeMinutes = $WindowSizeMinutes }
-    spatialAggregation              = @{ type = $SpatialType;  dimensions = @() }
+  az role assignment create `
+    --assignee-object-id $uami.principalId `
+    --assignee-principal-type ServicePrincipal `
+    --role $requirement.Id `
+    --scope $requirement.Scope `
+    --only-show-errors | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    throw "Failed to assign $($requirement.Name) on '$($requirement.Scope)'."
   }
+  Write-Info "Assigned $($requirement.Name) on $($requirement.Scope)"
 }
 
-function Submit-Sli {
-  param(
-    [string] $Name,
-    [hashtable] $Body
-  )
-  $url = Get-SliUrl -SliName $Name
-  $tmp = New-TemporaryFile
-  ($Body | ConvertTo-Json -Depth 20 -Compress) | Set-Content -Path $tmp -Encoding UTF8
-  Write-Info "PUT $url"
-  # `az rest` writes errors to stderr but exits 0 — capture combined output and
-  # check $LASTEXITCODE *and* the response for an error envelope before polling.
-  $putOutput = & az rest --method put --url $url --body "@$tmp" 2>&1
-  Remove-Item $tmp -Force -ErrorAction SilentlyContinue
-  if ($LASTEXITCODE -ne 0 -or ($putOutput -join "`n") -match 'ERROR: ') {
-    throw "Failed to PUT SLI '$Name'.`n$putOutput"
-  }
+Write-Step 'Verifying Managed Prometheus source metrics'
+$queryEndpoint = $amw.properties.metrics.prometheusQueryEndpoint
+if (-not $queryEndpoint) {
+  throw "Azure Monitor Workspace 'amw-amlab' has no Prometheus query endpoint."
+}
 
-  # Poll for terminal state
-  $deadline = (Get-Date).AddSeconds(180)
-  while ((Get-Date) -lt $deadline) {
-    Start-Sleep -Seconds 5
-    $resp = az rest --method get --url $url --only-show-errors 2>$null | ConvertFrom-Json
-    $state = $resp.properties.provisioningState
-    Write-Info "$Name : provisioningState = $state"
-    if ($state -eq 'Succeeded') { return }
-    if ($state -in 'Failed','Canceled') {
-      throw "SLI '$Name' ended in state '$state'. Response: $($resp | ConvertTo-Json -Depth 8)"
+function Get-PrometheusQueryToken {
+  $PSNativeCommandUseErrorActionPreference = $false
+  $tokenOutput = az account get-access-token --subscription $SubscriptionId `
+    --resource https://prometheus.monitor.azure.com --query accessToken -o tsv --only-show-errors 2>&1
+  $tokenExitCode = $LASTEXITCODE
+  if ($tokenExitCode -ne 0) {
+    if (($tokenOutput -join "`n") -match 'Audience\s+https://prometheus[.]monitor[.]azure[.]com/?\s+is not a supported MSI token audience') {
+      $retryResourceGroup = $ResourceGroup.Replace("'", "''")
+      $retryServiceGroup = $ServiceGroupId.Replace("'", "''")
+      throw @"
+Cloud Shell's built-in credential cannot request the Azure Monitor Prometheus token audience. Source metrics have not been verified.
+
+Sign in interactively in this Cloud Shell session, verify the lab account, then retry only the SLI helper from the repository root:
+  az login --tenant $($active.tenantId) --use-device-code
+  az account set --subscription $SubscriptionId
+  az account show --query '{id:id,tenantId:tenantId}' -o table
+  ./scripts/setup-slis.ps1 -SubscriptionId $SubscriptionId -ResourceGroup '$retryResourceGroup' -ServiceGroupId '$retryServiceGroup' -MetricWaitMinutes $MetricWaitMinutes
+
+No logout, token-audience change, or workload redeployment is required. Resume remaining post-deployment steps after SLI verification succeeds.
+"@
     }
+    throw "Could not acquire an Azure Monitor Prometheus query token (Azure CLI exit code $tokenExitCode). Source metrics have not been verified; check your sign-in for the selected tenant and subscription."
   }
-  Write-Warn "SLI '$Name' did not reach Succeeded within 180s — continuing anyway. Re-check in the portal."
+  $tokenLines = @($tokenOutput | Where-Object { $_ -is [string] -and -not [string]::IsNullOrWhiteSpace($_) })
+  if ($tokenLines.Count -ne 1) {
+    throw 'Could not acquire an Azure Monitor Prometheus query token: Azure CLI returned no single token. Source metrics have not been verified.'
+  }
+  return $tokenLines[0].Trim()
 }
 
-# ===============================================================================
-# SLI bodies (parked) — portal-driven creation for now
-# ===============================================================================
-# Why: the Microsoft.Monitor/slis 2025-03-01-preview RP currently rejects the
-# enum wire values documented in both the Bicep schema and the generated .NET
-# SDK (e.g. operator '==' and comparator '>='), and the published OpenAPI
-# spec / SDK source disagree with the live control-plane validator. Without a
-# captured portal payload to mirror exactly, scripted SLI creation is a
-# coin-flip. Everything *around* the SLI is set up correctly by this script
-# (UAMI, role assignments on AMW + DCR + DCE, service group), so the operator
-# only needs to fill in the form fields below in the portal.
-#
-# Once a known-good portal payload is captured (F12 -> Network -> PUT body
-# on the .../slis/<name> request), restore Submit-Sli + the two SLI blocks
-# kept in git history (commit 043fb73 and the preview-debug attempts after).
-#
-# Tracking: this is a preview API. Re-evaluate at GA.
+$metricQueries = [ordered]@{
+  'up' = 'up'
+  'kube_pod_status_phase' = 'kube_pod_status_phase'
+  'kubelet_pod_start_duration_seconds_bucket{le="30"}' = 'kubelet_pod_start_duration_seconds_bucket{le="30"}'
+  'kubelet_pod_start_duration_seconds_count' = 'kubelet_pod_start_duration_seconds_count'
+}
+$metricDeadline = (Get-Date).AddMinutes($MetricWaitMinutes)
+do {
+  $queryToken = Get-PrometheusQueryToken
 
-Write-Step "SLI bodies parked — create the two SLIs in the portal"
-$portalSgUrl = "https://portal.azure.com/#@$($active.tenantId)/resource/providers/Microsoft.Management/serviceGroups/$ServiceGroupId/serviceLevelIndicators"
+  $metricCounts = @{}
+  foreach ($entry in $metricQueries.GetEnumerator()) {
+    $query = [uri]::EscapeDataString($entry.Value)
+    $response = Invoke-RestMethod `
+      -Method Get `
+      -Uri "$queryEndpoint/api/v1/query?query=$query" `
+      -Headers @{ Authorization = "Bearer $queryToken" } `
+      -TimeoutSec 30
+    $seriesCount = @($response.data.result).Count
+    $metricCounts[$entry.Key] = $seriesCount
+    Write-Info "$($entry.Key): $seriesCount series"
+  }
+
+  $missingMetrics = @($metricQueries.Keys | Where-Object { $metricCounts[$_] -eq 0 })
+  if ($missingMetrics.Count -gt 0 -and (Get-Date) -lt $metricDeadline) {
+    Write-Info "Waiting 30 seconds for Managed Prometheus propagation: $($missingMetrics -join ', ')"
+    Start-Sleep -Seconds 30
+  }
+} while ($missingMetrics.Count -gt 0 -and (Get-Date) -lt $metricDeadline)
+
+if ($missingMetrics.Count -gt 0) {
+  throw "Required Managed Prometheus metrics did not appear within $MetricWaitMinutes minute(s): $($missingMetrics -join ', '). Verify AKS Managed Prometheus collection, then rerun this script."
+}
+
+$portalUrl = "https://portal.azure.com/#@$($active.tenantId)/resource/providers/Microsoft.Management/serviceGroups/$ServiceGroupId/serviceLevelIndicators"
 Write-Host @"
 
-   Open: $portalSgUrl
+SLI prerequisites verified. Create the sample SLIs in the portal:
 
-   Click '+ Add SLI' twice and paste these values:
+  Portal       : $portalUrl
+  Service group: $ServiceGroupId
+  Source AMW   : $($amw.id)
+  Destination  : $($amw.id)
+  Identity     : $($uami.id)
+  Client ID    : $($uami.clientId)
 
-   --- SLI #1 : sli-aks-pods-running (Availability, Window-Based) -----------
-   Category                   Availability
-   Evaluation type            Window-based
-   Source AMW                 $amwName  ($amwId)
-   Source AMW managed identity (UAMI client ID below)
-   Metric 1 (s1)              kube_pod_status_phase   filter: phase == Running
-                              temporal: Average / 5 min   spatial: Sum
-   Metric 2 (s2)              kube_pod_status_phase
-                              temporal: Average / 5 min   spatial: Sum
-   Signal formula             (100 * `$s1) / `$s2
-   Window uptime criteria     >= 95
-   Baseline                   99   / 7d   / RollingDays
-   Destination AMW            $amwName  (same UAMI)
+Suggested source metrics:
+  Availability: kube_pod_status_phase, filtered to phase=running
+  Latency     : kubelet_pod_start_duration_seconds_bucket, filtered to le=30
+                kubelet_pod_start_duration_seconds_count
 
-   --- SLI #2 : sli-aks-pod-start-latency (Latency, Window-Based) -----------
-   Category                   Latency
-   Evaluation type            Window-based
-   Source AMW                 $amwName  ($amwId)
-   Source AMW managed identity (UAMI client ID below)
-   Metric 1 (s1)              kubelet_pod_start_duration_seconds_bucket
-                              filter: le == 30
-                              temporal: Rate / 5 min      spatial: Sum
-   Metric 2 (s2)              kubelet_pod_start_duration_seconds_count
-                              temporal: Rate / 5 min      spatial: Sum
-   Signal formula             (100 * `$s1) / `$s2
-   Window uptime criteria     >= 95
-   Baseline                   95   / 7d   / RollingDays
-   Destination AMW            $amwName  (same UAMI)
-
-   --- Values to paste -----------------------------------------------------
-   UAMI client ID             $uamiClientId
-   UAMI resource ID           $uamiId
-   UAMI principal (object) ID $uamiPrincipalId
-   AMW resource ID            $amwId
-   AMW default DCR            $dcrId
-   AMW default DCE            $dceId
-
-   IMPORTANT — when adding multiple signal sources, keep their spatial
-   aggregation 'dimensions' identical (both empty, or both ['cluster'], etc).
-   Mis-aligned dimensions fail validation with [SignalSourceValidator].
-
-   To remove the UAMI + role assignments (after deleting the SLIs in portal):
-     ./scripts/teardown.ps1
+All four documented source metrics are currently flowing. See scenario 46 in
+docs/DEMO-SCENARIOS.md for the complete portal field values.
 
 "@ -ForegroundColor Green
-return

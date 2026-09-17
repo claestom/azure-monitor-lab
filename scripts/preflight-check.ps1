@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Pre-flight availability + quota check for the Azure Monitor Demo Lab.
+  Pre-flight availability + quota check for the Azure Monitor Lab.
 
 .DESCRIPTION
   Validates — BEFORE a 20-minute deployment starts — that everything the lab needs is

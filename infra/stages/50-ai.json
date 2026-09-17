@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.37.4.10188",
-      "templateHash": "14783295668597448106"
+      "templateHash": "6007242092202629282"
     }
   },
   "parameters": {
@@ -65,7 +65,7 @@
     "appInsightsName": "[format('appi-{0}', parameters('namePrefix'))]",
     "commonTags": {
       "owner": "[parameters('ownerTag')]",
-      "purpose": "azure-monitor-demo-lab",
+      "purpose": "azure-monitor-lab",
       "costCenter": "demo"
     }
   },
@@ -109,7 +109,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.37.4.10188",
-              "templateHash": "18231224087103930965"
+              "templateHash": "15274544325040974780"
             }
           },
           "parameters": {
@@ -275,7 +275,7 @@
                 "type": "SystemAssigned"
               },
               "properties": {
-                "displayName": "Azure Monitor Demo Lab — AI",
+                "displayName": "Azure Monitor Lab — AI",
                 "description": "GenAI workload generating token/trace/cost telemetry for the observability lab."
               },
               "dependsOn": [

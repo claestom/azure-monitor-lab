@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.37.4.10188",
-      "templateHash": "13318552291405330645"
+      "templateHash": "5204603951686844819"
     }
   },
   "parameters": {
@@ -99,7 +99,7 @@
     "sliUamiName": "[format('id-sli-{0}', parameters('namePrefix'))]",
     "commonTags": {
       "owner": "[parameters('ownerTag')]",
-      "purpose": "azure-monitor-demo-lab",
+      "purpose": "azure-monitor-lab",
       "costCenter": "demo"
     }
   },
