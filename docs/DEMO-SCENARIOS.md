@@ -651,16 +651,23 @@ Static thresholds break the moment your traffic pattern changes — CPU 70% is f
 
 ### What's deployed
 
-The lab includes a pre-deployed dynamic threshold alert:
+The main Bicep/ARM deployment includes this dynamic threshold alert. The staged Stage C template does not currently define it.
 
 | Resource | Value |
 |---|---|
 | Alert rule | `alert-vm-cpu-dynamic` |
 | Metric | `Percentage CPU` (multi-resource, both VMs) |
 | Criterion type | `DynamicThresholdCriterion` |
+| Operator | Greater than the learned upper threshold |
+| Aggregation | Average |
 | Sensitivity | Medium |
-| Failing periods | 3 of 4 evaluations |
+| Check every | 5 minutes |
+| Lookback period | 15 minutes |
+| Failing periods | 1 of 1 aggregated point (within 15 minutes) |
+| Ignore data before | Not set |
 | Severity | Sev3 (Informational) |
+
+A 10-minute CPU simulation can raise the 15-minute average above the learned upper threshold; the load does not need to last the full lookback period. This one-violation setting favors a short lab demonstration over filtering transient spikes. Dynamic thresholds still require at least three days and 30 metric samples, and a load run is not guaranteed to exceed the learned threshold.
 
 A **static** alert (`alert-vm-cpu-high`, threshold 80%) is deployed alongside it — perfect for a side-by-side comparison.
 
@@ -669,14 +676,16 @@ A **static** alert (`alert-vm-cpu-high`, threshold 80%) is deployed alongside it
 1. **Monitor → Alerts → Alert rules** → filter RG `rg-azure-monitor-lab`.
 2. Open **`alert-vm-cpu-dynamic`** → show the condition:
    - **Threshold type** = `Dynamic` (not Static).
+   - **Value is** = Greater than; **Aggregation** = Average.
    - **Sensitivity** = Medium.
-   - **Failing periods** = 3 of 4.
-3. Click **Preview** → the chart shows the metric line with **upper and lower ML bounds** shaded in blue. Show how the bounds *move* with the daily pattern (wider at night, tighter during peak hours).
+   - **Check every** = 5 minutes; **Lookback period** = 15 minutes.
+   - **Failing periods** = 1 of 1 aggregated point within 15 minutes.
+3. Click **Preview** and compare the CPU average with the learned upper threshold. Look for normal samples below that bound and the simulation spike above it; confirm actual fired alerts separately in **Monitor > Alerts**.
 4. Now open **`alert-vm-cpu-high`** (static, threshold 80%) side-by-side → show the rigid flat line vs the dynamic ML band.
 5. Point out:
    - **Sensitivity**: High / Medium / Low — controls how tight the band is.
-   - **Look-back period**: how much history the model uses (default: 4 evaluation periods).
-   - **Number of violations**: how many consecutive breaches before firing.
+   - **Lookback period**: the window used to average the metric at each check, not the model's historical learning period or a required duration of continuous load.
+   - **Number of violations**: how many aggregated points must breach the threshold within the configured period; this lab default requires one of one.
 
 ### Deeper story: when dynamic beats static
 

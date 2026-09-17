@@ -581,7 +581,7 @@ resource alertVmCpuDynamic 'Microsoft.Insights/metricAlerts@2018-03-01' = if (de
   location: 'global'
   tags: commonTags
   properties: {
-    description: 'Lab VM CPU anomaly detected by ML-learned dynamic thresholds (medium sensitivity)'
+    description: 'Lab VM CPU above its ML-learned baseline (medium sensitivity)'
     severity: 3
     enabled: true
     scopes: filter([
@@ -591,7 +591,7 @@ resource alertVmCpuDynamic 'Microsoft.Insights/metricAlerts@2018-03-01' = if (de
     targetResourceType: 'Microsoft.Compute/virtualMachines'
     targetResourceRegion: location
     evaluationFrequency: 'PT5M'
-    windowSize: 'PT10M'
+    windowSize: 'PT15M'
     criteria: {
       'odata.type': 'Microsoft.Azure.Monitor.MultipleResourceMultipleMetricCriteria'
       allOf: [
@@ -599,13 +599,13 @@ resource alertVmCpuDynamic 'Microsoft.Insights/metricAlerts@2018-03-01' = if (de
           name: 'CpuDynamic'
           metricNamespace: 'Microsoft.Compute/virtualMachines'
           metricName: 'Percentage CPU'
-          operator: 'GreaterOrLessThan'
+          operator: 'GreaterThan'
           timeAggregation: 'Average'
           criterionType: 'DynamicThresholdCriterion'
           alertSensitivity: 'Medium'
           failingPeriods: {
-            numberOfEvaluationPeriods: 4
-            minFailingPeriodsToAlert: 3
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
           }
         }
       ]
