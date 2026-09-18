@@ -29,8 +29,6 @@ Everything lands in a single resource group (`rg-azure-monitor-lab`), with telem
 
 The GenAI workload and Azure SRE Agent can also be deployed on the same telemetry backbone.
 
-The App Service Control Center starts approved lab operations in an independent **Azure Container Apps Job**, using a digest-pinned runner image from **Azure Container Registry (ACR)**.
-
 > 📦 For a full, resource-by-resource list of what gets created, see [REFERENCE.md → What gets deployed](docs/REFERENCE.md#what-gets-deployed).
 
 [![Azure Monitor Lab architecture including Container Apps Jobs and Azure Container Registry](docs/architecture-overview-sre.svg)](docs/architecture.drawio)
@@ -48,7 +46,7 @@ The App Service Control Center starts approved lab operations in an independent 
 
 ## Deploy
 
-> Recommended region: `northeurope` (the default), which has the widest feature availability. A few things pin themselves to a fixed region no matter what you pick: the Health Model preview and the optional GenAI / AI stage (Microsoft Foundry and its models) go to `swedencentral` (they aren't available in `northeurope`), and the App Service goes to `westeurope` (the sponsored lab subscriptions have no Basic App Service quota in `northeurope`). Everything else follows the region you choose.
+> Recommended region: `northeurope` (the default), which has the widest feature availability. A few things pin themselves to a fixed region no matter what you pick: the Health Model preview and the optional GenAI / AI stage (Microsoft Foundry and its models) go to `swedencentral` (they aren't available in `northeurope`), and the App Service goes to `westeurope` for quota reasons. Everything else follows the region you choose.
 
 ### Option 1: Deploy to Azure (portal, no local setup)
 
@@ -80,11 +78,7 @@ az account set --subscription $subscriptionId
 
 > **Next:** Follow the [post-deployment guide for the portal option](docs/POST-DEPLOYMENT.md#portal-deployment) to finish the scenarios and optional stages you enabled.
 
-> Use Option 2 for a scripted one-shot deployment, or Option 3 for the staged workshop and progressive deployment.
-
 ### Option 2: Scripted one-shot (Bicep / Terraform, full control)
-
-This repo ships no secrets. You fill in one central config file, and `sync-config.ps1` generates every derived input from it.
 
 ```powershell
 # 1. Clone the repo and enter it
@@ -132,8 +126,6 @@ Step-by-step guides:
 
 The [Lab Control Center](docs/LAB-CONTROL-CENTER.md) runs in the lab's existing **Web App**. Use it to control the lab from your browser, including starting, breaking, and restoring it.
 
-In **Lab Operations**, **Simulate High CPU** submits a self-expiring 10-minute CPU load to both running demo VMs after review and approval. You can also run [simulate-high-cpu.ps1](scripts/simulate-high-cpu.ps1) directly; see the [script commands](scripts/README.md#lab-lifecycle-and-demo-control) and [CPU prerequisites and limits](workloads/webapp/LAB-OPERATIONS.md#simulate-high-cpu). Existing labs need the normal [console upgrade](scripts/deploy-webapp.ps1) to receive the new button, runner image, and VM permissions.
-
 Retrieve its URL in PowerShell or Azure Cloud Shell (PowerShell):
 
 ```powershell
@@ -144,7 +136,7 @@ az webapp list --subscription $subscriptionId --resource-group $resourceGroup --
 
 ## Cost and lifecycle
 
-The default Stages A-E deployment with light Control Center use is roughly **EUR 7-12 / USD 8-13 per day** when left running 24/7. This adjusts the indicative list-price estimate in [REFERENCE.md](docs/REFERENCE.md#cost-notes-north-europe-list-pricing-may-2026) to allow for Basic ACR and light Container Apps job use. The USD range uses a planning rate of EUR 1 = USD 1.10 and is rounded to whole dollars.
+The default Stages A-E deployment with light Control Center use is roughly **EUR 7-12 / USD 8-13 per day** when left running 24/7. This adjusts the indicative list-price estimate in [REFERENCE.md](docs/REFERENCE.md#cost-notes-north-europe-list-pricing-may-2026) to allow for Basic ACR and light Container Apps job use.
 
 This range excludes optional Foundry model traffic and Azure SRE Agent charges, which depend on usage, allocation, and trial eligibility. Microsoft Fabric is not deployed by this repository and is not included. Actual costs also vary by region, retention, exchange rates, and current Azure pricing. Stop or deallocate compute between sessions, or run `./scripts/teardown.ps1 -Yes` when the lab is not needed.
 
