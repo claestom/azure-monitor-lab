@@ -286,8 +286,9 @@ azure-monitor-lab/
 │   │   ├─ 00-foundation.bicep      ← LAW · AppI · AMW · DCE · network · storage · EH · KV
 │   │   ├─ 10-workloads.bicep       ← VMs · VMSS · AKS · App Service · Grafana
 │   │   ├─ 20-alerting.bicep        ← Action Group · alerts · AMBA · processing rules
-│   │   ├─ 30-security-posture.bicep← Sentinel · security alerts · LAW RBAC
-│   │   ├─ 40-optional-advanced.bicep ← Connection Monitor · flow logs · data export · etc.
+│   │   ├─ 30-security-posture.bicep← Security alerts · LAW RBAC
+│   │   ├─ 40-optional-advanced.bicep ← Sentinel onboarding · data export · health model · etc.
+│   │   ├─ 41-sentinel-content.bicep ← Sentinel analytics rule after onboarding
 │   │   ├─ 50-ai.bicep              ← (optional) Foundry GenAI workload · token alerts · AI FinOps observability
 │   │   └─ 60-sre-agent.bicep       ← (optional) SRE Agent · connectors · identity and RBAC
 │   └─ modules/                     ← 45 reusable Bicep modules (including optional AI and SRE stages)

@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.37.4.10188",
-      "templateHash": "9523667371069375711"
+      "templateHash": "7078950593408240808"
     }
   },
   "parameters": {
@@ -14761,12 +14761,13 @@
         },
         "template": {
           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "languageVersion": "2.0",
           "contentVersion": "1.0.0.0",
           "metadata": {
             "_generator": {
               "name": "bicep",
               "version": "0.37.4.10188",
-              "templateHash": "601425594486634112"
+              "templateHash": "432815792027783898"
             }
           },
           "parameters": {
@@ -14796,95 +14797,209 @@
               }
             }
           },
-          "resources": [
-            {
-              "type": "Microsoft.OperationsManagement/solutions",
-              "apiVersion": "2015-11-01-preview",
-              "name": "[format('SecurityInsights({0})', parameters('workspaceName'))]",
-              "location": "[parameters('location')]",
-              "tags": "[parameters('tags')]",
+          "resources": {
+            "onboarding": {
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2022-09-01",
+              "name": "[format('onboarding-{0}', uniqueString('onboarding', deployment().name))]",
               "properties": {
-                "workspaceResourceId": "[parameters('workspaceId')]"
-              },
-              "plan": {
-                "name": "[format('SecurityInsights({0})', parameters('workspaceName'))]",
-                "product": "OMSGallery/SecurityInsights",
-                "publisher": "Microsoft",
-                "promotionCode": ""
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "workspaceName": {
+                    "value": "[parameters('workspaceName')]"
+                  },
+                  "workspaceId": {
+                    "value": "[parameters('workspaceId')]"
+                  },
+                  "location": {
+                    "value": "[parameters('location')]"
+                  },
+                  "tags": {
+                    "value": "[parameters('tags')]"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.37.4.10188",
+                      "templateHash": "13989588199989823254"
+                    }
+                  },
+                  "parameters": {
+                    "workspaceName": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Central LAW name."
+                      }
+                    },
+                    "workspaceId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Central LAW resource ID."
+                      }
+                    },
+                    "location": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Region."
+                      }
+                    },
+                    "tags": {
+                      "type": "object",
+                      "defaultValue": {},
+                      "metadata": {
+                        "description": "Resource tags."
+                      }
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.OperationsManagement/solutions",
+                      "apiVersion": "2015-11-01-preview",
+                      "name": "[format('SecurityInsights({0})', parameters('workspaceName'))]",
+                      "location": "[parameters('location')]",
+                      "tags": "[parameters('tags')]",
+                      "properties": {
+                        "workspaceResourceId": "[parameters('workspaceId')]"
+                      },
+                      "plan": {
+                        "name": "[format('SecurityInsights({0})', parameters('workspaceName'))]",
+                        "product": "OMSGallery/SecurityInsights",
+                        "publisher": "Microsoft",
+                        "promotionCode": ""
+                      }
+                    },
+                    {
+                      "type": "Microsoft.SecurityInsights/onboardingStates",
+                      "apiVersion": "2024-09-01",
+                      "scope": "[format('Microsoft.OperationalInsights/workspaces/{0}', parameters('workspaceName'))]",
+                      "name": "default",
+                      "properties": {},
+                      "dependsOn": [
+                        "[resourceId('Microsoft.OperationsManagement/solutions', format('SecurityInsights({0})', parameters('workspaceName')))]"
+                      ]
+                    }
+                  ],
+                  "outputs": {
+                    "sentinelOnboarded": {
+                      "type": "bool",
+                      "value": true
+                    }
+                  }
+                }
               }
             },
-            {
-              "type": "Microsoft.SecurityInsights/onboardingStates",
-              "apiVersion": "2024-09-01",
-              "scope": "[format('Microsoft.OperationalInsights/workspaces/{0}', parameters('workspaceName'))]",
-              "name": "default",
-              "properties": {},
-              "dependsOn": [
-                "[resourceId('Microsoft.OperationsManagement/solutions', format('SecurityInsights({0})', parameters('workspaceName')))]"
-              ]
-            },
-            {
-              "type": "Microsoft.SecurityInsights/alertRules",
-              "apiVersion": "2024-09-01",
-              "scope": "[format('Microsoft.OperationalInsights/workspaces/{0}', parameters('workspaceName'))]",
-              "name": "0a1b2c3d-amlab-rg-delete-alert",
-              "kind": "Scheduled",
+            "analyticsRule": {
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2022-09-01",
+              "name": "[format('analyticsRule-{0}', uniqueString('analyticsRule', deployment().name))]",
               "properties": {
-                "displayName": "amlab — Resource deletion in lab RG",
-                "description": "Demo Sentinel rule: any successful delete operation in the lab RG over the last 1h.",
-                "severity": "Medium",
-                "enabled": true,
-                "query": "AzureActivity\n| where TimeGenerated > ago(1h)\n| where ActivityStatusValue == \"Success\"\n| where OperationNameValue endswith \"/delete\"\n| project TimeGenerated, Caller, OperationNameValue, _ResourceId",
-                "queryFrequency": "PT15M",
-                "queryPeriod": "PT1H",
-                "triggerOperator": "GreaterThan",
-                "triggerThreshold": 0,
-                "suppressionDuration": "PT1H",
-                "suppressionEnabled": false,
-                "tactics": [
-                  "Impact"
-                ],
-                "techniques": [
-                  "T1485"
-                ],
-                "eventGroupingSettings": {
-                  "aggregationKind": "AlertPerResult"
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
                 },
-                "entityMappings": [
-                  {
-                    "entityType": "Account",
-                    "fieldMappings": [
-                      {
-                        "identifier": "FullName",
-                        "columnName": "Caller"
-                      }
-                    ]
-                  },
-                  {
-                    "entityType": "AzureResource",
-                    "fieldMappings": [
-                      {
-                        "identifier": "ResourceId",
-                        "columnName": "_ResourceId"
-                      }
-                    ]
+                "mode": "Incremental",
+                "parameters": {
+                  "workspaceName": {
+                    "value": "[parameters('workspaceName')]"
                   }
-                ],
-                "incidentConfiguration": {
-                  "createIncident": true,
-                  "groupingConfiguration": {
-                    "enabled": true,
-                    "reopenClosedIncident": false,
-                    "lookbackDuration": "PT5H",
-                    "matchingMethod": "AnyAlert"
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.37.4.10188",
+                      "templateHash": "17387801086550536407"
+                    }
+                  },
+                  "parameters": {
+                    "workspaceName": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Sentinel-enabled Log Analytics workspace name."
+                      }
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.SecurityInsights/alertRules",
+                      "apiVersion": "2024-09-01",
+                      "scope": "[format('Microsoft.OperationalInsights/workspaces/{0}', parameters('workspaceName'))]",
+                      "name": "0a1b2c3d-amlab-rg-delete-alert",
+                      "kind": "Scheduled",
+                      "properties": {
+                        "displayName": "amlab — Resource deletion in lab RG",
+                        "description": "Demo Sentinel rule: any successful delete operation in the lab RG over the last 1h.",
+                        "severity": "Medium",
+                        "enabled": true,
+                        "query": "AzureActivity\n| where TimeGenerated > ago(1h)\n| where ActivityStatusValue == \"Success\"\n| where OperationNameValue endswith \"/delete\"\n| project TimeGenerated, Caller, OperationNameValue, _ResourceId",
+                        "queryFrequency": "PT15M",
+                        "queryPeriod": "PT1H",
+                        "triggerOperator": "GreaterThan",
+                        "triggerThreshold": 0,
+                        "suppressionDuration": "PT1H",
+                        "suppressionEnabled": false,
+                        "tactics": [
+                          "Impact"
+                        ],
+                        "techniques": [
+                          "T1485"
+                        ],
+                        "eventGroupingSettings": {
+                          "aggregationKind": "AlertPerResult"
+                        },
+                        "entityMappings": [
+                          {
+                            "entityType": "Account",
+                            "fieldMappings": [
+                              {
+                                "identifier": "FullName",
+                                "columnName": "Caller"
+                              }
+                            ]
+                          },
+                          {
+                            "entityType": "AzureResource",
+                            "fieldMappings": [
+                              {
+                                "identifier": "ResourceId",
+                                "columnName": "_ResourceId"
+                              }
+                            ]
+                          }
+                        ],
+                        "incidentConfiguration": {
+                          "createIncident": true,
+                          "groupingConfiguration": {
+                            "enabled": true,
+                            "reopenClosedIncident": false,
+                            "lookbackDuration": "PT5H",
+                            "matchingMethod": "AnyAlert"
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "outputs": {
+                    "ruleName": {
+                      "type": "string",
+                      "value": "0a1b2c3d-amlab-rg-delete-alert"
+                    }
                   }
                 }
               },
               "dependsOn": [
-                "[extensionResourceId(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'Microsoft.SecurityInsights/onboardingStates', 'default')]"
+                "onboarding"
               ]
             }
-          ],
+          },
           "outputs": {
             "sentinelOnboarded": {
               "type": "bool",
@@ -14892,7 +15007,7 @@
             },
             "ruleName": {
               "type": "string",
-              "value": "0a1b2c3d-amlab-rg-delete-alert"
+              "value": "[reference('analyticsRule').outputs.ruleName.value]"
             }
           }
         }

@@ -79,6 +79,11 @@ run "stage_e_refreshes_optional_completion" {
     condition     = jsondecode(terraform_data.console_ready[0].triggers_replace.integrations).stage_e
     error_message = "Changing Stage E must refresh the selected optional completion work."
   }
+
+  assert {
+    condition     = length(azapi_resource.stage_sentinel_content) == 1
+    error_message = "Stage E with Sentinel enabled must deploy analytics content after onboarding."
+  }
 }
 
 run "optional_agents_refresh_console" {

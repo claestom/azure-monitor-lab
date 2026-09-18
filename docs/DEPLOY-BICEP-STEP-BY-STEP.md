@@ -113,7 +113,7 @@ function Assert-LabAccount {
 
 function Invoke-LabStage {
    param(
-      [ValidateSet('00-foundation', '10-workloads', '20-alerting', '30-security-posture', '40-optional-advanced', '50-ai', '60-sre-agent')]
+      [ValidateSet('00-foundation', '10-workloads', '20-alerting', '30-security-posture', '40-optional-advanced', '41-sentinel-content', '50-ai', '60-sre-agent')]
       [string] $Stage,
       [hashtable] $Overrides = @{}
    )
@@ -142,12 +142,8 @@ function Invoke-LabStage {
       $deploymentArguments = @('--subscription', $sub.ToString(), '--resource-group', $rg,
          '--name', "stage-$Stage", '--template-file', "infra/stages/$Stage.bicep",
          '--parameters', "@$($parameterFile.FullName)", '--mode', 'Incremental')
-      $whatIfArguments = @($deploymentArguments)
-      if ($Stage -eq '40-optional-advanced') {
-         $whatIfArguments += @('--validation-level', 'Template')
-      }
       Assert-LabAccount
-      az deployment group what-if @whatIfArguments
+      az deployment group what-if @deploymentArguments
       if ($LASTEXITCODE -ne 0) { throw "Preview failed for $Stage." }
       if ((Read-Host 'Deploy this stage? Type yes to continue') -ne 'yes') { throw 'Stage deployment cancelled.' }
       Assert-LabAccount
@@ -213,12 +209,13 @@ The security template reuses the Stage A LAW and Stage C action group. It does n
 
 ```powershell
 Invoke-LabStage -Stage '40-optional-advanced' -Overrides @{ enableAi = $false }
+Invoke-LabStage -Stage '41-sentinel-content'
 ./scripts/post-staged-deploy.ps1 -SubscriptionId $sub -ResourceGroup $rg -NamePrefix $prefix -EnableStageE $true
 ```
 
-Use `enableAi = $true` only when Stage AI already exists. Sentinel and the optional DCRs follow the supplied parameters or stage defaults; review the preview and billing implications. Completion configures the Service Group and verifies SLI prerequisites. Create the preview SLIs in the portal using the printed handoff.
+Use `enableAi = $true` only when Stage AI already exists. Sentinel onboarding and the optional DCRs follow the supplied parameters or stage defaults; review the preview and billing implications. Run `41-sentinel-content` only when Sentinel is enabled. Completion configures the Service Group and verifies SLI prerequisites. Create the preview SLIs in the portal using the printed handoff.
 
-Stage E uses template-level what-if validation because the Sentinel analytics-rule provider cannot validate the rule until the onboarding state in the same deployment exists. The preview still shows the template changes. The subsequent deployment performs normal provider validation and creates the onboarding state before the dependent rule.
+Sentinel uses two deployments because its analytics-rule provider cannot preview a rule until the workspace is already onboarded. Stage E first creates the onboarding state, then `41-sentinel-content` previews and creates the dependent demo rule with normal provider validation.
 
 ### Stage AI deploy (optional)
 

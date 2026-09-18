@@ -90,7 +90,7 @@ resource vmWindows 'Microsoft.Compute/virtualMachines@2024-03-01' existing = if 
   name: windowsVmName
 }
 
-module sentinel '../modules/sentinel.bicep' = if (enableSentinel) {
+module sentinel '../modules/sentinel-onboarding.bicep' = if (enableSentinel) {
   name: 'sentinel'
   params: {
     workspaceName: lawCentral.name

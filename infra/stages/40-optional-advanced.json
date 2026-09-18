@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.37.4.10188",
-      "templateHash": "7501517122598174710"
+      "templateHash": "749131489964647116"
     }
   },
   "parameters": {
@@ -128,7 +128,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.37.4.10188",
-              "templateHash": "601425594486634112"
+              "templateHash": "13989588199989823254"
             }
           },
           "parameters": {
@@ -184,77 +184,12 @@
               "dependsOn": [
                 "[resourceId('Microsoft.OperationsManagement/solutions', format('SecurityInsights({0})', parameters('workspaceName')))]"
               ]
-            },
-            {
-              "type": "Microsoft.SecurityInsights/alertRules",
-              "apiVersion": "2024-09-01",
-              "scope": "[format('Microsoft.OperationalInsights/workspaces/{0}', parameters('workspaceName'))]",
-              "name": "0a1b2c3d-amlab-rg-delete-alert",
-              "kind": "Scheduled",
-              "properties": {
-                "displayName": "amlab — Resource deletion in lab RG",
-                "description": "Demo Sentinel rule: any successful delete operation in the lab RG over the last 1h.",
-                "severity": "Medium",
-                "enabled": true,
-                "query": "AzureActivity\n| where TimeGenerated > ago(1h)\n| where ActivityStatusValue == \"Success\"\n| where OperationNameValue endswith \"/delete\"\n| project TimeGenerated, Caller, OperationNameValue, _ResourceId",
-                "queryFrequency": "PT15M",
-                "queryPeriod": "PT1H",
-                "triggerOperator": "GreaterThan",
-                "triggerThreshold": 0,
-                "suppressionDuration": "PT1H",
-                "suppressionEnabled": false,
-                "tactics": [
-                  "Impact"
-                ],
-                "techniques": [
-                  "T1485"
-                ],
-                "eventGroupingSettings": {
-                  "aggregationKind": "AlertPerResult"
-                },
-                "entityMappings": [
-                  {
-                    "entityType": "Account",
-                    "fieldMappings": [
-                      {
-                        "identifier": "FullName",
-                        "columnName": "Caller"
-                      }
-                    ]
-                  },
-                  {
-                    "entityType": "AzureResource",
-                    "fieldMappings": [
-                      {
-                        "identifier": "ResourceId",
-                        "columnName": "_ResourceId"
-                      }
-                    ]
-                  }
-                ],
-                "incidentConfiguration": {
-                  "createIncident": true,
-                  "groupingConfiguration": {
-                    "enabled": true,
-                    "reopenClosedIncident": false,
-                    "lookbackDuration": "PT5H",
-                    "matchingMethod": "AnyAlert"
-                  }
-                }
-              },
-              "dependsOn": [
-                "[extensionResourceId(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'Microsoft.SecurityInsights/onboardingStates', 'default')]"
-              ]
             }
           ],
           "outputs": {
             "sentinelOnboarded": {
               "type": "bool",
               "value": true
-            },
-            "ruleName": {
-              "type": "string",
-              "value": "0a1b2c3d-amlab-rg-delete-alert"
             }
           }
         }

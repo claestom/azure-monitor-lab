@@ -26,6 +26,12 @@ $tenant = [guid]::NewGuid()
 $rg = 'test-rg'
 $sourceParameters = (Get-Content -LiteralPath (Join-Path $source 'infra/main.parameters.json.template') -Raw | ConvertFrom-Json -AsHashtable).parameters
 $sourceParameters.vmAdminPassword = @{ reference = @{ keyVault = @{ id = "/subscriptions/$sub/resourceGroups/test-rg/providers/Microsoft.KeyVault/vaults/test-vault" }; secretName = 'vm-password' } }
+$stageE = Get-Content -LiteralPath (Join-Path $source 'infra/stages/40-optional-advanced.json') -Raw
+$sentinelContent = Get-Content -LiteralPath (Join-Path $source 'infra/stages/41-sentinel-content.json') -Raw
+if ($stageE -match 'Microsoft.SecurityInsights/alertRules' -or $stageE -notmatch 'Microsoft.SecurityInsights/onboardingStates' -or
+    $sentinelContent -notmatch 'Microsoft.SecurityInsights/alertRules' -or $sentinelContent -match 'Microsoft.SecurityInsights/onboardingStates') {
+  throw 'Staged Sentinel onboarding and analytics content must remain separate deployments.'
+}
 $fixture = @{
   Stage = ''; Overrides = @{}; Events = [Collections.Generic.List[string]]::new()
   Files = [Collections.Generic.List[string]]::new(); Confirm = 'yes'; Failure = ''; AccountChecks = 0
@@ -51,11 +57,6 @@ function az {
         '--name' = "stage-$($fixture.Stage)"; '--template-file' = "infra/stages/$($fixture.Stage).bicep"
       }.GetEnumerator()) {
         if ($args[[Array]::IndexOf($args, $expected.Key) + 1] -ne $expected.Value) { throw "Stage command lost $($expected.Key)." }
-      }
-      $expectedValidationLevel = $operation -eq 'what-if' -and $fixture.Stage -eq '40-optional-advanced'
-      if (($args -contains '--validation-level') -ne $expectedValidationLevel -or
-          ($expectedValidationLevel -and $args[[Array]::IndexOf($args, '--validation-level') + 1] -ne 'Template')) {
-        throw 'Only the Stage E preview may use template-level validation for the Sentinel onboarding race.'
       }
       $parameterArgument = $args[[Array]::IndexOf($args, '--parameters') + 1]
       if (-not $parameterArgument.StartsWith('@') -or $args -match 'vmAdminPassword=') { throw 'Secure parameters must be passed through a file.' }
@@ -85,7 +86,7 @@ function az {
 
 Push-Location $source
 try {
-  foreach ($stage in @('00-foundation', '10-workloads', '20-alerting', '30-security-posture', '40-optional-advanced', '50-ai', '60-sre-agent')) {
+  foreach ($stage in @('00-foundation', '10-workloads', '20-alerting', '30-security-posture', '40-optional-advanced', '41-sentinel-content', '50-ai', '60-sre-agent')) {
     if ($guide -notmatch "Invoke-LabStage -Stage '$stage'") { throw "The guide is missing the $stage deployment." }
     $fixture.Stage = $stage
     $fixture.Events.Clear()
@@ -126,7 +127,7 @@ try {
     if ($stage -eq 'SRE Agent' -and $section.IndexOf('./scripts/setup-sre-agent.ps1') -gt $section.IndexOf('./scripts/deploy-webapp.ps1')) { throw 'SRE validation must precede console publication.' }
   }
   if ($guide -match '--template-file infra/main.bicep') { throw 'A staged guide must not deploy the full-lab template.' }
-  Write-Output 'PASS: all seven Bicep guide stages use valid projected parameters, preserve secure references, and enforce preview/account/cleanup guards. No Azure calls.'
+  Write-Output 'PASS: all eight Bicep guide stages use valid projected parameters, preserve secure references, and enforce preview/account/cleanup guards. No Azure calls.'
   Write-Output 'PASS: late AI/SRE instructions refresh existing consoles and preserve standalone A-only scenarios.'
 } finally {
   Pop-Location

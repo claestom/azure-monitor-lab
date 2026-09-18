@@ -148,6 +148,25 @@ resource "azapi_resource" "stage_e" {
   }
 }
 
+resource "azapi_resource" "stage_sentinel_content" {
+  count     = var.enable_stage_e && var.enable_sentinel ? 1 : 0
+  type      = "Microsoft.Resources/deployments@2022-09-01"
+  name      = "stage-e-sentinel-content"
+  parent_id = data.azurerm_resource_group.lab.id
+
+  depends_on = [azapi_resource.stage_e]
+
+  body = {
+    properties = {
+      mode     = "Incremental"
+      template = sensitive(jsondecode(file("${path.module}/../infra/stages/41-sentinel-content.json")))
+      parameters = {
+        namePrefix = { value = var.name_prefix }
+      }
+    }
+  }
+}
+
 # Optional AI stage: Microsoft Foundry workload (account, project, chat/embed/optimize/
 # model-router deployments) + App Insights connection + token metric alerts. Pinned to
 # swedencentral (var.ai_location). References Stage A's App Insights ('appi-<prefix>'),

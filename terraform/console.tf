@@ -59,7 +59,7 @@ resource "terraform_data" "console_ready" {
     operators      = jsonencode(var.console_operator_object_ids)
   }
 
-  depends_on = [azapi_resource.stage_b, azapi_resource.stage_c, azapi_resource.stage_d, azapi_resource.stage_e, azapi_resource.stage_ai, azapi_resource.stage_sre_agent]
+  depends_on = [azapi_resource.stage_b, azapi_resource.stage_c, azapi_resource.stage_d, azapi_resource.stage_e, azapi_resource.stage_sentinel_content, azapi_resource.stage_ai, azapi_resource.stage_sre_agent]
 
   lifecycle {
     replace_triggered_by = [azapi_resource.stage_b]

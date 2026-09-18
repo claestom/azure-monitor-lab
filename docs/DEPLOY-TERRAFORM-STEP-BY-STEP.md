@@ -94,7 +94,7 @@ This repo ships a working staged Terraform scaffold at `terraform/` and pre-comp
 | `enable_stage_b` | `infra/stages/10-workloads.json` |
 | `enable_stage_c` | `infra/stages/20-alerting.json` |
 | `enable_stage_d` | `infra/stages/30-security-posture.json` |
-| `enable_stage_e` | `infra/stages/40-optional-advanced.json` |
+| `enable_stage_e` | `infra/stages/40-optional-advanced.json` and, when Sentinel is enabled, `infra/stages/41-sentinel-content.json` |
 | `enable_stage_ai` | `infra/stages/50-ai.json` |
 | `enable_stage_sre_agent` | `infra/stages/60-sre-agent.json` |
 
@@ -118,6 +118,7 @@ az bicep build --file infra/stages/10-workloads.bicep         --outfile infra/st
 az bicep build --file infra/stages/20-alerting.bicep          --outfile infra/stages/20-alerting.json
 az bicep build --file infra/stages/30-security-posture.bicep  --outfile infra/stages/30-security-posture.json
 az bicep build --file infra/stages/40-optional-advanced.bicep --outfile infra/stages/40-optional-advanced.json
+az bicep build --file infra/stages/41-sentinel-content.bicep    --outfile infra/stages/41-sentinel-content.json
 az bicep build --file infra/stages/50-ai.bicep               --outfile infra/stages/50-ai.json
 az bicep build --file infra/stages/60-sre-agent.bicep        --outfile infra/stages/60-sre-agent.json
 ```
