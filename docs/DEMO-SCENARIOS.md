@@ -12,7 +12,7 @@ Pick a workload (or theme) and run only those scenarios. Each row links to the n
 
 | Workload / theme | Scenarios |
 |---|---|
-| **Cross-stack — single pane of glass** | <ul><li>[1](#s1) Traffic-Lights workbook</li></ul> |
+| **Cross-stack — single pane of glass** | <ul><li>[1](#s1) Traffic-Lights workbook</li><li>[60](#s60) Lab Control Center</li></ul> |
 | **Workload health (Service Groups + Health Models, preview)** | <ul><li>[45](#s45) Service Group + Health Model</li><li>[46](#s46) SLIs / SLOs</li></ul> |
 | **App Service (.NET web app — `app-amlab-*`)** | <ul><li>[3](#s3) Code-less App Insights</li><li>[22](#s22) Availability Tests</li><li>[13](#s13) Smart Detection</li><li>[18](#s18) Code Optimizations</li><li>[25](#s25) Change Analysis</li><li>[28](#s28) Custom TrackMetric</li><li>[29](#s29) Profiler + Snapshot</li><li>[33](#s33) Release annotations</li></ul> |
 | **AKS (`aks-amlab`)** | <ul><li>[4](#s4) Container Insights + Prom + Grafana</li><li>[14](#s14) OTel tracing AKS→App Service</li><li>[30](#s30) Node.js OTel</li><li>[31](#s31) Prom rule group</li><li>[32](#s32) Grafana alert rule</li></ul> |
@@ -2733,6 +2733,30 @@ An incident commander should not need to interrogate the agent before the first 
 
 ---
 
+<a id="s60"></a>
+## 60 · Lab Control Center - cross-stack operations
+
+**Audience:** operations teams, SREs, demo facilitators, and service owners.
+**Time:** 5-8 min.
+
+### Story
+The Lab Control Center brings health, traffic generation, approved lab operations, and optional agent experiences into the deployed web app. It gives operators one place to create a signal, inspect its cross-stack effect, and continue into the detailed Azure Monitor view without replacing the Azure portal.
+
+### Click-path
+1. In the lab resource group, open the App Service and select **Browse**. Confirm the resource group and App Service in the environment strip.
+2. Open **Traffic & Faults**. Send a slow request, a dependency request, and an intentional error. Show the response time, status, and trace ID for each result.
+3. Sign in with an approved operator account, open **Infra Health**, and refresh the snapshot. Point out that Azure platform availability and telemetry health are reported separately.
+4. Open **Lab Operations** and select **Add Release Marker**. Review the script, image digest, parameters, and target resource group before approving it.
+5. Track the Container Apps Job to completion, then use the related scenario links to open Application Insights, the Traffic-Lights workbook, or another detailed monitoring workflow.
+6. If the optional stages are deployed, briefly show the **Foundry Playground** and **SRE MCP Assistant** tabs without running billable prompts.
+
+### Killer line
+> *"One interface creates the signal, checks the estate, and launches a controlled operation, while Azure Monitor remains the evidence and investigation layer."*
+
+**Reference:** [Lab Control Center](LAB-CONTROL-CENTER.md)
+
+---
+
 ## Updated demo flow (≈50 min)
 
 | Min | Scenario |
@@ -2773,7 +2797,7 @@ An incident commander should not need to interrogate the agent before the first 
 | **FinOps** | 9 → 11 → 20 → 21 → 39 → 42 → 51 → 52 |
 | **SecOps** | 27 → 47 → 48 → 49 → 44 |
 | **AI/ML curious** | 16 → 13 → 17 → 18 → 19 → 53 |
-| **Workload owners / SRE leads** | 1 → 45 → 12 → 7 → 8 (Root entity flips Unhealthy) |
+| **Workload owners / SRE leads** | 60 → 1 → 45 → 12 → 7 → 8 (Root entity flips Unhealthy) |
 | **SRE Agent evaluation** | 54 → 55 → 56 → 57 → 58 → 59 |
 
 ## Reset between demos

@@ -2,7 +2,7 @@
 
 > 👈 **New here? Start with the [README](../README.md).** This is the deep-dive reference: full capability matrix, every deployed resource, the demo walkthrough, cost breakdown, folder layout, operational helpers, and troubleshooting.
 
-A self-contained, reproducible demo of the **Azure Monitor + Microsoft Sentinel** stack. The lab primarily uses one resource group, plus the AKS-managed resource group and optional tenant-scoped artifacts. It provides two IaC paths (Bicep or Terraform), two delivery modes (**one-shot** for internal demos or a **5-stage workshop** for customer-facing progressive enablement), and 60 numbered demo scenarios (`0` through `59`), all driven from one central config file.
+A self-contained, reproducible demo of the **Azure Monitor + Microsoft Sentinel** stack. The lab primarily uses one resource group, plus the AKS-managed resource group and optional tenant-scoped artifacts. It provides two IaC paths (Bicep or Terraform), two delivery modes (**one-shot** for internal demos or a **5-stage workshop** for customer-facing progressive enablement), and 61 numbered demo scenarios (`0` through `60`), all driven from one central config file.
 
 ## Capabilities
 
@@ -196,7 +196,7 @@ Walk-through docs:
 
 ## Demo flow
 
-The lab supports **60 numbered demo scenarios** (`0` through `59`), each with a story, a click-path, and a "killer line". See [`DEMO-SCENARIOS.md`](DEMO-SCENARIOS.md) for the full catalogue, including audience-pivoted shortlists (App Service, AKS, Cost, Security, and Workload health).
+The lab supports **61 numbered demo scenarios** (`0` through `60`), each with a story, a click-path, and a "killer line". See [`DEMO-SCENARIOS.md`](DEMO-SCENARIOS.md) for the full catalogue, including audience-pivoted shortlists (App Service, AKS, Cost, Security, and Workload health).
 
 **Suggested 25-minute "first taste" walkthrough** (covers the cross-stack story):
 
@@ -338,7 +338,7 @@ azure-monitor-lab/
 
 ## Ideas to extend beyond current scope
 
-The lab covers 60 numbered scenarios (`0` through `59`) out of the box; here are well-scoped follow-ups for deeper sessions:
+The lab covers 61 numbered scenarios (`0` through `60`) out of the box; here are well-scoped follow-ups for deeper sessions:
 
 - **Multi-region DR drill** — pair the central LAW with a paired region (the `enableLawReplication` parameter wires this up) and walk alert + workbook continuity during a regional outage.
 - **Cross-subscription workbook rollup** — clone the Traffic Lights workbook into a management-group-scoped variant.
