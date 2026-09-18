@@ -120,6 +120,15 @@ Step-by-step guides:
 - [Bicep staged deployment](docs/DEPLOY-BICEP-STEP-BY-STEP.md)
 - [Terraform staged deployment](docs/DEPLOY-TERRAFORM-STEP-BY-STEP.md)
 
+When Sentinel is enabled in a manual staged Bicep deployment, deploy it in two steps after loading the `Invoke-LabStage` helper from the Bicep guide. The first stage onboards the central workspace; the second adds the demo analytics rule only after onboarding succeeds:
+
+```powershell
+Invoke-LabStage -Stage '40-optional-advanced' -Overrides @{ enableAi = $false }
+Invoke-LabStage -Stage '41-sentinel-content'
+```
+
+Skip `41-sentinel-content` when Sentinel is disabled. Terraform runs this sequence automatically when both `enable_stage_e` and `enable_sentinel` are true. The scripted one-shot and Deploy to Azure button also handle the dependency automatically.
+
 > **Next:** Follow the [post-deployment guide for the staged option](docs/POST-DEPLOYMENT.md#staged-deployment) after completing the stages you selected.
 
 ### Lab Control Center

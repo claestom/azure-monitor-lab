@@ -2,6 +2,14 @@ $ErrorActionPreference = 'Stop'
 $previousExitCode = $global:LASTEXITCODE
 $source = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $guide = Get-Content -LiteralPath (Join-Path $source 'docs/DEPLOY-BICEP-STEP-BY-STEP.md') -Raw
+$readme = Get-Content -LiteralPath (Join-Path $source 'README.md') -Raw
+$readmeStageE = $readme.IndexOf("Invoke-LabStage -Stage '40-optional-advanced'")
+$readmeSentinelContent = $readme.IndexOf("Invoke-LabStage -Stage '41-sentinel-content'")
+if ($readmeStageE -lt 0 -or $readmeSentinelContent -le $readmeStageE -or
+    $readme -notmatch 'Skip `41-sentinel-content` when Sentinel is disabled' -or
+    $readme -notmatch 'Terraform runs this sequence automatically') {
+  throw 'The root README must document the ordered staged Sentinel deployment and automatic Terraform path.'
+}
 $blocks = [regex]::Matches($guide, '(?ms)^```powershell\r?\n(.*?)^```')
 $definitions = @()
 foreach ($relativePath in @('docs/DEPLOY-TERRAFORM-STEP-BY-STEP.md', 'docs/POST-DEPLOYMENT.md', 'docs/STAGE-AI.md', 'scripts/README.md')) {
