@@ -102,61 +102,13 @@ $sourceParameters = (Get-Content ./infra/main.parameters.json -Raw | ConvertFrom
 $prefix = $sourceParameters.namePrefix.value
 $location = $sourceParameters.location.value
 
-function Assert-LabAccount {
-   az account set --subscription $sub
-   if ($LASTEXITCODE -ne 0) { throw 'Could not select the lab subscription.' }
-   $account = az account show --query '{id:id,tenantId:tenantId}' -o json | ConvertFrom-Json
-   if ($LASTEXITCODE -ne 0 -or $account.id -ne $sub.ToString() -or $account.tenantId -ne $tenant.ToString()) {
-      throw 'Subscription or tenant mismatch. Stop before deploying.'
-   }
-}
-
-function Invoke-LabStage {
-   param(
-      [ValidateSet('00-foundation', '10-workloads', '20-alerting', '30-security-posture', '40-optional-advanced', '41-sentinel-content', '50-ai', '60-sre-agent')]
-      [string] $Stage,
-      [hashtable] $Overrides = @{}
-   )
-   $schema = Get-Content "./infra/stages/$Stage.json" -Raw | ConvertFrom-Json -AsHashtable
-   $parameters = @{}
-   foreach ($name in $schema.parameters.Keys) {
-      if ($sourceParameters.ContainsKey($name)) { $parameters[$name] = $sourceParameters[$name] }
-   }
-   foreach ($name in $Overrides.Keys) {
-      if (-not $schema.parameters.ContainsKey($name)) { throw "Unknown parameter '$name' for $Stage." }
-      if ($schema.parameters[$name].type -like 'secure*') { throw 'Supply secure inputs through the private parameters file, not Overrides.' }
-      $parameters[$name] = @{ value = $Overrides[$name] }
-   }
-   foreach ($name in $schema.parameters.Keys) {
-      if (-not $parameters.ContainsKey($name) -and -not $schema.parameters[$name].ContainsKey('defaultValue')) {
-         throw "Missing required parameter '$name' for $Stage."
-      }
-   }
-   $parameterFile = New-TemporaryFile
-   try {
-      if (-not $IsWindows) {
-         [IO.File]::SetUnixFileMode($parameterFile.FullName, [IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite)
-      }
-      @{ '$schema' = 'https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#'; contentVersion = '1.0.0.0'; parameters = $parameters } |
-         ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $parameterFile.FullName
-      $deploymentArguments = @('--subscription', $sub.ToString(), '--resource-group', $rg,
-         '--name', "stage-$Stage", '--template-file', "infra/stages/$Stage.bicep",
-         '--parameters', "@$($parameterFile.FullName)", '--mode', 'Incremental')
-      Assert-LabAccount
-      az deployment group what-if @deploymentArguments
-      if ($LASTEXITCODE -ne 0) { throw "Preview failed for $Stage." }
-      if ((Read-Host 'Deploy this stage? Type yes to continue') -ne 'yes') { throw 'Stage deployment cancelled.' }
-      Assert-LabAccount
-      az deployment group create @deploymentArguments --output none
-      if ($LASTEXITCODE -ne 0) { throw "Deployment failed for $Stage." }
-   } finally {
-      Remove-Item -LiteralPath $parameterFile.FullName -Force
-   }
-}
+. ./scripts/staged-deploy-helpers.ps1
 
 Assert-LabAccount
 az group create --subscription $sub --name $rg --location $location --output none
 ```
+
+The leading dot loads [the stage helpers](../scripts/staged-deploy-helpers.ps1) into the current session. After updating the repository, rerun `. ./scripts/staged-deploy-helpers.ps1` to replace an older `Invoke-LabStage` definition. Loading this file makes no Azure calls and preserves your current inputs; it does not rerun any stage.
 
 The helper reads each shipped compiled template's parameter schema, copies only matching inputs from the generated main parameters, and preserves secure values or ARM Key Vault references. It passes a temporary parameters-file path to Azure CLI, never the VM password itself, restricts that file to its owner on Linux, and removes it in `finally`. On Windows, use your private user temp directory. Keep the config and generated files private; do not commit them or paste secrets into `-Overrides`.
 
@@ -208,10 +160,13 @@ The security template reuses the Stage A LAW and Stage C action group. It does n
 ### Stage E deploy
 
 ```powershell
+. ./scripts/staged-deploy-helpers.ps1
 Invoke-LabStage -Stage '40-optional-advanced' -Overrides @{ enableAi = $false }
 Invoke-LabStage -Stage '41-sentinel-content'
 ./scripts/post-staged-deploy.ps1 -SubscriptionId $sub -ResourceGroup $rg -NamePrefix $prefix -EnableStageE $true
 ```
+
+The first line refreshes the helper so an older session accepts `41-sentinel-content`. If Stage 40 already succeeded with Sentinel enabled, load the helper and resume at Stage 41, then run the completion script. Stages A through D do not need to be rerun.
 
 Use `enableAi = $true` only when Stage AI already exists. Sentinel onboarding and the optional DCRs follow the supplied parameters or stage defaults; review the preview and billing implications. Run `41-sentinel-content` only when Sentinel is enabled. Completion configures the Service Group and verifies SLI prerequisites. Create the preview SLIs in the portal using the printed handoff.
 

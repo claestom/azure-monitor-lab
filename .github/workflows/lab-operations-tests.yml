@@ -13,6 +13,7 @@ on:
       - 'scripts/post-deploy.ps1'
       - 'scripts/post-staged-deploy.ps1'
       - 'scripts/post-cloud-shell-deploy.ps1'
+      - 'scripts/staged-deploy-helpers.ps1'
       - 'scripts/wait-webapp-publication.ps1'
       - 'scripts/setup-webapp-agent-access.ps1'
       - 'scripts/tests/console-bootstrap.Tests.ps1'

@@ -11,8 +11,11 @@ if ($readmeStageE -lt 0 -or $readmeSentinelContent -le $readmeStageE -or
   throw 'The root README must document the ordered staged Sentinel deployment and automatic Terraform path.'
 }
 $blocks = [regex]::Matches($guide, '(?ms)^```powershell\r?\n(.*?)^```')
-$definitions = @()
-foreach ($relativePath in @('docs/DEPLOY-TERRAFORM-STEP-BY-STEP.md', 'docs/POST-DEPLOYMENT.md', 'docs/STAGE-AI.md', 'scripts/README.md')) {
+$helperImport = '. ./scripts/staged-deploy-helpers.ps1'
+if (-not $guide.Contains($helperImport) -or -not $readme.Contains($helperImport)) {
+  throw 'The Bicep guide and root README must load the versioned stage helpers.'
+}
+foreach ($relativePath in @('README.md', 'docs/DEPLOY-TERRAFORM-STEP-BY-STEP.md', 'docs/POST-DEPLOYMENT.md', 'docs/STAGE-AI.md', 'scripts/README.md')) {
   $text = Get-Content -LiteralPath (Join-Path $source $relativePath) -Raw
   foreach ($example in [regex]::Matches($text, '(?ms)^```powershell\r?\n(.*?)^```')) {
     $errors = $null
@@ -24,10 +27,10 @@ foreach ($block in $blocks) {
   $parseErrors = $null
   $ast = [Management.Automation.Language.Parser]::ParseInput($block.Groups[1].Value, [ref]$null, [ref]$parseErrors)
   if ($parseErrors.Count) { throw "Invalid PowerShell in the Bicep guide: $($parseErrors.Message -join '; ')" }
-  $definitions += $ast.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] }, $false)
+  if ($ast.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] }, $false).Count) {
+    throw 'Load the versioned helper instead of embedding functions in the guide.'
+  }
 }
-if (($definitions.Name | Sort-Object) -join ',' -ne 'Assert-LabAccount,Invoke-LabStage') { throw 'The stage guide must expose its account guard and stage helper.' }
-. ([scriptblock]::Create(($definitions.Extent.Text -join "`n")))
 
 $sub = [guid]::NewGuid()
 $tenant = [guid]::NewGuid()
@@ -94,6 +97,25 @@ function az {
 
 Push-Location $source
 try {
+  function Assert-LabAccount { throw 'The stale account guard was not replaced.' }
+  function Invoke-LabStage {
+    param(
+      [ValidateSet('00-foundation', '10-workloads', '20-alerting', '30-security-posture', '40-optional-advanced', '50-ai', '60-sre-agent')]
+      [string] $Stage
+    )
+    throw 'The stale stage helper was not replaced.'
+  }
+  $originalInputs = @($sub, $tenant, $rg, $sourceParameters) | ConvertTo-Json -Depth 30 -Compress
+  . ([scriptblock]::Create($helperImport))
+  if ($fixture.AccountChecks -ne 0 -or $fixture.Events.Count -ne 0 -or
+      (@($sub, $tenant, $rg, $sourceParameters) | ConvertTo-Json -Depth 30 -Compress) -cne $originalInputs) {
+    throw 'Reloading stage helpers must not make Azure calls or change existing deployment inputs.'
+  }
+  $allowedStages = (Get-Command Invoke-LabStage).Parameters['Stage'].Attributes |
+    Where-Object { $_ -is [Management.Automation.ValidateSetAttribute] } |
+    ForEach-Object { $_.ValidValues }
+  if ($allowedStages -notcontains '41-sentinel-content') { throw 'Reloading must replace the stale Stage ValidateSet.' }
+  Write-Output 'PASS: dot-sourcing replaces stale stage helpers, accepts Stage 41, and preserves inputs without Azure calls.'
   foreach ($stage in @('00-foundation', '10-workloads', '20-alerting', '30-security-posture', '40-optional-advanced', '41-sentinel-content', '50-ai', '60-sre-agent')) {
     if ($guide -notmatch "Invoke-LabStage -Stage '$stage'") { throw "The guide is missing the $stage deployment." }
     $fixture.Stage = $stage
