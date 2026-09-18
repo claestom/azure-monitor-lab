@@ -40,6 +40,16 @@ if ('' -notmatch $field[0].constraints.regex -or [guid]::NewGuid().ToString() -n
 $terraform = Get-Content -LiteralPath (Join-Path $RepoRoot 'terraform/main.tf') -Raw
 if ($terraform -notmatch 'grafanaAdminObjectId\s*=\s*\{\s*value\s*=\s*var\.grafana_admin_object_id\s*\}' -or $terraform -notmatch 'infra/stages/10-workloads\.json') { throw 'Terraform Stage B must forward the operator ID to the tested shared ARM template.' }
 $readme = Get-Content -LiteralPath (Join-Path $RepoRoot 'README.md') -Raw
-if ([regex]::Matches($readme, '%2Fmaster%2Finfra%2F').Count -ne 2 -or $readme -match '%2Fdev%2F|git (?:clone --branch|switch) dev|git pull --ff-only origin dev') { throw 'Published deployment links must select master after merge.' }
-if ([regex]::Matches($readme, 'git clone --branch master').Count -ne 2) { throw 'Both documented clone paths must select master.' }
-Write-Host 'PASS: portal/terraform operator wiring and master deployment links.'
+$currentBranch = if ($env:GITHUB_BASE_REF) {
+  $env:GITHUB_BASE_REF
+} elseif ($env:GITHUB_REF_NAME) {
+  $env:GITHUB_REF_NAME
+} else {
+  (& git -C $RepoRoot branch --show-current).Trim()
+}
+$deploymentBranch = if ($currentBranch -eq 'integration') { 'integration' } else { 'master' }
+if ([regex]::Matches($readme, "%2F$deploymentBranch%2Finfra%2F").Count -ne 2 -or $readme -match '%2Fdev%2F|git (?:clone --branch|switch) dev|git pull --ff-only origin dev') { throw "Published deployment links must select $deploymentBranch on $currentBranch." }
+$cloneBranches = @([regex]::Matches($readme, 'git clone --branch (?<branch>\S+) https://github\.com/claestom/azure-monitor-lab\.git') | ForEach-Object { $_.Groups['branch'].Value })
+$expectedDeploymentClones = if ($deploymentBranch -eq 'master') { 2 } else { 1 }
+if ($cloneBranches.Count -ne 2 -or @($cloneBranches | Where-Object { $_ -eq $deploymentBranch }).Count -ne $expectedDeploymentClones -or @($cloneBranches | Where-Object { $_ -notin @('master', $deploymentBranch) }).Count -ne 0) { throw "Documented clone paths must use $deploymentBranch for portal completion and master for the stable scripted option." }
+Write-Host "PASS: portal/terraform operator wiring and $deploymentBranch deployment links."
