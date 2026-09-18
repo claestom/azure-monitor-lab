@@ -89,7 +89,7 @@ try {
   $fixture.State = 'running'
   $fixture.Endpoint = 'https://aiamlabtest.services.ai.azure.com/api/projects/amlab-ai-proj'
   @{ expectedSubscriptionId = [guid]::NewGuid(); expectedTenantId = [guid]::NewGuid() } | ConvertTo-Json | Set-Content (Join-Path $root '.azure-target.json')
-  foreach ($mode in @(@{}, @{ Conversations = 7 }, @{ SkipTraffic = $true })) {
+  foreach ($mode in @(@{}, @{ Conversations = 7 }, @{ SkipTraffic = $true }, @{ NamePrefix = '' })) {
     $fixture.Conversations = if ($mode.Conversations) { $mode.Conversations } else { 150 }
     $fixture.Events.Clear()
     & (Join-Path $scriptDirectory 'setup-ai-cloud-shell.ps1') -SubscriptionId $fixture.Subscription -ResourceGroup test-rg @mode | Out-Null

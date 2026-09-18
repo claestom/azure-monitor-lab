@@ -25,6 +25,8 @@ $PSNativeCommandUseErrorActionPreference = $true
 function Write-Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
 function Write-Info($msg) { Write-Host "    $msg" -ForegroundColor DarkGray }
 
+if ([string]::IsNullOrWhiteSpace($NamePrefix)) { $NamePrefix = 'amlab' }
+
 Write-Step "Pinning the Azure subscription"
 az account set --subscription $SubscriptionId | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'The AI setup subscription could not be selected.' }
