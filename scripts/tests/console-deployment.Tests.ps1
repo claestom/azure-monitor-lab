@@ -9,7 +9,7 @@ $fixture = @{
   OperatorRoles = 0; DeploymentWrites = 0
   DefaultOperator = $false; CurrentUserLookups = 0; ExistingOperatorRole = $false; CurrentUserUnavailable = $false
   AiSetupFails = $false; SreSetupFails = $false
-  StageEResources = $false; ServiceGroupCalls = 0; SliCalls = 0
+  StageEResources = $false; ServiceGroupCalls = 0; SliCalls = 0; SliUnsupportedAudience = $false
   DeploymentId = ''; VersionChecks = 0
   SreResources = $false; ResourceDiscoveryFails = $false
 }
@@ -48,6 +48,7 @@ $fixture.ServiceGroupCalls++
 @'
 param($ResourceGroup, $SubscriptionId)
 $fixture.SliCalls++
+if ($fixture.SliUnsupportedAudience) { throw "Cloud Shell's built-in credential cannot request the Azure Monitor Prometheus token audience. Source metrics have not been verified." }
 '@ | Set-Content (Join-Path $directory 'setup-slis.ps1')
 foreach ($name in @('create-summary-rule.ps1', 'send-release-annotation.ps1')) {
   'param($ResourceGroup, $WorkspaceName, $Name, $Category)' | Set-Content (Join-Path $directory $name)
@@ -211,6 +212,14 @@ try {
     if (-not $rejected -or $fixture.Events.Count) { throw "$name must stop before completion when resource discovery fails." }
     $fixture.ResourceDiscoveryFails = $false
   }
+  $fixture.SliUnsupportedAudience = $true
+  $fixture.SreResources = $true
+  $fixture.Events.Clear()
+  $messages = & (Join-Path $directory 'post-cloud-shell-deploy.ps1') -SubscriptionId $fixture.Subscription -ResourceGroup test-rg -ConsoleOperatorObjectIds @($fixture.Operator) *>&1 | Out-String
+  if (($fixture.Events -join ',') -ne 'post-deploy,sre' -or $messages -notmatch 'Continuing post-deployment' -or $messages -notmatch 'Managed Prometheus source metrics verified: False') {
+    throw 'Cloud Shell must continue remaining setup when only its Prometheus MSI audience is unsupported.'
+  }
+  $fixture.SliUnsupportedAudience = $false
   $fixture.SreResources = $false
   Remove-Item -LiteralPath (Join-Path $root 'lab.config.json')
   foreach ($selection in @(

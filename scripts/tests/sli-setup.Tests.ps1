@@ -100,11 +100,10 @@ try {
       $fixture.Mode = $mode
       $result = Invoke-TestSliSetup
       if ($result.Failure -notlike '*Cloud Shell*' -or
-          -not $result.Failure.Contains('az account clear') -or
-          -not $result.Failure.Contains("az login --tenant $($fixture.Tenant) --use-device-code --scope https://prometheus.monitor.azure.com/.default") -or
-          -not $result.Failure.Contains("az account set --subscription $($fixture.Subscription)") -or
-          $result.Failure -notlike '*setup-slis.ps1*' -or $fixture.Queries -or $fixture.TokenRequests -ne 1) {
-        throw 'Unsupported Cloud Shell audience must stop before queries and provide tenant-scoped sign-in plus a targeted SLI retry.'
+          $result.Failure -notlike '*post-deployment wrapper handles this limitation automatically*' -or
+          $result.Failure -notlike '*credential supports the Prometheus audience*' -or
+          $result.Failure -match 'az login|az account clear' -or $fixture.Queries -or $fixture.TokenRequests -ne 1) {
+        throw 'Unsupported Cloud Shell audience must stop standalone verification and direct wrapper users to the automatic fallback.'
       }
       if ($PSNativeCommandUseErrorActionPreference -ne $nativePreference) { throw 'The helper changed its caller native-error preference.' }
     }
@@ -120,15 +119,7 @@ try {
   $result = Invoke-TestSliSetup
   if ($result.Failure -or $fixture.Queries -ne 4 -or -not $fixture.ExplicitSubscription -or
       $result.Text -notmatch 'All four documented source metrics are currently flowing') { throw 'Successful SLI verification must query all four metrics with a subscription-scoped token.' }
-  $readme = Get-Content -LiteralPath (Join-Path $source 'README.md') -Raw
-  $portalCommands = [regex]::Match($readme, '(?s)### Option 1:.*?```powershell(?<commands>.*?)```').Groups['commands'].Value
-  $scopedLogin = 'az login --tenant $tenantId --use-device-code --scope https://prometheus.monitor.azure.com/.default'
-  if ($portalCommands -notmatch 'az account clear' -or -not $portalCommands.Contains($scopedLogin) -or
-      $portalCommands.IndexOf('az account clear') -gt $portalCommands.IndexOf($scopedLogin) -or
-      $portalCommands.IndexOf($scopedLogin) -gt $portalCommands.IndexOf('./scripts/post-cloud-shell-deploy.ps1')) {
-    throw 'The portal quick-start must replace the cached Cloud Shell account and request the Prometheus scope before post-deployment.'
-  }
-  Write-Output 'PASS: Cloud Shell audience errors give scoped device-code recovery without leaking credentials or changing sign-in; other failures stop; all four metrics remain required. No Azure calls.'
+  Write-Output 'PASS: Cloud Shell audience errors direct wrapper users to the automatic fallback without leaking credentials; other failures stop; all four metrics remain required. No Azure calls.'
 } finally {
   Remove-Item -LiteralPath $root -Recurse -Force
   $global:LASTEXITCODE = $previousExitCode

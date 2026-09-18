@@ -93,7 +93,16 @@ Write-Step "Provisioning service group and health model prerequisites"
 & (Join-Path $PSScriptRoot 'setup-health-model.ps1') -ResourceGroup $ResourceGroup
 
 Write-Step "Verifying demo SLI prerequisites and source metrics"
-& (Join-Path $PSScriptRoot 'setup-slis.ps1') -SubscriptionId $SubscriptionId -ResourceGroup $ResourceGroup
+$sliSourceMetricsVerified = $true
+try {
+  & (Join-Path $PSScriptRoot 'setup-slis.ps1') -SubscriptionId $SubscriptionId -ResourceGroup $ResourceGroup
+} catch {
+  if ($_.Exception.Message -notlike "Cloud Shell's built-in credential cannot request the Azure Monitor Prometheus token audience.*") {
+    throw
+  }
+  $sliSourceMetricsVerified = $false
+  Write-Warning 'Cloud Shell cannot request the Managed Prometheus token audience. SLI permissions are prepared, but source metric series were not verified. Continuing post-deployment.'
+}
 
 if ($EnableStageSreAgent) {
   Write-Step 'Validating the deployed SRE Agent and monitoring connectors'
@@ -103,6 +112,8 @@ if ($EnableStageSreAgent) {
 Write-Host @"
 
 Cloud Shell post-deployment setup completed.
+
+Managed Prometheus source metrics verified: $sliSourceMetricsVerified
 
 Manual SLI step still required:
   1. Open the SLI portal URL printed above.

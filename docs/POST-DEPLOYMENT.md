@@ -22,18 +22,6 @@ The Deploy to Azure button creates the Azure resources selected in the portal wi
 
 ### Required
 
-Cloud Shell's automatic credential does not support every data-plane token audience. The SLI helper queries Managed Prometheus, which uses `https://prometheus.monitor.azure.com`. Sign in explicitly as your lab operator before running the wrapper, then verify the selected account:
-
-```powershell
-az account clear
-az login --tenant $tenantId --use-device-code --scope https://prometheus.monitor.azure.com/.default
-az account set --subscription $subscriptionId
-$active = az account show --query '{id:id,tenantId:tenantId}' -o json | ConvertFrom-Json
-if ($LASTEXITCODE -ne 0 -or $active.id -ne $subscriptionId -or $active.tenantId -ne $tenantId) { throw 'Subscription or tenant mismatch.' }
-```
-
-Complete the device-code sign-in in your browser. The account clear affects only the current Azure CLI cache, and the explicit scope requests the Prometheus token during user sign-in instead of falling back to the Cloud Shell token broker. No application secret or role change is needed. See [Microsoft's Cloud Shell troubleshooting guidance](https://learn.microsoft.com/en-us/azure/cloud-shell/faq-troubleshooting#terminal-output---audience-service-audience-url-is-not-a-supported-msi-token-audience).
-
 Run the Cloud Shell wrapper after the portal deployment succeeds:
 
 ```powershell
@@ -52,7 +40,7 @@ The wrapper:
 - Creates the hourly summary rule.
 - Creates the Service Group and its resource-group membership.
 - Uses the Health Model deployed by the portal template and verifies the SLI identity prerequisites.
-- Verifies that the Managed Prometheus source metrics for the SLI examples are flowing.
+- Attempts to verify that the Managed Prometheus source metrics for the SLI examples are flowing. If Cloud Shell cannot request the Prometheus token audience, it reports the verification as skipped and continues.
 - Discovers and validates a deployed SRE Agent and its monitoring connectors. Failed discovery or validation stops completion.
 
 ### Conditional
@@ -63,23 +51,17 @@ The wrapper:
 
 Continue with [Manual scenario setup](#manual-scenario-setup).
 
-### Recover Prometheus Authentication
+### Optional Prometheus Verification
 
-If the wrapper already stopped in [the SLI helper](../scripts/setup-slis.ps1) with `Audience https://prometheus.monitor.azure.com is not a supported MSI token audience`, the token request failed before querying metrics. This does not show that AKS stopped scraping or that the SLI identity lacks permissions. The workload publication steps ran earlier; a full redeployment is unnecessary for this error.
+Cloud Shell's automatic credential does not support every data-plane token audience. The SLI helper queries Managed Prometheus using `https://prometheus.monitor.azure.com`. When that audience is unavailable, the wrapper still prepares the SLI identity permissions, completes the remaining post-deployment steps, and reports `Managed Prometheus source metrics verified: False`. This does not show that AKS stopped scraping or that the SLI identity lacks permissions. See [Microsoft's Cloud Shell troubleshooting guidance](https://learn.microsoft.com/en-us/azure/cloud-shell/faq-troubleshooting#terminal-output---audience-service-audience-url-is-not-a-supported-msi-token-audience).
 
-Run the explicit sign-in and account verification above in the same Cloud Shell session, then retry just the failed step from the repository root:
+Source-series verification is optional for completing the deployment. To run it separately, use local PowerShell 7 or another host whose user or workload credential supports the Prometheus audience:
 
 ```powershell
 ./scripts/setup-slis.ps1 -SubscriptionId $subscriptionId -ResourceGroup $resourceGroup
 ```
 
-Reuse any custom `-ServiceGroupId` or `-MetricWaitMinutes` values from the failed command. The helper still requires all four source metrics to be present; it does not skip verification or substitute a management-plane token. If your tenant disallows device-code authentication, use an approved interactive sign-in from local PowerShell 7 and retry the helper there.
-
-If the SRE Agent stage was enabled, the wrapper stopped before its final SRE validation. After the SLI check succeeds, finish that remaining step:
-
-```powershell
-./scripts/setup-sre-agent.ps1 -SubscriptionId $subscriptionId -ResourceGroup $resourceGroup
-```
+Reuse any custom `-ServiceGroupId` or `-MetricWaitMinutes` values if needed. The standalone helper still requires all four source metrics to be present; it does not skip verification or substitute a management-plane token.
 
 Do not rerun AI traffic merely to recover the SLI check. Continue with the manual SLI portal fields printed by the helper and any other selected scenario steps.
 
