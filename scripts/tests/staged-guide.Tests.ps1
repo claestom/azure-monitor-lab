@@ -52,6 +52,11 @@ function az {
       }.GetEnumerator()) {
         if ($args[[Array]::IndexOf($args, $expected.Key) + 1] -ne $expected.Value) { throw "Stage command lost $($expected.Key)." }
       }
+      $expectedValidationLevel = $operation -eq 'what-if' -and $fixture.Stage -eq '40-optional-advanced'
+      if (($args -contains '--validation-level') -ne $expectedValidationLevel -or
+          ($expectedValidationLevel -and $args[[Array]::IndexOf($args, '--validation-level') + 1] -ne 'Template')) {
+        throw 'Only the Stage E preview may use template-level validation for the Sentinel onboarding race.'
+      }
       $parameterArgument = $args[[Array]::IndexOf($args, '--parameters') + 1]
       if (-not $parameterArgument.StartsWith('@') -or $args -match 'vmAdminPassword=') { throw 'Secure parameters must be passed through a file.' }
       $parameterPath = $parameterArgument.Substring(1)

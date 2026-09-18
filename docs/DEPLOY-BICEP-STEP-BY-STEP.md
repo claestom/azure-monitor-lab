@@ -142,8 +142,12 @@ function Invoke-LabStage {
       $deploymentArguments = @('--subscription', $sub.ToString(), '--resource-group', $rg,
          '--name', "stage-$Stage", '--template-file', "infra/stages/$Stage.bicep",
          '--parameters', "@$($parameterFile.FullName)", '--mode', 'Incremental')
+      $whatIfArguments = @($deploymentArguments)
+      if ($Stage -eq '40-optional-advanced') {
+         $whatIfArguments += @('--validation-level', 'Template')
+      }
       Assert-LabAccount
-      az deployment group what-if @deploymentArguments
+      az deployment group what-if @whatIfArguments
       if ($LASTEXITCODE -ne 0) { throw "Preview failed for $Stage." }
       if ((Read-Host 'Deploy this stage? Type yes to continue') -ne 'yes') { throw 'Stage deployment cancelled.' }
       Assert-LabAccount
@@ -213,6 +217,8 @@ Invoke-LabStage -Stage '40-optional-advanced' -Overrides @{ enableAi = $false }
 ```
 
 Use `enableAi = $true` only when Stage AI already exists. Sentinel and the optional DCRs follow the supplied parameters or stage defaults; review the preview and billing implications. Completion configures the Service Group and verifies SLI prerequisites. Create the preview SLIs in the portal using the printed handoff.
+
+Stage E uses template-level what-if validation because the Sentinel analytics-rule provider cannot validate the rule until the onboarding state in the same deployment exists. The preview still shows the template changes. The subsequent deployment performs normal provider validation and creates the onboarding state before the dependent rule.
 
 ### Stage AI deploy (optional)
 
