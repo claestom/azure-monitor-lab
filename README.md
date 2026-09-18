@@ -52,7 +52,7 @@ The GenAI workload and Azure SRE Agent can also be deployed on the same telemetr
 
 <div align="center">
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fclaestom%2Fazure-monitor-lab%2Fmaster%2Finfra%2Fmain.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2Fclaestom%2Fazure-monitor-lab%2Fmaster%2Finfra%2FcreateUiDefinition.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fclaestom%2Fazure-monitor-lab%2Fintegration%2Finfra%2Fmain.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2Fclaestom%2Fazure-monitor-lab%2Fintegration%2Finfra%2FcreateUiDefinition.json)
 
 </div>
 
@@ -68,7 +68,7 @@ Opens a guided Custom deployment wizard in the Azure Portal, where you enter eve
 After the portal deployment succeeds, open **[Cloud Shell](https://learn.microsoft.com/en-us/azure/cloud-shell/get-started/ephemeral?tabs=azurecli#start-cloud-shell)** in the Azure portal, select **PowerShell**, and run the commands below. The Cloud Shell wrapper discovers the deployed resources, publishes the App Service sample, installs the AKS and Health Model demo components, and verifies the identity, RBAC, and Managed Prometheus prerequisites for the SLI demo without requiring optional Azure CLI extensions:
 
 ```powershell
-git clone --branch master https://github.com/claestom/azure-monitor-lab.git
+git clone --branch integration https://github.com/claestom/azure-monitor-lab.git
 cd azure-monitor-lab
 $subscriptionId = Read-Host 'Subscription ID'
 $resourceGroup = Read-Host 'Resource group name'
