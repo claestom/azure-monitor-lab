@@ -5,7 +5,7 @@ A self-contained demo centered on Azure Monitor, AI, and Azure SRE Agent, with o
 - One resource group: the whole lab lands in `rg-azure-monitor-lab`.
 - Two ways to deploy it: Bicep or Terraform.
 - Three ways to run it: a single-click [Deploy to Azure](#option-1-deploy-to-azure-portal-no-local-setup) button for the Azure portal, a scripted one-shot deployment using PowerShell, or a 5-stage workshop you can walk through piece by piece.
-- 61 demo scenarios that cover Azure Monitor, Sentinel, and Azure SRE Agent from end to end.
+- 61 demo scenarios that cover Azure Monitor and Azure SRE Agent from end to end.
 
 It's built for demos, microhacks, and hackathons. Deploy it, poke around, break it, restore it, and tear it down.
 
