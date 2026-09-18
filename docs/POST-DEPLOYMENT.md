@@ -25,13 +25,14 @@ The Deploy to Azure button creates the Azure resources selected in the portal wi
 Cloud Shell's automatic credential does not support every data-plane token audience. The SLI helper queries Managed Prometheus, which uses `https://prometheus.monitor.azure.com`. Sign in explicitly as your lab operator before running the wrapper, then verify the selected account:
 
 ```powershell
-az login --tenant $tenantId --use-device-code
+az account clear
+az login --tenant $tenantId --use-device-code --scope https://prometheus.monitor.azure.com/.default
 az account set --subscription $subscriptionId
 $active = az account show --query '{id:id,tenantId:tenantId}' -o json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0 -or $active.id -ne $subscriptionId -or $active.tenantId -ne $tenantId) { throw 'Subscription or tenant mismatch.' }
 ```
 
-Complete the device-code sign-in in your browser. This uses your user credentials, not the Cloud Shell token broker; no application secret or role change is needed for the unsupported-audience error. See [Microsoft's Cloud Shell troubleshooting guidance](https://learn.microsoft.com/en-us/azure/cloud-shell/faq-troubleshooting#terminal-output---audience-service-audience-url-is-not-a-supported-msi-token-audience).
+Complete the device-code sign-in in your browser. The account clear affects only the current Azure CLI cache, and the explicit scope requests the Prometheus token during user sign-in instead of falling back to the Cloud Shell token broker. No application secret or role change is needed. See [Microsoft's Cloud Shell troubleshooting guidance](https://learn.microsoft.com/en-us/azure/cloud-shell/faq-troubleshooting#terminal-output---audience-service-audience-url-is-not-a-supported-msi-token-audience).
 
 Run the Cloud Shell wrapper after the portal deployment succeeds:
 
@@ -72,7 +73,7 @@ Run the explicit sign-in and account verification above in the same Cloud Shell 
 ./scripts/setup-slis.ps1 -SubscriptionId $subscriptionId -ResourceGroup $resourceGroup
 ```
 
-Reuse any custom `-ServiceGroupId` or `-MetricWaitMinutes` values from the failed command. The helper still requires all four source metrics to be present; it does not skip verification or substitute a management-plane token. No `az logout` is required. If your tenant disallows device-code authentication, use an approved interactive sign-in from local PowerShell 7 and retry the helper there.
+Reuse any custom `-ServiceGroupId` or `-MetricWaitMinutes` values from the failed command. The helper still requires all four source metrics to be present; it does not skip verification or substitute a management-plane token. If your tenant disallows device-code authentication, use an approved interactive sign-in from local PowerShell 7 and retry the helper there.
 
 If the SRE Agent stage was enabled, the wrapper stopped before its final SRE validation. After the SLI check succeeds, finish that remaining step:
 

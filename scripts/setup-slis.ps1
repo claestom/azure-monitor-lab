@@ -165,12 +165,13 @@ function Get-PrometheusQueryToken {
 Cloud Shell's built-in credential cannot request the Azure Monitor Prometheus token audience. Source metrics have not been verified.
 
 Sign in interactively in this Cloud Shell session, verify the lab account, then retry only the SLI helper from the repository root:
-  az login --tenant $($active.tenantId) --use-device-code
+  az account clear
+  az login --tenant $($active.tenantId) --use-device-code --scope https://prometheus.monitor.azure.com/.default
   az account set --subscription $SubscriptionId
   az account show --query '{id:id,tenantId:tenantId}' -o table
   ./scripts/setup-slis.ps1 -SubscriptionId $SubscriptionId -ResourceGroup '$retryResourceGroup' -ServiceGroupId '$retryServiceGroup' -MetricWaitMinutes $MetricWaitMinutes
 
-No logout, token-audience change, or workload redeployment is required. Resume remaining post-deployment steps after SLI verification succeeds.
+This clears only the Cloud Shell session's cached Azure CLI accounts. No workload redeployment is required. Resume remaining post-deployment steps after SLI verification succeeds.
 "@
     }
     throw "Could not acquire an Azure Monitor Prometheus query token (Azure CLI exit code $tokenExitCode). Source metrics have not been verified; check your sign-in for the selected tenant and subscription."

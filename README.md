@@ -73,7 +73,8 @@ cd azure-monitor-lab
 $subscriptionId = Read-Host 'Subscription ID'
 $tenantId = Read-Host 'Tenant ID'
 $resourceGroup = Read-Host 'Resource group name'
-az login --tenant $tenantId --use-device-code
+az account clear
+az login --tenant $tenantId --use-device-code --scope https://prometheus.monitor.azure.com/.default
 az account set --subscription $subscriptionId
 ./scripts/post-cloud-shell-deploy.ps1 -SubscriptionId $subscriptionId -ResourceGroup $resourceGroup
 ```
