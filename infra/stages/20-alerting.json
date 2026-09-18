@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.37.4.10188",
-      "templateHash": "14933651431838098344"
+      "templateHash": "5786879968200268881"
     }
   },
   "parameters": {
@@ -756,7 +756,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.37.4.10188",
-              "templateHash": "15577159833746838957"
+              "templateHash": "16571993248590435054"
             }
           },
           "parameters": {
@@ -957,7 +957,8 @@
                       "operator": "GreaterThan",
                       "threshold": 100,
                       "timeAggregation": "Total",
-                      "criterionType": "StaticThresholdCriterion"
+                      "criterionType": "StaticThresholdCriterion",
+                      "skipMetricValidation": true
                     }
                   ]
                 },

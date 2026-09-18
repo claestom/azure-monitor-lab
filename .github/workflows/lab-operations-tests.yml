@@ -21,6 +21,7 @@ on:
       - 'scripts/tests/staged-guide.Tests.ps1'
       - 'scripts/tests/sli-setup.Tests.ps1'
       - 'scripts/tests/compiled-templates.Tests.ps1'
+      - 'scripts/tests/amba.Tests.ps1'
       - 'scripts/tests/webapp-publication.Tests.ps1'
       - 'scripts/setup-ai.ps1'
       - 'scripts/setup-ai-cloud-shell.ps1'
@@ -104,6 +105,7 @@ jobs:
         shell: pwsh
         run: |
           ./scripts/tests/compiled-templates.Tests.ps1
+          ./scripts/tests/amba.Tests.ps1
           ./scripts/tests/grafana-access.Tests.ps1
           ./scripts/tests/grafana-config.Tests.ps1
       - name: Validate console completion with mocked Azure providers
