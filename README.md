@@ -71,7 +71,9 @@ After the portal deployment succeeds, open **[Cloud Shell](https://learn.microso
 git clone --branch integration https://github.com/claestom/azure-monitor-lab.git
 cd azure-monitor-lab
 $subscriptionId = Read-Host 'Subscription ID'
+$tenantId = Read-Host 'Tenant ID'
 $resourceGroup = Read-Host 'Resource group name'
+az login --tenant $tenantId --use-device-code
 az account set --subscription $subscriptionId
 ./scripts/post-cloud-shell-deploy.ps1 -SubscriptionId $subscriptionId -ResourceGroup $resourceGroup
 ```

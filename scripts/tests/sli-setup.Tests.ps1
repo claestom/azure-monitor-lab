@@ -119,6 +119,12 @@ try {
   $result = Invoke-TestSliSetup
   if ($result.Failure -or $fixture.Queries -ne 4 -or -not $fixture.ExplicitSubscription -or
       $result.Text -notmatch 'All four documented source metrics are currently flowing') { throw 'Successful SLI verification must query all four metrics with a subscription-scoped token.' }
+  $readme = Get-Content -LiteralPath (Join-Path $source 'README.md') -Raw
+  $portalCommands = [regex]::Match($readme, '(?s)### Option 1:.*?```powershell(?<commands>.*?)```').Groups['commands'].Value
+  if ($portalCommands -notmatch 'az login --tenant \$tenantId --use-device-code' -or
+      $portalCommands.IndexOf('az login --tenant $tenantId --use-device-code') -gt $portalCommands.IndexOf('./scripts/post-cloud-shell-deploy.ps1')) {
+    throw 'The portal quick-start must request an interactive tenant-scoped sign-in before post-deployment.'
+  }
   Write-Output 'PASS: Cloud Shell audience errors give scoped device-code recovery without leaking credentials or changing sign-in; other failures stop; all four metrics remain required. No Azure calls.'
 } finally {
   Remove-Item -LiteralPath $root -Recurse -Force
