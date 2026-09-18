@@ -73,6 +73,13 @@ function dotnet {
 function az {
   $global:LASTEXITCODE = 0
   switch ($args[0..1] -join ' ') {
+    'login --tenant' {
+      if ($args[2] -ne $fixture.Tenant.ToString() -or $args -notcontains '--use-device-code' -or $args -notcontains '--scope' -or $args -notcontains 'https://prometheus.monitor.azure.com/.default') {
+        throw 'Cloud Shell login did not target the tenant and Managed Prometheus scope.'
+      }
+      $fixture.Events.Add('login')
+      return '[]'
+    }
     'account set' {
       if ($args[[Array]::IndexOf($args, '--subscription') + 1] -ne $fixture.Subscription.ToString()) { throw 'A stale local target overrode the selected subscription.' }
       return
@@ -179,8 +186,10 @@ try {
   foreach ($name in @('post-staged-deploy.ps1', 'post-cloud-shell-deploy.ps1')) {
     $fixture.Events.Clear()
     $fixture.ServiceGroupCalls = 0
-    & (Join-Path $directory $name) -SubscriptionId $fixture.Subscription -ResourceGroup test-rg -ConsoleOperatorObjectIds @($fixture.Operator) | Out-Null
-    if (($fixture.Events -join ',') -ne 'post-deploy') { throw 'Deployment completion did not invoke the shared console path exactly once.' }
+    $wrapperArguments = if ($name -eq 'post-cloud-shell-deploy.ps1') { @{ TenantId = $fixture.Tenant } } else { @{} }
+    & (Join-Path $directory $name) -SubscriptionId $fixture.Subscription -ResourceGroup test-rg -ConsoleOperatorObjectIds @($fixture.Operator) @wrapperArguments | Out-Null
+    $expectedEvents = if ($name -eq 'post-cloud-shell-deploy.ps1') { 'login,post-deploy' } else { 'post-deploy' }
+    if (($fixture.Events -join ',') -ne $expectedEvents) { throw 'Deployment completion did not invoke the expected login and shared console path.' }
     $expectedServiceGroups = if ($name -eq 'post-staged-deploy.ps1') { 0 } else { 1 }
     if ($fixture.ServiceGroupCalls -ne $expectedServiceGroups) { throw 'Staged deployment must not enable Service Group setup implicitly.' }
   }
@@ -195,28 +204,32 @@ try {
       $fixture.SreResources = $selection.Resources
       $fixture.Events.Clear()
       $selectionArguments = $selection.Explicit
+      if ($name -eq 'post-cloud-shell-deploy.ps1') { $selectionArguments.TenantId = $fixture.Tenant }
       & (Join-Path $directory $name) -SubscriptionId $fixture.Subscription -ResourceGroup test-rg -ConsoleOperatorObjectIds @($fixture.Operator) @selectionArguments | Out-Null
-      if (($fixture.Events -join ',') -ne $selection.Expected) { throw "$name must follow explicit SRE selection or deployed resources, not stale config." }
+      $expectedSelectionEvents = if ($name -eq 'post-cloud-shell-deploy.ps1') { "login,$($selection.Expected)" } else { $selection.Expected }
+      if (($fixture.Events -join ',') -ne $expectedSelectionEvents) { throw "$name must follow explicit SRE selection or deployed resources, not stale config." }
     }
     $fixture.SreSetupFails = $true
     $rejected = $false
-    try { & (Join-Path $directory $name) -SubscriptionId $fixture.Subscription -ResourceGroup test-rg -ConsoleOperatorObjectIds @($fixture.Operator) | Out-Null }
+    $failureArguments = if ($name -eq 'post-cloud-shell-deploy.ps1') { @{ TenantId = $fixture.Tenant } } else { @{} }
+    try { & (Join-Path $directory $name) -SubscriptionId $fixture.Subscription -ResourceGroup test-rg -ConsoleOperatorObjectIds @($fixture.Operator) @failureArguments | Out-Null }
     catch { $rejected = $_.Exception.Message -eq 'SRE verification failed.' }
     if (-not $rejected) { throw "$name hid a failed SRE validation." }
     $fixture.SreSetupFails = $false
     $fixture.ResourceDiscoveryFails = $true
     $fixture.Events.Clear()
     $rejected = $false
-    try { & (Join-Path $directory $name) -SubscriptionId $fixture.Subscription -ResourceGroup test-rg -ConsoleOperatorObjectIds @($fixture.Operator) | Out-Null }
+    try { & (Join-Path $directory $name) -SubscriptionId $fixture.Subscription -ResourceGroup test-rg -ConsoleOperatorObjectIds @($fixture.Operator) @failureArguments | Out-Null }
     catch { $rejected = $_.Exception.Message -like '*resource discovery failed.' }
-    if (-not $rejected -or $fixture.Events.Count) { throw "$name must stop before completion when resource discovery fails." }
+    $expectedFailureEvents = if ($name -eq 'post-cloud-shell-deploy.ps1') { 'login' } else { '' }
+    if (-not $rejected -or ($fixture.Events -join ',') -ne $expectedFailureEvents) { throw "$name must stop before completion when resource discovery fails." }
     $fixture.ResourceDiscoveryFails = $false
   }
   $fixture.SliUnsupportedAudience = $true
   $fixture.SreResources = $true
   $fixture.Events.Clear()
-  $messages = & (Join-Path $directory 'post-cloud-shell-deploy.ps1') -SubscriptionId $fixture.Subscription -ResourceGroup test-rg -ConsoleOperatorObjectIds @($fixture.Operator) *>&1 | Out-String
-  if (($fixture.Events -join ',') -ne 'post-deploy,sre' -or $messages -notmatch 'Continuing post-deployment' -or $messages -notmatch 'Managed Prometheus source metrics verified: False') {
+  $messages = & (Join-Path $directory 'post-cloud-shell-deploy.ps1') -TenantId $fixture.Tenant -SubscriptionId $fixture.Subscription -ResourceGroup test-rg -ConsoleOperatorObjectIds @($fixture.Operator) *>&1 | Out-String
+  if (($fixture.Events -join ',') -ne 'login,post-deploy,sre' -or $messages -notmatch 'Continuing post-deployment' -or $messages -notmatch 'Managed Prometheus source metrics verified: False') {
     throw 'Cloud Shell must continue remaining setup when only its Prometheus MSI audience is unsupported.'
   }
   $fixture.SliUnsupportedAudience = $false

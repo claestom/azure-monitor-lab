@@ -11,9 +11,6 @@ $subscriptionId = '<subscription-id>'
 $tenantId = '<tenant-id>'
 $resourceGroup = '<resource-group>'
 $namePrefix = 'amlab'
-az account set --subscription $subscriptionId
-$active = az account show --query '{id:id,tenantId:tenantId}' -o json | ConvertFrom-Json
-if ($LASTEXITCODE -ne 0 -or $active.id -ne $subscriptionId -or $active.tenantId -ne $tenantId) { throw 'Subscription or tenant mismatch.' }
 ```
 
 ## Portal deployment
@@ -28,12 +25,14 @@ Run the Cloud Shell wrapper after the portal deployment succeeds:
 git clone https://github.com/claestom/azure-monitor-lab.git
 cd azure-monitor-lab
 ./scripts/post-cloud-shell-deploy.ps1 `
+  -TenantId $tenantId `
   -SubscriptionId $subscriptionId `
   -ResourceGroup $resourceGroup -NamePrefix $namePrefix
 ```
 
 The wrapper:
 
+- Starts with an interactive tenant sign-in that requests the Managed Prometheus scope, then pins and verifies the selected subscription and tenant.
 - Publishes the .NET sample to App Service.
 - Automatically configures console operator sign-in, health access, the seven-operation Azure job runner, and available optional agent integrations.
 - Applies the AKS frontend, load generator, and OpenTelemetry workloads.

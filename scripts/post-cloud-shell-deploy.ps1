@@ -3,7 +3,7 @@
   Run the lab post-deployment setup from Azure Cloud Shell.
 
 .DESCRIPTION
-  Pins and verifies the selected subscription, discovers the portal-deployed lab
+  Signs in to the selected tenant, pins and verifies the selected subscription, discovers the portal-deployed lab
   resources, resolves Application Insights through the core ARM CLI surface, and
   runs the same workload, Health Model, SLI, and SRE validation helpers used by deploy.ps1.
 
@@ -12,10 +12,11 @@
   Explicit false skips validation without deleting or disabling the agent.
 
 .EXAMPLE
-  ./scripts/post-cloud-shell-deploy.ps1 -SubscriptionId <subscription-id> -ResourceGroup rg-azure-monitor-lab
+  ./scripts/post-cloud-shell-deploy.ps1 -TenantId <tenant-id> -SubscriptionId <subscription-id> -ResourceGroup rg-azure-monitor-lab
 #>
 [CmdletBinding()]
 param(
+  [Parameter(Mandatory)] [guid] $TenantId,
   [Parameter(Mandatory)] [string] $SubscriptionId,
   [Parameter(Mandatory)] [string] $ResourceGroup,
   [string] $NamePrefix = 'amlab',
@@ -27,11 +28,18 @@ $ErrorActionPreference = 'Stop'
 function Write-Step($msg) { Write-Host "`n==> $msg" -ForegroundColor Cyan }
 function Write-Info($msg) { Write-Host "    $msg" -ForegroundColor DarkGray }
 
+Write-Step "Signing in to the Azure tenant"
+az login --tenant $TenantId --use-device-code --scope https://prometheus.monitor.azure.com/.default | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Azure login failed for tenant '$TenantId'." }
+
 Write-Step "Pinning the Azure subscription"
 az account set --subscription $SubscriptionId | Out-Null
 $active = az account show --query "{id:id, tenantId:tenantId}" -o json | ConvertFrom-Json
 if ($active.id -ne $SubscriptionId) {
   throw "Subscription guardrail failed: expected '$SubscriptionId', got '$($active.id)'."
+}
+if ($active.tenantId -ne $TenantId) {
+  throw "Tenant guardrail failed: expected '$TenantId', got '$($active.tenantId)'."
 }
 
 Write-Info "Subscription: $($active.id)"

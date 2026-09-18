@@ -70,10 +70,10 @@ After the portal deployment succeeds, open **[Cloud Shell](https://learn.microso
 ```powershell
 git clone --branch integration https://github.com/claestom/azure-monitor-lab.git
 cd azure-monitor-lab
+$tenantId = Read-Host 'Tenant ID'
 $subscriptionId = Read-Host 'Subscription ID'
 $resourceGroup = Read-Host 'Resource group name'
-az account set --subscription $subscriptionId
-./scripts/post-cloud-shell-deploy.ps1 -SubscriptionId $subscriptionId -ResourceGroup $resourceGroup
+./scripts/post-cloud-shell-deploy.ps1 -TenantId $tenantId -SubscriptionId $subscriptionId -ResourceGroup $resourceGroup
 ```
 
 > **Next:** Follow the [post-deployment guide for the portal option](docs/POST-DEPLOYMENT.md#portal-deployment) to finish the scenarios and optional stages you enabled.
