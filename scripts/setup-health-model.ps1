@@ -94,8 +94,10 @@ function Register-Provider {
   }
 }
 
-Write-Step "Ensuring required resource providers are registered"
-Register-Provider -Namespace 'Microsoft.Management'
+if (-not $Teardown) {
+  Write-Step "Ensuring required resource providers are registered"
+  Register-Provider -Namespace 'Microsoft.Management'
+}
 
 # --- API endpoints -------------------------------------------------------------
 $sgApi   = '2024-02-01-preview'
@@ -138,17 +140,19 @@ function Wait-ForProvisioning {
 if ($Teardown) {
   Write-Step "Teardown: removing service group member + service group"
 
-  Write-Info "DELETE $sgmUrl"
-  az rest --method delete --url $sgmUrl --only-show-errors 2>$null | Out-Null
-  Write-Info "Member relationship delete submitted."
+  $submitted = & (Join-Path $PSScriptRoot 'remove-arm-resource.ps1') -SubscriptionId $subId `
+    -ResourceId "$rgScope/providers/Microsoft.Relationships/serviceGroupMember/$RelationshipId" -ApiVersion $sgmApi
+  if ($submitted) {
+    Write-Info 'Delete submitted: member relationship'
+    Start-Sleep -Seconds 10
+  } else { Write-Info 'Already absent: member relationship' }
 
-  Start-Sleep -Seconds 10
+  $submitted = & (Join-Path $PSScriptRoot 'remove-arm-resource.ps1') -SubscriptionId $subId `
+    -ResourceId "/providers/Microsoft.Management/serviceGroups/$ServiceGroupId" -ApiVersion $sgApi
+  if ($submitted) { Write-Info 'Delete submitted: service group' }
+  else { Write-Info 'Already absent: service group' }
 
-  Write-Info "DELETE $sgUrl"
-  az rest --method delete --url $sgUrl --only-show-errors 2>$null | Out-Null
-  Write-Info "Service group delete submitted."
-
-  Write-Host "`nTeardown complete (DELETE is idempotent; no error if missing)." -ForegroundColor Green
+  Write-Host "`nService Group cleanup finished: deletes submitted or resources already absent." -ForegroundColor Green
   Write-Host "The Health Model itself is torn down with the RG via 'azd down' or 'az group delete'." -ForegroundColor DarkGray
   return
 }

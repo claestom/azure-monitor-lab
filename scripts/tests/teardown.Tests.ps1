@@ -13,6 +13,7 @@ $fixture = @{
   PrimaryGroupExists = $true; AuxiliaryGroupExists = $true; MonitorGroupExists = $true
   GroupInventoryFails = $false; MonitorDeleteFails = $false; MonitorCascadeDuringDelete = $false
   MonitorOwnerChanged = $false
+  RealTenantCleanup = $false; TenantDeleteError = ''
 }
 $resourceGroupId = "/subscriptions/$($fixture.Subscription)/resourceGroups/$($fixture.ResourceGroup)"
 $workspaceId = "$resourceGroupId/providers/Microsoft.OperationalInsights/workspaces/law-test"
@@ -23,6 +24,12 @@ $dceId = "$resourceGroupId/providers/Microsoft.Insights/dataCollectionEndpoints/
 $auxiliaryGroup = "MC_$($fixture.ResourceGroup)_aks-test_northeurope"
 $monitorGroup = 'MA_amw-amlab_northeurope_managed_3'
 $monitorWorkspaceId = "$resourceGroupId/providers/Microsoft.Monitor/accounts/amw-amlab"
+$serviceGroupId = '/providers/Microsoft.Management/serviceGroups/amlab-workload'
+$tenantDeleteApis = [ordered]@{}
+$tenantDeleteApis["$serviceGroupId/providers/Microsoft.Monitor/slis/sli-aks-pods-running"] = '2025-03-01-preview'
+$tenantDeleteApis["$serviceGroupId/providers/Microsoft.Monitor/slis/sli-aks-pod-start-latency"] = '2025-03-01-preview'
+$tenantDeleteApis["$resourceGroupId/providers/Microsoft.Relationships/serviceGroupMember/sgm-amlab-rg"] = '2023-09-01-preview'
+$tenantDeleteApis[$serviceGroupId] = '2024-02-01-preview'
 $otherSubscription = [guid]::NewGuid()
 $groupInventory = @(
   @{ name = 'rg-other-lab'; managedBy = $null },
@@ -118,6 +125,21 @@ function az {
       return ConvertTo-Json -InputObject @(@{ id = $workspaceId; name = 'law-test' }, @{ id = $unsupportedId; name = 'ContainerInsights(law-test)' })
     }
     'rest --method' {
+      if ($args[2] -eq 'delete' -and $fixture.RealTenantCleanup) {
+        $uri = [uri]$args[[Array]::IndexOf($args, '--url') + 1]
+        if ($uri.Host -ne 'management.azure.com' -or -not $tenantDeleteApis.Contains($uri.AbsolutePath) -or
+            $uri.Query -ne "?api-version=$($tenantDeleteApis[$uri.AbsolutePath])" -or
+            $args[[Array]::IndexOf($args, '--subscription') + 1] -ne $fixture.Subscription.ToString()) {
+          throw 'Unexpected tenant-scoped deletion target.'
+        }
+        $fixture.TenantCleanup.Add($uri.AbsolutePath)
+        if ($fixture.TenantDeleteError) {
+          $errorText = $fixture.TenantDeleteError.Replace("'", "''")
+          & (Join-Path $PSHOME 'pwsh') -NoProfile -NonInteractive -Command "[Console]::Error.WriteLine('$errorText'); exit 1"
+          $global:LASTEXITCODE = $LASTEXITCODE
+        }
+        return
+      }
       if ($args[2] -ne 'get') { throw 'Only read-only association discovery is expected.' }
       $url = $args[[Array]::IndexOf($args, '--url') + 1]
       if ($url -eq "$workspaceId/providers/Microsoft.Insights/dataCollectionRuleAssociations?api-version=2023-03-11") {
@@ -245,6 +267,39 @@ try {
   if (-not $confirmationOutput.Contains($monitorGroup) -or $confirmationOutput.Contains('MA_amw-amlab_northeurope_managed_2')) {
     throw 'Confirmation must list the owned managed group and exclude another lab sharing the workspace name.'
   }
+  foreach ($helperName in @('setup-slis.ps1', 'setup-health-model.ps1', 'remove-arm-resource.ps1')) {
+    Copy-Item -LiteralPath (Join-Path $source "scripts/$helperName") -Destination $directory -Force
+  }
+  $fixture.RealTenantCleanup = $true
+  foreach ($tenantCase in @(
+    @{ Error = 'ERROR: Not Found({"error":{"code":"ResourceNotFound","message":"The resource does not exist."}})'; Fails = $false; Keep = $false },
+    @{ Error = 'ERROR: (AuthorizationFailed) Tenant cleanup was denied.'; Fails = $true; Keep = $false },
+    @{ Error = 'ERROR: (AuthorizationFailed) Tenant cleanup was denied.'; Fails = $false; Keep = $true }
+  )) {
+    $fixture.TenantDeleteError = $tenantCase.Error
+    $fixture.Deletes.Clear()
+    $fixture.TenantCleanup.Clear()
+    & {
+      $PSNativeCommandUseErrorActionPreference = $true
+      $failure = ''
+      try { & (Join-Path $directory 'teardown.ps1') -ResourceGroup $fixture.ResourceGroup -KeepServiceGroup:$tenantCase.Keep -Yes | Out-Null }
+      catch { $failure = $_.Exception.Message }
+      if (-not $PSNativeCommandUseErrorActionPreference) { throw 'Tenant cleanup changed the caller native-error preference.' }
+      if ($tenantCase.Fails) {
+        if (-not $failure.Contains($tenantCase.Error) -or $fixture.TenantCleanup.Count -ne 1 -or @($fixture.Deletes | Where-Object { $_ -like 'group:*' }).Count) {
+          throw "Tenant cleanup failure must stop before resource group deletion with Azure diagnostics: $failure"
+        }
+      } else {
+        $expectedDeletes = @($associationId, $dcrId, $dceId, "group:$($fixture.ResourceGroup)", "group:$auxiliaryGroup", "group:$monitorGroup")
+        $expectedTenantDeletes = if ($tenantCase.Keep) { @() } else { @($tenantDeleteApis.Keys) }
+        if ($failure -or ($fixture.Deletes -join ',') -ne ($expectedDeletes -join ',') -or
+            ($fixture.TenantCleanup -join ',') -ne ($expectedTenantDeletes -join ',')) {
+          throw "Real tenant cleanup must continue on absent resources and skip shared resources when requested: $failure"
+        }
+      }
+    }
+  }
+  Write-Output 'PASS: real tenant cleanup helpers continue on absent SLIs/groups, stop before group deletion on errors, and are bypassed by KeepServiceGroup. No Azure calls.'
   Write-Output 'PASS: unsupported and missing association probes work with both native-error preferences; unexpected failures retain diagnostics and block deletion. No Azure calls.'
   Write-Output 'PASS: cleanup order, deduplication, matched group scope, tenant guard, and cancellation are preserved. No Azure calls.'
   Write-Output 'PASS: KeepServiceGroup preserves shared tenant resources without skipping resource group cleanup. No Azure calls.'

@@ -74,18 +74,16 @@ $sliApi = '2025-03-01-preview'
 $sgApi = '2024-02-01-preview'
 $sgUrl = "https://management.azure.com/providers/Microsoft.Management/serviceGroups/$ServiceGroupId" + "?api-version=$sgApi"
 
-function Get-SliUrl {
-  param([string] $SliName)
-  return "https://management.azure.com/providers/Microsoft.Management/serviceGroups/$ServiceGroupId/providers/Microsoft.Monitor/slis/$SliName" + "?api-version=$sliApi"
-}
-
 if ($Teardown) {
   Write-Step 'Removing documented sample SLIs'
   foreach ($sliName in @('sli-aks-pods-running', 'sli-aks-pod-start-latency')) {
-    az rest --method delete --url (Get-SliUrl -SliName $sliName) --only-show-errors 2>$null | Out-Null
-    Write-Info "Delete submitted: $sliName"
+    $sliResourceId = "/providers/Microsoft.Management/serviceGroups/$ServiceGroupId/providers/Microsoft.Monitor/slis/$sliName"
+    $submitted = & (Join-Path $PSScriptRoot 'remove-arm-resource.ps1') `
+      -SubscriptionId $SubscriptionId -ResourceId $sliResourceId -ApiVersion $sliApi
+    if ($submitted) { Write-Info "Delete submitted: $sliName" }
+    else { Write-Info "Already absent: $sliName" }
   }
-  Write-Host "`nTeardown submitted. DELETE is idempotent." -ForegroundColor Green
+  Write-Host "`nSLI cleanup finished: deletes submitted or resources already absent." -ForegroundColor Green
   return
 }
 

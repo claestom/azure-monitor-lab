@@ -108,6 +108,12 @@ Azure normally removes the Monitor managed group when its workspace is deleted. 
 
 When other labs share the tenant-level `amlab-workload` Service Group and SLIs, add `-KeepServiceGroup` to preserve them. The selected lab's resource-group membership is removed with its resource group.
 
+```powershell
+./scripts/teardown.ps1 -ResourceGroup $rg -KeepServiceGroup -Yes
+```
+
+Without `-KeepServiceGroup`, the SLI and Service Group helpers use [remove-arm-resource.ps1](remove-arm-resource.ps1) after verifying the account. Already-missing resources are reported as absent rather than failed deletions. Permission, dependency, unsupported API, and service errors still stop cleanup with the resource ID and Azure CLI details, including in strict PowerShell sessions. No automatic provider registration is attempted during Service Group teardown.
+
 Teardown probes resources for child DCR associations. Azure returns `UnsupportedResourceType` for resources that cannot host them, including Data Collection Endpoints, or `UnsupportedFeature` when the parent location does not support associations, as with global action groups. The script skips those responses and not-found responses even when PowerShell's strict native-command handling is enabled. Other discovery failures stop cleanup and report the resource ID and Azure error. Do not disable strict error handling for the entire teardown script.
 
 The final resource-group delete is asynchronous. Soft-deleted Log Analytics workspaces, Application Insights components, Key Vaults, and resources outside the resource group may need separate inspection or purge; see the staged deployment guides for cleanup commands.
