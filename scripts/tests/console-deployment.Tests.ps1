@@ -12,6 +12,9 @@ $fixture = @{
   StageEResources = $false; ServiceGroupCalls = 0; SliCalls = 0; SliUnsupportedAudience = $false
   DeploymentId = ''; VersionChecks = 0
   SreResources = $false; ResourceDiscoveryFails = $false
+  UploadFailure = ''; UploadFailuresRemaining = 0
+  WebAppQuotaExceeded = $false; WebAppConfigWrites = 0
+  Packages = [Collections.Generic.List[string]]::new()
 }
 foreach ($name in @('deploy.ps1', 'deploy-webapp.ps1', 'post-staged-deploy.ps1', 'post-cloud-shell-deploy.ps1', 'wait-webapp-publication.ps1')) {
   Copy-Item -LiteralPath (Join-Path $source "scripts/$name") -Destination $directory
@@ -64,6 +67,7 @@ function dotnet {
   $fixture.DeploymentId = $versionArgument[0].Split('=', 2)[1]
   $fixture.VersionChecks = 0
   $publish = $args[[Array]::IndexOf($args, '-o') + 1]
+  $fixture.Packages.Add($publish)
   $null = New-Item -ItemType Directory -Path (Join-Path $publish 'wwwroot') -Force
   'offline-package' | Set-Content (Join-Path $publish 'AmlabHello.dll')
   'offline-page' | Set-Content (Join-Path $publish 'wwwroot/index.html')
@@ -107,16 +111,28 @@ function az {
       $fixture.DeploymentWrites++
       return
     }
-    'webapp show' { return '{"kind":"app,linux","host":"app-amlab-test.azurewebsites.net"}' }
+    'webapp show' {
+      return @{
+        kind = 'app,linux'; host = 'app-amlab-test.azurewebsites.net'
+        state = $(if ($fixture.WebAppQuotaExceeded) { 'QuotaExceeded' } else { 'Running' })
+        usageState = $(if ($fixture.WebAppQuotaExceeded) { 'Exceeded' } else { 'Normal' })
+      } | ConvertTo-Json
+    }
     'webapp config' {
       if ($args[2] -eq 'show') { return 'DOTNETCORE|8.0' }
       if ($args -notcontains '--subscription') { throw 'An app write did not specify its subscription.' }
+      $fixture.WebAppConfigWrites++
       return
     }
     'webapp deploy' {
       if (($fixture.Events -join ',') -ne 'publish,package,initialize') { throw 'Code was deployed before automatic console setup.' }
       if (-not (Test-Path $args[[Array]::IndexOf($args, '--src-path') + 1])) { throw 'The app package was not created.' }
       $fixture.Uploads++
+      if ($fixture.UploadFailuresRemaining -gt 0) {
+        $fixture.UploadFailuresRemaining--
+        & (Join-Path $PSHOME 'pwsh') -NoProfile -NonInteractive -Command "[Console]::Error.WriteLine('$($fixture.UploadFailure)'); exit 1"
+        $global:LASTEXITCODE = $LASTEXITCODE
+      }
       return
     }
     'resource list' {
@@ -328,6 +344,47 @@ if ($fixture.AiSetupFails) { throw 'Traffic startup failed.' }
   Copy-Item -LiteralPath (Join-Path $source 'scripts/post-deploy.ps1') -Destination $directory -Force
   & (Join-Path $directory 'post-deploy.ps1') @parameters -AksName aks-amlab -WebAppHost app-amlab-test.azurewebsites.net -CentralLawName law-amlab-central-test | Out-Null
   if ($fixture.Uploads -ne 2 -or $fixture.VersionChecks -ne 2 -or $fixture.OperatorRoles -ne 1 -or $fixture.CurrentUserLookups) { throw 'Shared deployment did not verify its publication and configure the supplied operator without interactive-user lookup.' }
+  $fixture.WebAppQuotaExceeded = $true
+  $fixture.Events.Clear()
+  $configWritesBefore = $fixture.WebAppConfigWrites
+  $rejected = $false
+  try { & (Join-Path $directory 'post-deploy.ps1') @parameters -AksName aks-amlab -WebAppHost app-amlab-test.azurewebsites.net | Out-Null }
+  catch { $rejected = $_.Exception.Message -like '*quota-blocked*QuotaExceeded*' }
+  if (-not $rejected -or $fixture.Events.Count -or $fixture.Uploads -ne 2 -or $fixture.WebAppConfigWrites -ne $configWritesBefore) {
+    throw 'A quota-blocked Web App must stop before configuration, build, bootstrap, or upload.'
+  }
+  $fixture.WebAppQuotaExceeded = $false
+  Write-Output 'PASS: a quota-blocked Web App stops with actionable diagnostics before any app changes. No Azure calls.'
+  foreach ($nativeErrorPreference in @($true, $false)) {
+    foreach ($uploadCase in @(
+      @{ Message = 'SCM container restart'; Failures = 1; Attempts = 2; Success = $true },
+      @{ Message = 'Zip deployment failed. Status Code: 502'; Failures = 1; Attempts = 2; Success = $true },
+      @{ Message = 'SCM container restart'; Failures = 5; Attempts = 3; Success = $false },
+      @{ Message = 'AuthorizationFailed: upload was denied'; Failures = 1; Attempts = 1; Success = $false }
+    )) {
+      $fixture.Events.Clear()
+      $fixture.UploadFailure = $uploadCase.Message
+      $fixture.UploadFailuresRemaining = $uploadCase.Failures
+      $uploadsBefore = $fixture.Uploads
+      & {
+        $PSNativeCommandUseErrorActionPreference = $nativeErrorPreference
+        $failureMessage = ''
+        try {
+          & (Join-Path $directory 'post-deploy.ps1') @parameters -AksName aks-amlab -WebAppHost app-amlab-test.azurewebsites.net -CentralLawName law-amlab-central-test | Out-Null
+        } catch { $failureMessage = $_.Exception.Message }
+        if ($PSNativeCommandUseErrorActionPreference -ne $nativeErrorPreference) { throw 'Upload handling changed the caller native-error preference.' }
+        if ($uploadCase.Success) {
+          if ($failureMessage -or $fixture.VersionChecks -ne 2) { throw "A transient upload failure bypassed retry/publication verification: $failureMessage" }
+        } elseif ($failureMessage -notlike 'App Service ZIP upload failed.*' -or
+                  -not $failureMessage.Contains($uploadCase.Message) -or $fixture.VersionChecks -ne 0) {
+          throw "A failed upload must preserve CLI diagnostics and stop before publication verification: $failureMessage"
+        }
+      }
+      if ($fixture.Uploads - $uploadsBefore -ne $uploadCase.Attempts) { throw 'ZIP upload retries did not respect the known error and retry bound.' }
+    }
+  }
+  $fixture.UploadFailuresRemaining = 0
+  Write-Output 'PASS: native upload errors preserve diagnostics, retry only known transient failures, and respect both native-error preferences. No Azure calls.'
   $defaultParameters = $parameters.Clone()
   $defaultParameters.Remove('ConsoleOperatorObjectIds')
   $fixture.DefaultOperator = $true
@@ -354,5 +411,8 @@ if ($fixture.AiSetupFails) { throw 'Traffic startup failed.' }
   Write-Output 'PASS: omitted, null, and empty one-shot operator lists resolve the signed-in user; existing roles are reused; failed user discovery stops without role writes.'
   Write-Output 'PASS: one-shot, app, staged, and Cloud Shell handoffs preserve account/operator inputs, bootstrap before publication, and stop on setup failures. No Azure calls.'
 } finally {
+  foreach ($package in $fixture.Packages) {
+    Remove-Item -LiteralPath $package, "$package.zip" -Recurse -Force -ErrorAction SilentlyContinue
+  }
   if (Test-Path $root) { Remove-Item -LiteralPath $root -Recurse -Force }
 }

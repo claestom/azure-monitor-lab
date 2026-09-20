@@ -99,14 +99,36 @@ foreach ($workspace in @($workspaces)) {
   }
 }
 
-$dcrAssociations = az resource list -g $ResourceGroup --resource-type Microsoft.Insights/dataCollectionRuleAssociations -o json | ConvertFrom-Json
+$dcrAssociations = @(az resource list -g $ResourceGroup --resource-type Microsoft.Insights/dataCollectionRuleAssociations -o json | ConvertFrom-Json)
 
 # Workspace and resource-scoped associations are child resources, so the RG-level
 # resource list can omit them (notably the LAW microsoft-default association).
 $allResources = az resource list -g $ResourceGroup -o json | ConvertFrom-Json
 foreach ($resource in @($allResources)) {
-  $nestedJson = az rest --method get --url "$($resource.id)/providers/Microsoft.Insights/dataCollectionRuleAssociations?api-version=2023-03-11" 2>$null
-  if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($nestedJson)) {
+  $nestedErrorFile = New-TemporaryFile
+  $previousNativeErrorPreference = $PSNativeCommandUseErrorActionPreference
+  try {
+    $PSNativeCommandUseErrorActionPreference = $false
+    $nestedJson = az rest --method get --url "$($resource.id)/providers/Microsoft.Insights/dataCollectionRuleAssociations?api-version=2023-03-11" 2> $nestedErrorFile.FullName
+    $nestedExitCode = $LASTEXITCODE
+    $nestedError = Get-Content -LiteralPath $nestedErrorFile.FullName -Raw
+  } finally {
+    $PSNativeCommandUseErrorActionPreference = $previousNativeErrorPreference
+    Remove-Item -LiteralPath $nestedErrorFile.FullName -Force
+  }
+  if ($nestedExitCode -ne 0) {
+    $nestedErrorCode = ''
+    if ($nestedError -match '(?ms)^\s*ERROR:\s*[^\{\r\n]*(?<body>\{.*\})\)\s*$') {
+      try { $nestedErrorCode = ($Matches.body | ConvertFrom-Json).error.code } catch { }
+    } elseif ($nestedError -match '(?m)^\s*ERROR:\s*\((?<code>[A-Za-z0-9]+)\)') {
+      $nestedErrorCode = $Matches.code
+    } elseif ($nestedError -match '(?m)^\s*ERROR:\s*Not Found\s*$') {
+      $nestedErrorCode = 'NotFound'
+    }
+    if ($nestedErrorCode -in @('UnsupportedResourceType', 'ResourceNotFound', 'ParentResourceNotFound', 'NotFound')) { continue }
+    throw "DCR association discovery failed for '$($resource.id)' (exit code $nestedExitCode). Details:`n$nestedError"
+  }
+  if (-not [string]::IsNullOrWhiteSpace($nestedJson)) {
     $nested = $nestedJson | ConvertFrom-Json
     $dcrAssociations += @($nested.value)
   }

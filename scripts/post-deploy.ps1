@@ -45,6 +45,13 @@ if ($SubscriptionId -ne [guid]::Empty) {
   throw 'Pass the expected subscription and tenant or provide the lab target configuration before deployment.'
 }
 
+$webAppState = az webapp show --subscription $active.id --resource-group $ResourceGroup --name $WebAppName `
+  --query '{state:state,usageState:usageState}' --output json --only-show-errors | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0 -or -not $webAppState.state) { throw 'Could not verify the Web App state before publication.' }
+if ($webAppState.state -eq 'QuotaExceeded' -or $webAppState.usageState -eq 'Exceeded') {
+  throw "App Service '$WebAppName' is quota-blocked (state: $($webAppState.state), usageState: $($webAppState.usageState)). Resolve its App Service plan quota before retrying. The lab template uses Basic B1. No Web App changes were made."
+}
+
 # 1. Build + zip-deploy the bundled .NET 8 minimal API (workloads/webapp/AmlabHello)
 #    so App Insights gets requests/dependencies/failures from a real app.
 Write-Step "Disabling Kudu build and setting startup command"
@@ -102,10 +109,16 @@ $deployExitCode = 1
 $scmRestartRetries = 0
 $zipDeployRetries = 0
 do {
-  $deployOutput = & az webapp deploy `
-    --subscription $active.id --resource-group $ResourceGroup --name $WebAppName `
-    --src-path $zip --type zip --restart true --async true --track-status false --output none 2>&1 | Out-String
-  $deployExitCode = $LASTEXITCODE
+  $previousNativeErrorPreference = $PSNativeCommandUseErrorActionPreference
+  try {
+    $PSNativeCommandUseErrorActionPreference = $false
+    $deployOutput = & az webapp deploy `
+      --subscription $active.id --resource-group $ResourceGroup --name $WebAppName `
+      --src-path $zip --type zip --restart true --async true --track-status false --output none 2>&1 | Out-String
+    $deployExitCode = $LASTEXITCODE
+  } finally {
+    $PSNativeCommandUseErrorActionPreference = $previousNativeErrorPreference
+  }
   $scmRestarted = $deployOutput -match 'SCM container restart|management operation and a deployment operation in quick succession'
   $zipDeploymentFailed = $deployOutput -match 'Zip deployment failed|Status Code: 502|Deployment Failed.*OneDeploy'
   if ($deployExitCode -ne 0 -and $scmRestarted -and $scmRestartRetries -lt 2) {
@@ -122,7 +135,7 @@ do {
 } while ($true)
 
 if ($deployExitCode -ne 0) {
-  throw "App Service ZIP upload failed. Details:`n$deployOutput"
+  throw "App Service ZIP upload failed. Exit code: $deployExitCode. Details:`n$deployOutput"
 }
 
 & (Join-Path $PSScriptRoot 'wait-webapp-publication.ps1') -WebAppHost $WebAppHost -DeploymentId $deploymentId
