@@ -125,7 +125,7 @@ foreach ($resource in @($allResources)) {
     } elseif ($nestedError -match '(?m)^\s*ERROR:\s*Not Found\s*$') {
       $nestedErrorCode = 'NotFound'
     }
-    if ($nestedErrorCode -in @('UnsupportedResourceType', 'ResourceNotFound', 'ParentResourceNotFound', 'NotFound')) { continue }
+    if ($nestedErrorCode -in @('UnsupportedResourceType', 'UnsupportedFeature', 'ResourceNotFound', 'ParentResourceNotFound', 'NotFound')) { continue }
     throw "DCR association discovery failed for '$($resource.id)' (exit code $nestedExitCode). Details:`n$nestedError"
   }
   if (-not [string]::IsNullOrWhiteSpace($nestedJson)) {

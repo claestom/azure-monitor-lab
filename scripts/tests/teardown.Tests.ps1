@@ -76,10 +76,13 @@ try {
   foreach ($nativePreference in @($true, $false)) {
     foreach ($discoveryCase in @(
       @{ Error = 'ERROR: Bad Request({"error":{"code":"UnsupportedResourceType","message":"Association cannot be created for this resource type."}})'; Skip = $true },
+      @{ Error = 'ERROR: Bad Request({"error":{"code":"UnsupportedFeature","message":"Data Collection Rule Associations is not supported in the location of the targeted parent resource.","details":[{"code":"UnsupportedFeature","message":"This parent location cannot host DCR associations.","target":"UnsupportedFeature"}]}})'; Skip = $true },
+      @{ Error = 'ERROR: (UnsupportedFeature) Data Collection Rule Associations is not supported in this parent location.'; Skip = $true },
       @{ Error = 'ERROR: (ResourceNotFound) No association endpoint at this resource.'; Skip = $true },
       @{ Error = 'ERROR: Not Found({"error":{"code":"NotFound","message":"No association endpoint."}})'; Skip = $true },
       @{ Error = 'ERROR: (AuthorizationFailed) Association discovery was denied.'; Skip = $false },
       @{ Error = 'ERROR: Forbidden({"error":{"code":"AuthorizationFailed","message":"NotFound and UnsupportedResourceType are not the error code."}})'; Skip = $false },
+      @{ Error = 'ERROR: Forbidden({"error":{"code":"AuthorizationFailed","message":"Association discovery was denied.","details":[{"code":"UnsupportedFeature","target":"UnsupportedFeature"}]}})'; Skip = $false },
       @{ Error = 'ERROR: (InternalServerError) Association discovery is unavailable.'; Skip = $false }
     )) {
       $fixture.DiscoveryError = $discoveryCase.Error

@@ -102,7 +102,7 @@ Before deleting the lab, set `$rg` to the actual deployment resource group. The 
 ./scripts/teardown.ps1 -ResourceGroup $rg -Yes
 ```
 
-Teardown probes resources for child DCR associations. Azure returns `UnsupportedResourceType` for resources that cannot host them, including Data Collection Endpoints. The script skips that response and not-found responses even when PowerShell's strict native-command handling is enabled. Other discovery failures stop cleanup and report the resource ID and Azure error. Do not disable strict error handling for the entire teardown script.
+Teardown probes resources for child DCR associations. Azure returns `UnsupportedResourceType` for resources that cannot host them, including Data Collection Endpoints, or `UnsupportedFeature` when the parent location does not support associations, as with global action groups. The script skips those responses and not-found responses even when PowerShell's strict native-command handling is enabled. Other discovery failures stop cleanup and report the resource ID and Azure error. Do not disable strict error handling for the entire teardown script.
 
 The final resource-group delete is asynchronous. Soft-deleted Log Analytics workspaces, Application Insights components, Key Vaults, and resources outside the resource group may need separate inspection or purge; see the staged deployment guides for cleanup commands.
 
