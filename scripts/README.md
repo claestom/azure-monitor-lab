@@ -102,6 +102,12 @@ Before deleting the lab, set `$rg` to the actual deployment resource group. The 
 ./scripts/teardown.ps1 -ResourceGroup $rg -Yes
 ```
 
+Cleanup includes name-matched auxiliary groups such as `MC_<lab-rg>_...` and Azure Monitor managed groups such as `MA_<workspace>_<region>_managed_...`. Monitor groups are selected only when their `managedBy` resource ID points to a `Microsoft.Monitor/accounts` workspace in the exact target subscription and resource group. The script does not guess ownership from the workspace name or numeric suffix, so another lab's `amw-amlab` managed group is left alone. Owned Monitor groups are included in the confirmation list before any cleanup; omit `-Yes` to review that list.
+
+Azure normally removes the Monitor managed group when its workspace is deleted. Teardown checks whether it still exists and rechecks its ownership before requesting cleanup. A rerun can find a leftover group through its `managedBy` link even if the target lab group is already gone. Groups with missing or different ownership metadata are not selected. Delete requests remain asynchronous; an accepted request is not confirmation that the group is gone.
+
+When other labs share the tenant-level `amlab-workload` Service Group and SLIs, add `-KeepServiceGroup` to preserve them. The selected lab's resource-group membership is removed with its resource group.
+
 Teardown probes resources for child DCR associations. Azure returns `UnsupportedResourceType` for resources that cannot host them, including Data Collection Endpoints, or `UnsupportedFeature` when the parent location does not support associations, as with global action groups. The script skips those responses and not-found responses even when PowerShell's strict native-command handling is enabled. Other discovery failures stop cleanup and report the resource ID and Azure error. Do not disable strict error handling for the entire teardown script.
 
 The final resource-group delete is asynchronous. Soft-deleted Log Analytics workspaces, Application Insights components, Key Vaults, and resources outside the resource group may need separate inspection or purge; see the staged deployment guides for cleanup commands.
