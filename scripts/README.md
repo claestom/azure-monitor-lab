@@ -39,7 +39,7 @@ The Control Center's [Lab Operations tab](../workloads/webapp/LAB-OPERATIONS.md)
 | [simulate-high-cpu.ps1](simulate-high-cpu.ps1) | Submits fixed 10-minute CPU loads to the running Linux and Windows demo VMs. No AKS dependency; guest load expires independently. | `./scripts/simulate-high-cpu.ps1 -SubscriptionId <sub> -TenantId <tenant> -ResourceGroup <rg>`; add `-WhatIf` for readiness checks only. |
 | `teardown.ps1` | Removes tenant-scoped demo artifacts and monitoring dependencies, then deletes every resource group whose name contains the complete requested resource group name, including AKS-managed `MC_` groups. | `./scripts/teardown.ps1 -ResourceGroup <rg> -Yes` |
 
-`teardown.ps1` is destructive. It lists all matching resource groups before deletion. The `-Yes` switch skips the confirmation prompt. If omitted, the script requires you to type `DELETE`.
+[teardown.ps1](teardown.ps1) is destructive. It lists matching resource groups and verified lab-owned Entra identity IDs before deletion. The `-Yes` switch skips the confirmation prompt and approves both lists. If omitted, the script requires you to type `DELETE`.
 
 ## Telemetry and monitoring demos
 
@@ -65,7 +65,7 @@ The Control Center's [Lab Operations tab](../workloads/webapp/LAB-OPERATIONS.md)
 | `setup-health-model.ps1` | Creates or removes the optional tenant-scoped Service Group and its RG relationship. | `./scripts/setup-health-model.ps1 -ResourceGroup <rg>` or add `-Teardown` |
 | `setup-slis.ps1` | Verifies the Service Group, identity permissions, and Managed Prometheus source metrics for portal-created SLIs. `-Teardown` removes the two documented samples. | `./scripts/setup-slis.ps1 -SubscriptionId <sub> -ResourceGroup <rg>` or add `-Teardown` |
 | `demo-slis.ps1` | Creates, inspects, or removes isolated AKS workloads that move the availability and pod-start latency SLIs. | `./scripts/demo-slis.ps1 -SubscriptionId <sub> -ResourceGroup <rg> -Mode Degrade` |
-| `setup-rbac-demo.ps1` | Discovers the central LAW and RG-specific custom role, then creates the service principals and role assignments used by the granular RBAC demonstration. | `./scripts/setup-rbac-demo.ps1 -ResourceGroup <rg>` |
+| [setup-rbac-demo.ps1](setup-rbac-demo.ps1) | Creates three lab-specific, ownership-tagged app registrations and service principals for the granular RBAC demonstration. A stable scope suffix separates labs; repeated setup reuses the same lab's identities. | `./scripts/setup-rbac-demo.ps1 -ResourceGroup <rg>` |
 | `demo-granular-rbac.ps1` | Runs the granular RBAC demonstration query using the generated local RBAC configuration. | `./scripts/demo-granular-rbac.ps1` |
 
 ## Recommended sequence after deployment
@@ -100,6 +100,20 @@ Before deleting the lab, set `$rg` to the actual deployment resource group. The 
 
 ```powershell
 ./scripts/teardown.ps1 -ResourceGroup $rg -Yes
+```
+
+Teardown also uses [remove-lab-entra-identities.ps1](remove-lab-entra-identities.ps1) to plan and remove the selected lab's tagged Control Center sign-in registration and RBAC demo registrations, including their application service principals. New setup records `azure-monitor-lab:managed:v1`, the tenant ID, exact subscription/resource-group ID, and identity purpose in Entra tags. Managed identities remain Azure-managed and are not deleted through Microsoft Graph.
+
+Identity discovery happens before confirmation; deletion uses the confirmed application and principal object IDs and revalidates ownership. Multiple owners, another tenant, extra callbacks or API configuration, directory grants/relationships, or Azure roles outside the target RG cause preservation with a warning. Azure role checks cover the subscriptions visible to the signed-in account in that tenant; ownership tags are the authoritative boundary, not proof that an identity has never been used elsewhere. Do not reuse a lab-owned identity for unrelated applications. Reruns handle missing objects and identities left after RG deletion. Normal Graph deletion is used, not permanent purge of Entra's deleted-items container.
+
+**Existing labs:** older untagged console registrations and the legacy shared `amlab-rbac-sp-workspace`, `amlab-rbac-sp-table`, and `amlab-rbac-sp-row` registrations are preserved for separate ownership review. They are not silently claimed or removed by name. New RBAC setup uses per-lab names; it does not delete or reset those legacy shared credentials. A reused, untagged console registration remains untagged.
+
+Entra cleanup requires Microsoft Graph read access and permission to delete the application and service principal (for example, appropriate object ownership or an authorized application administrator). Azure subscription/RG Contributor alone does not provide these directory permissions. The script does not grant permissions or suppress authorization errors. Add `-KeepEntraApplications` to explicitly preserve standalone app registrations and their service principals and skip Graph discovery/deletion; Azure still removes managed identities with their owning resources. This is independent of `-KeepServiceGroup`, which preserves only the shared Service Group and SLIs.
+
+To inspect just the eligible Entra identities without deleting anything:
+
+```powershell
+./scripts/remove-lab-entra-identities.ps1 -SubscriptionId $sub -TenantId $tenant -ResourceGroup $rg -PlanOnly
 ```
 
 Cleanup includes name-matched auxiliary groups such as `MC_<lab-rg>_...` and Azure Monitor managed groups such as `MA_<workspace>_<region>_managed_...`. Monitor groups are selected only when their `managedBy` resource ID points to a `Microsoft.Monitor/accounts` workspace in the exact target subscription and resource group. The script does not guess ownership from the workspace name or numeric suffix, so another lab's `amw-amlab` managed group is left alone. Owned Monitor groups are included in the confirmation list before any cleanup; omit `-Yes` to review that list.

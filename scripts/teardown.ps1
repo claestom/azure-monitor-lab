@@ -9,11 +9,16 @@
 .PARAMETER KeepServiceGroup
   Preserve tenant-scoped Service Group and SLI resources used by other labs.
   The selected resource group's membership is removed with the resource group.
+
+.PARAMETER KeepEntraApplications
+  Preserve Entra app registrations and service principals. Otherwise, remove only
+  identities explicitly tagged as owned by this lab after directory preflight.
 #>
 [CmdletBinding()]
 param(
   [string] $ResourceGroup = 'rg-azure-monitor-lab',
   [switch] $KeepServiceGroup,
+  [switch] $KeepEntraApplications,
   [switch] $Yes
 )
 $ErrorActionPreference = 'Stop'
@@ -97,25 +102,39 @@ $resourceGroupsToDelete = @(
   ) | Sort-Object -Unique { if ($_ -ieq $ResourceGroup) { 0 } elseif ($_ -in $monitorManagedResourceGroupNames) { 2 } else { 1 } }, { $_ }
 )
 
-if ($resourceGroupsToDelete.Count -eq 0) {
-  Write-Host "No matching or ownership-linked resource groups found for '$ResourceGroup'. Nothing to delete." -ForegroundColor Yellow
+$entraIdentities = @()
+$entraCleanup = Join-Path $PSScriptRoot 'remove-lab-entra-identities.ps1'
+if (-not $KeepEntraApplications) {
+  $entraIdentities = @(& $entraCleanup -SubscriptionId $active.id -TenantId $active.tenantId -ResourceGroup $ResourceGroup -PlanOnly)
+}
+
+if ($resourceGroupsToDelete.Count -eq 0 -and $entraIdentities.Count -eq 0) {
+  Write-Host "No matching resource groups or verified lab-owned Entra identities found for '$ResourceGroup'. Nothing to delete." -ForegroundColor Yellow
   return
 }
 
 if (-not $Yes) {
   Write-Host "The following resource groups match or are managed by workspaces in '$ResourceGroup' and will be deleted:" -ForegroundColor Yellow
   $resourceGroupsToDelete | ForEach-Object { Write-Host "  - $_" -ForegroundColor Yellow }
-  $confirm = Read-Host 'Type DELETE to confirm deletion of every resource group listed above'
+  $entraIdentities | ForEach-Object { Write-Host "  - Entra: $($_.DisplayName), app $($_.ApplicationObjectId), principal $($_.ServicePrincipalObjectId)" -ForegroundColor Yellow }
+  $confirm = Read-Host 'Type DELETE to confirm deletion of the listed resource groups and lab-owned Entra identities'
   if ($confirm -ne 'DELETE') { Write-Host "Aborted." -ForegroundColor Yellow; return }
 } else {
   Write-Host "Deleting resource groups matching or managed by workspaces in '$ResourceGroup':" -ForegroundColor Yellow
   $resourceGroupsToDelete | ForEach-Object { Write-Host "  - $_" -ForegroundColor Yellow }
+  $entraIdentities | ForEach-Object { Write-Host "  - Entra: $($_.DisplayName), app $($_.ApplicationObjectId), principal $($_.ServicePrincipalObjectId)" -ForegroundColor Yellow }
+}
+
+if ($KeepEntraApplications) {
+  Write-Host 'Preserving Entra app registrations and service principals.' -ForegroundColor Yellow
+} elseif ($entraIdentities.Count) {
+  & $entraCleanup -SubscriptionId $active.id -TenantId $active.tenantId -ResourceGroup $ResourceGroup -Identities $entraIdentities
 }
 
 $primaryResourceGroupExists = @($allResourceGroupNames | Where-Object { $_ -ieq $ResourceGroup }).Count -gt 0
 if (-not $primaryResourceGroupExists) {
   Write-Host "The original resource group no longer exists; deleting matched auxiliary resource groups directly." -ForegroundColor Yellow
-  Remove-MatchingResourceGroups -Names $resourceGroupsToDelete
+  if ($resourceGroupsToDelete.Count) { Remove-MatchingResourceGroups -Names $resourceGroupsToDelete }
   return
 }
 

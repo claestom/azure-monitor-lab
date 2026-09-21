@@ -14,6 +14,7 @@ $fixture = @{
   GroupInventoryFails = $false; MonitorDeleteFails = $false; MonitorCascadeDuringDelete = $false
   MonitorOwnerChanged = $false
   RealTenantCleanup = $false; TenantDeleteError = ''
+  EntraPlan = @(); EntraCalls = [Collections.Generic.List[string]]::new(); EntraFails = ''
 }
 $resourceGroupId = "/subscriptions/$($fixture.Subscription)/resourceGroups/$($fixture.ResourceGroup)"
 $workspaceId = "$resourceGroupId/providers/Microsoft.OperationalInsights/workspaces/law-test"
@@ -53,6 +54,17 @@ if ($ResourceGroup -ne $fixture.ResourceGroup -or -not $Teardown) { throw 'Unexp
 $fixture.TenantCleanup.Add([IO.Path]::GetFileName($PSCommandPath))
 '@ | Set-Content -LiteralPath (Join-Path $directory $helperName)
 }
+
+@'
+param($SubscriptionId, $TenantId, $ResourceGroup, [switch]$PlanOnly, $Identities)
+if ($SubscriptionId -ne $fixture.Subscription -or $TenantId -ne $fixture.Tenant -or $ResourceGroup -ne $fixture.ResourceGroup) { throw 'Entra cleanup lost the verified lab target.' }
+$step = if ($PlanOnly) { 'plan' } else { 'delete' }
+$fixture.EntraCalls.Add($step)
+if ($fixture.EntraFails -eq $step) { throw 'Entra cleanup denied.' }
+if ($PlanOnly) { $fixture.EntraPlan; return }
+if ($fixture.Deletes.Count -or $fixture.TenantCleanup.Count) { throw 'Entra cleanup must run before resource or shared-tenant cleanup.' }
+if (($Identities | ConvertTo-Json -Depth 5 -Compress) -ne ($fixture.EntraPlan | ConvertTo-Json -Depth 5 -Compress)) { throw 'Only the confirmed Entra identity plan may be deleted.' }
+'@ | Set-Content -LiteralPath (Join-Path $directory 'remove-lab-entra-identities.ps1')
 
 if ($IsWindows) {
   $argumentScript = Join-Path $directory 'capture-arguments.ps1'
@@ -267,6 +279,26 @@ try {
   if (-not $confirmationOutput.Contains($monitorGroup) -or $confirmationOutput.Contains('MA_amw-amlab_northeurope_managed_2')) {
     throw 'Confirmation must list the owned managed group and exclude another lab sharing the workspace name.'
   }
+  $fixture.EntraPlan = @([pscustomobject]@{ DisplayName = 'owned-console'; ApplicationObjectId = [guid]::NewGuid().ToString(); ServicePrincipalObjectId = [guid]::NewGuid().ToString() })
+  foreach ($entraCase in @(
+    @{ Fail = ''; Keep = $false; Confirm = 'DELETE'; Expected = 'plan,delete' },
+    @{ Fail = ''; Keep = $true; Confirm = 'DELETE'; Expected = '' },
+    @{ Fail = 'plan'; Keep = $false; Confirm = 'DELETE'; Expected = 'plan' },
+    @{ Fail = 'delete'; Keep = $false; Confirm = 'DELETE'; Expected = 'plan,delete' },
+    @{ Fail = ''; Keep = $false; Confirm = 'cancel'; Expected = 'plan' }
+  )) {
+    $fixture.Deletes.Clear(); $fixture.TenantCleanup.Clear(); $fixture.EntraCalls.Clear()
+    $fixture.EntraFails = $entraCase.Fail; $fixture.Confirm = $entraCase.Confirm
+    $failure = ''
+    try { $messages = & (Join-Path $directory 'teardown.ps1') -ResourceGroup $fixture.ResourceGroup -KeepEntraApplications:$entraCase.Keep 6>&1 | Out-String }
+    catch { $failure = $_.Exception.Message }
+    if (($fixture.EntraCalls -join ',') -ne $entraCase.Expected) { throw 'Teardown did not plan, confirm, and execute Entra cleanup in order.' }
+    if ($entraCase.Fail) {
+      if ($failure -ne 'Entra cleanup denied.' -or $fixture.Deletes.Count) { throw 'Directory failure must stop before deleting Azure resources.' }
+    } elseif ($failure) { throw $failure }
+    if ($entraCase.Confirm -eq 'cancel' -and ($fixture.Deletes.Count -or $messages -notmatch 'owned-console')) { throw 'Cancelled teardown must list the identity and make no changes.' }
+  }
+  $fixture.EntraFails = ''; $fixture.EntraPlan = @(); $fixture.EntraCalls.Clear(); $fixture.Confirm = 'DELETE'
   foreach ($helperName in @('setup-slis.ps1', 'setup-health-model.ps1', 'remove-arm-resource.ps1')) {
     Copy-Item -LiteralPath (Join-Path $source "scripts/$helperName") -Destination $directory -Force
   }
@@ -300,6 +332,7 @@ try {
     }
   }
   Write-Output 'PASS: real tenant cleanup helpers continue on absent SLIs/groups, stop before group deletion on errors, and are bypassed by KeepServiceGroup. No Azure calls.'
+  Write-Output 'PASS: Entra cleanup plans are confirmed and processed before Azure deletion; cancellation, directory failures, and KeepEntraApplications preserve identities. No Azure calls.'
   Write-Output 'PASS: unsupported and missing association probes work with both native-error preferences; unexpected failures retain diagnostics and block deletion. No Azure calls.'
   Write-Output 'PASS: cleanup order, deduplication, matched group scope, tenant guard, and cancellation are preserved. No Azure calls.'
   Write-Output 'PASS: KeepServiceGroup preserves shared tenant resources without skipping resource group cleanup. No Azure calls.'
