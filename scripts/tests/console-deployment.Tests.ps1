@@ -14,6 +14,7 @@ $fixture = @{
   SreResources = $false; ResourceDiscoveryFails = $false
   UploadFailure = ''; UploadFailuresRemaining = 0
   WebAppQuotaExceeded = $false; WebAppConfigWrites = 0
+  PublicationMode = ''; AksCredentialRequests = 0
   Packages = [Collections.Generic.List[string]]::new()
 }
 foreach ($name in @('deploy.ps1', 'deploy-webapp.ps1', 'post-staged-deploy.ps1', 'post-cloud-shell-deploy.ps1', 'wait-webapp-publication.ps1')) {
@@ -130,7 +131,8 @@ function az {
       $fixture.Uploads++
       if ($fixture.UploadFailuresRemaining -gt 0) {
         $fixture.UploadFailuresRemaining--
-        & (Join-Path $PSHOME 'pwsh') -NoProfile -NonInteractive -Command "[Console]::Error.WriteLine('$($fixture.UploadFailure)'); exit 1"
+        $failureText = $fixture.UploadFailure.Replace("'", "''")
+        & (Join-Path $PSHOME 'pwsh') -NoProfile -NonInteractive -Command "[Console]::Error.WriteLine('$failureText'); exit 1"
         $global:LASTEXITCODE = $LASTEXITCODE
       }
       return
@@ -150,7 +152,11 @@ function az {
       return ConvertTo-Json -InputObject $resources
     }
     'resource show' { return 'offline-connection' }
-    'aks get-credentials' { if ($args -notcontains '--subscription') { throw 'Kubernetes discovery lost its subscription.' }; return }
+    'aks get-credentials' {
+      if ($args -notcontains '--subscription') { throw 'Kubernetes discovery lost its subscription.' }
+      $fixture.AksCredentialRequests++
+      return
+    }
     'role assignment' {
       if ($args -notcontains '--subscription') { throw 'Operator access lost its subscription.' }
       if ($args[2] -eq 'list') {
@@ -178,7 +184,10 @@ function Invoke-WebRequest {
   param($Uri, [switch]$UseBasicParsing, $TimeoutSec, $Headers, $MaximumRedirection)
   if ($Uri -like '*/api/console/version*') {
     $fixture.VersionChecks++
-    $version = if ($fixture.VersionChecks -eq 1) { 'old-version' } else { $fixture.DeploymentId }
+    if ($fixture.PublicationMode -eq 'unreachable') { throw 'The application hostname could not be resolved.' }
+    if ($fixture.PublicationMode -eq 'unauthorized') { return @{ StatusCode = 401; Content = (@{ deploymentId = $fixture.DeploymentId } | ConvertTo-Json -Compress) } }
+    if ($fixture.PublicationMode -eq 'malformed') { return @{ StatusCode = 200; Content = '<html>Unavailable</html>' } }
+    $version = if ($fixture.VersionChecks -eq 1 -or $fixture.PublicationMode -eq 'stale') { 'old-version' } else { $fixture.DeploymentId }
     return @{ StatusCode = 200; Content = (@{ deploymentId = $version } | ConvertTo-Json -Compress) }
   }
   return @{ StatusCode = 200 }
@@ -360,7 +369,9 @@ if ($fixture.AiSetupFails) { throw 'Traffic startup failed.' }
       @{ Message = 'SCM container restart'; Failures = 1; Attempts = 2; Success = $true },
       @{ Message = 'Zip deployment failed. Status Code: 502'; Failures = 1; Attempts = 2; Success = $true },
       @{ Message = 'SCM container restart'; Failures = 5; Attempts = 3; Success = $false },
-      @{ Message = 'AuthorizationFailed: upload was denied'; Failures = 1; Attempts = 1; Success = $false }
+      @{ Message = 'AuthorizationFailed: upload was denied'; Failures = 1; Attempts = 1; Success = $false },
+      @{ Message = 'ERROR: NameResolutionError: app-amlab-test.scm.azurewebsites.net /api/publish getaddrinfo failed'; Failures = 1; Attempts = 1; Success = $false },
+      @{ Message = 'ERROR: AuthorizationFailed: app-amlab-test.scm.azurewebsites.net /api/deployments/latest'; Failures = 1; Attempts = 1; Success = $false }
     )) {
       $fixture.Events.Clear()
       $fixture.UploadFailure = $uploadCase.Message
@@ -383,7 +394,39 @@ if ($fixture.AiSetupFails) { throw 'Traffic startup failed.' }
       if ($fixture.Uploads - $uploadsBefore -ne $uploadCase.Attempts) { throw 'ZIP upload retries did not respect the known error and retry bound.' }
     }
   }
+  foreach ($nativeErrorPreference in @($true, $false)) {
+    foreach ($publicationMode in @('served', 'stale', 'unreachable', 'unauthorized', 'malformed')) {
+      $fixture.PublicationMode = $publicationMode
+      $fixture.Events.Clear()
+      $fixture.UploadFailure = "ERROR: HTTPSConnectionPool(host='app-amlab-test.scm.azurewebsites.net'): Max retries exceeded with url: /api/deployments/latest (Caused by NameResolutionError('getaddrinfo failed'))"
+      $fixture.UploadFailuresRemaining = 1
+      $uploadsBefore = $fixture.Uploads
+      $aksBefore = $fixture.AksCredentialRequests
+      & {
+        $PSNativeCommandUseErrorActionPreference = $nativeErrorPreference
+        $failureMessage = ''
+        try {
+          & (Join-Path $directory 'post-deploy.ps1') @parameters -AksName aks-amlab -WebAppHost app-amlab-test.azurewebsites.net -CentralLawName law-amlab-central-test | Out-Null
+        } catch { $failureMessage = $_.Exception.Message }
+        if ($PSNativeCommandUseErrorActionPreference -ne $nativeErrorPreference) { throw 'Status reconciliation changed the caller native-error preference.' }
+        if ($publicationMode -eq 'served') {
+          if ($failureMessage -or $fixture.VersionChecks -ne 2 -or $fixture.AksCredentialRequests -ne $aksBefore + 1) {
+            throw "A DNS failure during deployment status must reconcile the exact published version: $failureMessage"
+          }
+        } elseif ($failureMessage -notlike '*expected application version*could not be verified*' -or
+                  -not $failureMessage.Contains($fixture.DeploymentId) -or
+                  -not $failureMessage.Contains($fixture.UploadFailure) -or
+                  $fixture.VersionChecks -ne 36 -or $fixture.AksCredentialRequests -ne $aksBefore -or
+                  -not (Test-Path -LiteralPath "$($fixture.Packages[$fixture.Packages.Count - 1]).zip")) {
+          throw "Unverified publication must retain the package and diagnostics and stop before AKS setup: $failureMessage"
+        }
+      }
+      if ($fixture.Uploads -ne $uploadsBefore + 1) { throw 'An ambiguous deployment status must not cause another ZIP upload.' }
+    }
+  }
+  $fixture.PublicationMode = ''
   $fixture.UploadFailuresRemaining = 0
+  Write-Output 'PASS: deployment-status DNS failures use exact-version read-only reconciliation; stale/unreachable responses stop without another upload. No Azure calls.'
   Write-Output 'PASS: native upload errors preserve diagnostics, retry only known transient failures, and respect both native-error preferences. No Azure calls.'
   $defaultParameters = $parameters.Clone()
   $defaultParameters.Remove('ConsoleOperatorObjectIds')

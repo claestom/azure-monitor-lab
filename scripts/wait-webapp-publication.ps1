@@ -22,4 +22,4 @@ for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
   }
   if ($attempt -lt $MaxAttempts) { Start-Sleep -Seconds 10 }
 }
-throw "Web App upload was accepted, but the expected application version was not verified after $MaxAttempts checks. Inspect App Service deployment status before retrying. No further deployment was submitted."
+throw "The expected application version was not verified after $MaxAttempts checks. Inspect App Service deployment status before retrying. No further deployment was submitted."

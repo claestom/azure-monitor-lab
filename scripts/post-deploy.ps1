@@ -108,6 +108,8 @@ $deployOutput = ''
 $deployExitCode = 1
 $scmRestartRetries = 0
 $zipDeployRetries = 0
+$publicationVerified = $false
+$scmHost = "$WebAppName.scm.azurewebsites.net"
 do {
   $previousNativeErrorPreference = $PSNativeCommandUseErrorActionPreference
   try {
@@ -118,6 +120,19 @@ do {
     $deployExitCode = $LASTEXITCODE
   } finally {
     $PSNativeCommandUseErrorActionPreference = $previousNativeErrorPreference
+  }
+  $statusDnsFailure = $deployOutput -match [regex]::Escape($scmHost) -and
+    $deployOutput -match '/api/deployments/latest' -and
+    $deployOutput -match 'NameResolutionError|getaddrinfo failed|Failed to resolve'
+  if ($deployExitCode -ne 0 -and $statusDnsFailure) {
+    Write-Warning "Azure CLI could not resolve '$scmHost' while checking deployment status. Verifying the expected application version without uploading again."
+    try {
+      & (Join-Path $PSScriptRoot 'wait-webapp-publication.ps1') -WebAppHost $WebAppHost -DeploymentId $deploymentId
+      $publicationVerified = $true
+    } catch {
+      throw "The expected application version '$deploymentId' could not be verified after a DNS failure querying deployment status at '$scmHost'. The upload outcome is unknown. No additional ZIP upload was submitted. Package retained at '$zip'. Check DNS and App Service deployment status before retrying. Azure CLI exit code: $deployExitCode. Details:`n$deployOutput"
+    }
+    break
   }
   $scmRestarted = $deployOutput -match 'SCM container restart|management operation and a deployment operation in quick succession'
   $zipDeploymentFailed = $deployOutput -match 'Zip deployment failed|Status Code: 502|Deployment Failed.*OneDeploy'
@@ -134,11 +149,13 @@ do {
   }
 } while ($true)
 
-if ($deployExitCode -ne 0) {
+if ($deployExitCode -ne 0 -and -not $publicationVerified) {
   throw "App Service ZIP upload failed. Exit code: $deployExitCode. Details:`n$deployOutput"
 }
 
-& (Join-Path $PSScriptRoot 'wait-webapp-publication.ps1') -WebAppHost $WebAppHost -DeploymentId $deploymentId
+if (-not $publicationVerified) {
+  & (Join-Path $PSScriptRoot 'wait-webapp-publication.ps1') -WebAppHost $WebAppHost -DeploymentId $deploymentId
+}
 Write-Step 'Cleaning up local Web App package files'
 Remove-Item -Recurse -Force $pub
 Remove-Item -Force $zip
