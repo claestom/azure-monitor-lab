@@ -104,12 +104,25 @@ try {
 
   $phase = 'Entra registration'
   $displayName = "$WebAppName-lab-console"
+  $identityTags = @(
+    'azure-monitor-lab:managed:v1'
+    "azure-monitor-lab:tenant:$($TenantId.ToString().ToLowerInvariant())"
+    "azure-monitor-lab:resource-group:$($resourceBase.ToLowerInvariant())"
+    'azure-monitor-lab:kind:console'
+    "azure-monitor-lab:web-app:$($WebAppName.ToLowerInvariant())"
+  )
   $filter = if ($clientId) { "appId eq '$clientId'" } else { "displayName eq '$displayName'" }
   $applications = (Invoke-SetupRequest GET ("https://graph.microsoft.com/v1.0/applications?`$filter=" + [Uri]::EscapeDataString($filter))).value
   if (@($applications).Count -gt 1) { throw 'Multiple matching Entra registrations exist. Select one explicitly in App Service Authentication.' }
   $callback = "https://$($web.properties.defaultHostName)/.auth/login/aad/callback"
   if (@($applications).Count -eq 1) {
     $registration = @($applications)[0]
+    if (@($registration.tags) -contains 'azure-monitor-lab:managed:v1' -and
+        (@($identityTags | Where-Object { $_ -notin @($registration.tags) }).Count -or
+         @($registration.tags | Where-Object { $_ -like 'azure-monitor-lab:resource-group:*' }).Count -ne 1 -or
+         @($registration.tags | Where-Object { $_ -like 'azure-monitor-lab:tenant:*' }).Count -ne 1)) {
+      throw 'The registration ownership does not match this lab. It was not modified.'
+    }
     if ($registration.signInAudience -ne 'AzureADMyOrg' -or $registration.web.redirectUris -notcontains $callback) {
       throw 'The existing registration has a different audience or redirect URI. It was not modified.'
     }
@@ -125,14 +138,26 @@ try {
   } else {
     $registration = Invoke-SetupRequest POST 'https://graph.microsoft.com/v1.0/applications' @{
       displayName = $displayName; signInAudience = 'AzureADMyOrg'
+      tags = $identityTags
       web = @{ redirectUris = @($callback); implicitGrantSettings = @{ enableIdTokenIssuance = $true; enableAccessTokenIssuance = $false } }
       api = @{ requestedAccessTokenVersion = 2 }
     }
   }
+  $ownedRegistration = @($registration.tags) -contains 'azure-monitor-lab:managed:v1'
+  if ($ownedRegistration -and @($identityTags | Where-Object { $_ -notin @($registration.tags) }).Count) {
+    throw 'The registration ownership does not match this lab. It will not be adopted.'
+  }
+  if (-not $ownedRegistration) {
+    Write-Warning 'The existing Entra registration has no lab ownership record. Teardown will preserve it for manual review.'
+  }
   $clientId = $registration.appId
   Write-Host "Entra registration: $clientId"
   $principals = (Invoke-SetupRequest GET ("https://graph.microsoft.com/v1.0/servicePrincipals?`$filter=" + [Uri]::EscapeDataString("appId eq '$clientId'"))).value
-  if (@($principals).Count -eq 0) { $null = Invoke-SetupRequest POST 'https://graph.microsoft.com/v1.0/servicePrincipals' @{ appId = $clientId } }
+  if (@($principals).Count -eq 0) {
+    $principalBody = @{ appId = $clientId }
+    if ($ownedRegistration) { $principalBody.tags = $identityTags }
+    $null = Invoke-SetupRequest POST 'https://graph.microsoft.com/v1.0/servicePrincipals' $principalBody
+  }
 
   $phase = 'sign-in credential transfer'
   $credentialExpiry = [DateTimeOffset]::MinValue
