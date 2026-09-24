@@ -49,7 +49,7 @@ $currentBranch = if ($env:GITHUB_BASE_REF) {
 }
 $allowedDeploymentBranches = if ($currentBranch -eq 'integration') { @('integration', 'master') } else { @('master') }
 $deploymentBranches = @($allowedDeploymentBranches | Where-Object { [regex]::Matches($readme, "%2F$_%2Finfra%2F").Count -eq 2 })
-if ($deploymentBranches.Count -ne 1 -or $readme -match '%2Fdev%2F|git (?:clone --branch|switch) dev|git pull --ff-only origin dev') { throw "Published deployment links must select an allowed branch on $currentBranch: $($allowedDeploymentBranches -join ', ')." }
+if ($deploymentBranches.Count -ne 1 -or $readme -match '%2Fdev%2F|git (?:clone --branch|switch) dev|git pull --ff-only origin dev') { throw "Published deployment links must select an allowed branch on ${currentBranch}: $($allowedDeploymentBranches -join ', ')." }
 $deploymentBranch = $deploymentBranches[0]
 $cloneBranches = @([regex]::Matches($readme, 'git clone --branch (?<branch>\S+) https://github\.com/claestom/azure-monitor-lab\.git') | ForEach-Object { $_.Groups['branch'].Value })
 $expectedDeploymentClones = if ($deploymentBranch -eq 'master') { 2 } else { 1 }
