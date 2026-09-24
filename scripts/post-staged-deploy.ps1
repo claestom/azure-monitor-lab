@@ -102,6 +102,12 @@ Write-Info "Web App: $($webApp.name)"
 Write-Info "AKS: $($aks.name)"
 Write-Info "Central LAW: $($centralLaw.name)"
 
+Write-Step "Ensuring subscription Activity Log ships to the central LAW"
+& (Join-Path $PSScriptRoot 'setup-activity-log.ps1') `
+  -SubscriptionId $active.id `
+  -ResourceGroup $ResourceGroup `
+  -WorkspaceName $centralLaw.name
+
 Write-Step "Running App Service and AKS post-deployment setup"
 $postDeploy = Join-Path $PSScriptRoot 'post-deploy.ps1'
 & $postDeploy `

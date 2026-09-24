@@ -12,12 +12,13 @@ $fixture = @{
   StageEResources = $false; ServiceGroupCalls = 0; SliCalls = 0; SliUnsupportedAudience = $false
   DeploymentId = ''; VersionChecks = 0
   SreResources = $false; ResourceDiscoveryFails = $false
+  ActivityDiagnosticCreates = 0; ExistingActivityWorkspace = ''
   UploadFailure = ''; UploadFailuresRemaining = 0
   WebAppQuotaExceeded = $false; WebAppConfigWrites = 0
   PublicationMode = ''; AksCredentialRequests = 0
   Packages = [Collections.Generic.List[string]]::new()
 }
-foreach ($name in @('deploy.ps1', 'deploy-webapp.ps1', 'post-staged-deploy.ps1', 'post-cloud-shell-deploy.ps1', 'wait-webapp-publication.ps1')) {
+foreach ($name in @('deploy.ps1', 'deploy-webapp.ps1', 'post-staged-deploy.ps1', 'post-cloud-shell-deploy.ps1', 'setup-activity-log.ps1', 'wait-webapp-publication.ps1')) {
   Copy-Item -LiteralPath (Join-Path $source "scripts/$name") -Destination $directory
 }
 @{ expectedSubscriptionId = [guid]::NewGuid(); expectedTenantId = [guid]::NewGuid() } | ConvertTo-Json | Set-Content (Join-Path $root '.azure-target.json')
@@ -89,7 +90,10 @@ function az {
       if ($args[[Array]::IndexOf($args, '--subscription') + 1] -ne $fixture.Subscription.ToString()) { throw 'A stale local target overrode the selected subscription.' }
       return
     }
-    'account show' { return @{ id = $fixture.Subscription; tenantId = $(if ($fixture.BadTenant) { [guid]::NewGuid() } else { $fixture.Tenant }) } | ConvertTo-Json }
+    'account show' {
+      if ($args -contains 'id' -and $args -contains 'tsv') { return $fixture.Subscription.ToString() }
+      return @{ id = $fixture.Subscription; tenantId = $(if ($fixture.BadTenant) { [guid]::NewGuid() } else { $fixture.Tenant }) } | ConvertTo-Json
+    }
     'group create' { $fixture.DeploymentWrites++; return '{}' }
     'provider show' { return 'Registered' }
     'deployment group' {
@@ -107,8 +111,9 @@ function az {
       return "/subscriptions/$($fixture.Subscription)/resourceGroups/test-rg/providers/Microsoft.OperationalInsights/workspaces/law-amlab-central-test"
     }
     'monitor diagnostic-settings' {
-      if (($args[2..3] -join ' ') -eq 'subscription list') { return '' }
+      if (($args[2..3] -join ' ') -eq 'subscription list') { return $fixture.ExistingActivityWorkspace }
       if (($args[2..3] -join ' ') -ne 'subscription create') { throw 'Unexpected Activity Log command.' }
+      $fixture.ActivityDiagnosticCreates++
       $fixture.DeploymentWrites++
       return
     }
@@ -218,6 +223,11 @@ try {
     $expectedServiceGroups = if ($name -eq 'post-staged-deploy.ps1') { 0 } else { 1 }
     if ($fixture.ServiceGroupCalls -ne $expectedServiceGroups) { throw 'Staged deployment must not enable Service Group setup implicitly.' }
   }
+  if ($fixture.ActivityDiagnosticCreates -ne 2) { throw 'Portal and staged completion must configure Activity Log routing.' }
+  $fixture.ExistingActivityWorkspace = "/subscriptions/$($fixture.Subscription)/resourceGroups/test-rg/providers/Microsoft.OperationalInsights/workspaces/law-amlab-central-test"
+  & (Join-Path $directory 'setup-activity-log.ps1') -SubscriptionId $fixture.Subscription -ResourceGroup test-rg -WorkspaceName law-amlab-central-test | Out-Null
+  if ($fixture.ActivityDiagnosticCreates -ne 2) { throw 'Matching Activity Log routing must be idempotent.' }
+  $fixture.ExistingActivityWorkspace = ''
   foreach ($name in @('post-staged-deploy.ps1', 'post-cloud-shell-deploy.ps1')) {
     foreach ($selection in @(
       @{ Resources = $false; Config = $true; Explicit = @{}; Expected = 'post-deploy' },
@@ -282,6 +292,7 @@ try {
       $terraformConsole -notmatch '-EnableStageE \(\[bool\]::Parse\(\$env:LAB_ENABLE_STAGE_E\)\)' -or
       $terraformConsole -notmatch 'LAB_ENABLE_STAGE_SRE_AGENT\s*=\s*tostring\(var\.enable_stage_sre_agent\)' -or
       $terraformConsole -notmatch '-EnableStageSreAgent \(\[bool\]::Parse\(\$env:LAB_ENABLE_STAGE_SRE_AGENT\)\)' -or
+      $terraformConsole -notmatch 'scripts/setup-activity-log\.ps1' -or
       $terraformConsole -notmatch 'scripts/wait-webapp-publication\.ps1') {
     throw 'Terraform must explicitly pass its Stage E/SRE selections and track publication-verifier changes.'
   }

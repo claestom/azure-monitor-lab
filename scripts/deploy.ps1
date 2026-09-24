@@ -288,16 +288,10 @@ $winVm            = $outputs.windowsVmNameOut.value
 #     can be a future version that hasn't shipped to all regions yet (e.g. '2026-03-01'
 #     returning NoRegisteredProviderFound in swedencentral).
 Write-Step "Ensuring subscription Activity Log ships to law-amlab-central (scenario 43 prereq)"
-$lawArmId = az monitor log-analytics workspace show -g $ResourceGroup -n $centralLawName --query id -o tsv
-$diagName = 'amlab-activity-to-law'
-$existingWs = az monitor diagnostic-settings subscription list --query "value[?name=='$diagName'].workspaceId | [0]" -o tsv 2>$null
-if ($existingWs -and $existingWs -eq $lawArmId) {
-  Write-Host "   '$diagName' already routes Activity Log to law-amlab-central" -ForegroundColor DarkGray
-} else {
-  $logsJson = '[{"category":"Administrative","enabled":true},{"category":"Security","enabled":true},{"category":"ServiceHealth","enabled":true},{"category":"Alert","enabled":true},{"category":"Recommendation","enabled":true},{"category":"Policy","enabled":true},{"category":"Autoscale","enabled":true},{"category":"ResourceHealth","enabled":true}]'
-  az monitor diagnostic-settings subscription create --name $diagName --location global --workspace $lawArmId --logs $logsJson --only-show-errors | Out-Null
-  Write-Host "   '$diagName' created -> Activity Log will start landing in law-amlab-central (5-15 min latency)" -ForegroundColor Green
-}
+& (Join-Path $PSScriptRoot 'setup-activity-log.ps1') `
+  -SubscriptionId $active.id `
+  -ResourceGroup $ResourceGroup `
+  -WorkspaceName $centralLawName
 
 Write-Host ""
 Write-Host "Deployment outputs:" -ForegroundColor Green

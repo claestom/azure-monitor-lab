@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Tear the lab down: remove monitoring dependencies and the lab's related resource groups.
+  Tear the lab down: remove subscription routing, monitoring dependencies, and the lab's related resource groups.
 
 .PARAMETER ResourceGroup
   Lab resource group to remove. Also includes name-matched auxiliary groups and
@@ -103,6 +103,13 @@ $resourceGroupsToDelete = @(
   ) | Sort-Object -Unique { if ($_ -ieq $ResourceGroup) { 0 } elseif ($_ -in $monitorManagedResourceGroupNames) { 2 } else { 1 } }, { $_ }
 )
 $primaryResourceGroupExists = @($allResourceGroupNames | Where-Object { $_ -ieq $ResourceGroup }).Count -gt 0
+$resourceGroupId = "/subscriptions/$($active.id)/resourceGroups/$ResourceGroup"
+$activityDiagnosticName = 'amlab-activity-to-law'
+$activityLogWorkspaceId = az monitor diagnostic-settings subscription list --subscription $active.id `
+  --query "value[?name=='$activityDiagnosticName'].workspaceId | [0]" -o tsv --only-show-errors
+if ($LASTEXITCODE -ne 0) { throw "Could not inspect subscription diagnostic setting '$activityDiagnosticName'." }
+$ownsActivityDiagnostic = $activityLogWorkspaceId -and
+  $activityLogWorkspaceId.StartsWith("$resourceGroupId/providers/Microsoft.OperationalInsights/workspaces/", [StringComparison]::OrdinalIgnoreCase)
 $serviceGroupMembershipId = "/subscriptions/$($active.id)/resourceGroups/$ResourceGroup/providers/Microsoft.Relationships/serviceGroupMember/sgm-amlab-rg"
 $hasServiceGroupMembership = $false
 if ($primaryResourceGroupExists) {
@@ -118,7 +125,7 @@ if (-not $KeepEntraApplications) {
   $entraIdentities = @(& $entraCleanup -SubscriptionId $active.id -TenantId $active.tenantId -ResourceGroup $ResourceGroup -PlanOnly)
 }
 
-if ($resourceGroupsToDelete.Count -eq 0 -and $entraIdentities.Count -eq 0) {
+if ($resourceGroupsToDelete.Count -eq 0 -and $entraIdentities.Count -eq 0 -and -not $ownsActivityDiagnostic) {
   Write-Host "No matching resource groups or verified lab-owned Entra identities found for '$ResourceGroup'. Nothing to delete." -ForegroundColor Yellow
   return
 }
@@ -126,12 +133,14 @@ if ($resourceGroupsToDelete.Count -eq 0 -and $entraIdentities.Count -eq 0) {
 if (-not $Yes) {
   Write-Host "The following resource groups match or are managed by workspaces in '$ResourceGroup' and will be deleted:" -ForegroundColor Yellow
   $resourceGroupsToDelete | ForEach-Object { Write-Host "  - $_" -ForegroundColor Yellow }
+  if ($ownsActivityDiagnostic) { Write-Host "  - Subscription diagnostic setting: $activityDiagnosticName" -ForegroundColor Yellow }
   $entraIdentities | ForEach-Object { Write-Host "  - Entra: $($_.DisplayName), app $($_.ApplicationObjectId), principal $($_.ServicePrincipalObjectId)" -ForegroundColor Yellow }
   $confirm = Read-Host 'Type DELETE to confirm deletion of the listed resource groups and lab-owned Entra identities'
   if ($confirm -ne 'DELETE') { Write-Host "Aborted." -ForegroundColor Yellow; return }
 } else {
   Write-Host "Deleting resource groups matching or managed by workspaces in '$ResourceGroup':" -ForegroundColor Yellow
   $resourceGroupsToDelete | ForEach-Object { Write-Host "  - $_" -ForegroundColor Yellow }
+  if ($ownsActivityDiagnostic) { Write-Host "  - Subscription diagnostic setting: $activityDiagnosticName" -ForegroundColor Yellow }
   $entraIdentities | ForEach-Object { Write-Host "  - Entra: $($_.DisplayName), app $($_.ApplicationObjectId), principal $($_.ServicePrincipalObjectId)" -ForegroundColor Yellow }
 }
 
@@ -139,6 +148,12 @@ if ($KeepEntraApplications) {
   Write-Host 'Preserving Entra app registrations and service principals.' -ForegroundColor Yellow
 } elseif ($entraIdentities.Count) {
   & $entraCleanup -SubscriptionId $active.id -TenantId $active.tenantId -ResourceGroup $ResourceGroup -Identities $entraIdentities
+}
+
+if ($ownsActivityDiagnostic) {
+  Write-Host "Deleting subscription diagnostic setting $activityDiagnosticName ..." -ForegroundColor Yellow
+  az monitor diagnostic-settings subscription delete --subscription $active.id --name $activityDiagnosticName --only-show-errors
+  if ($LASTEXITCODE -ne 0) { throw "Failed to delete subscription diagnostic setting '$activityDiagnosticName'." }
 }
 
 if (-not $primaryResourceGroupExists) {

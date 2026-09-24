@@ -15,10 +15,12 @@ $fixture = @{
   MonitorOwnerChanged = $false
   RealTenantCleanup = $false; TenantDeleteError = ''
   ServiceGroupMembershipExists = $true
+  ActivityWorkspaceId = ''; ActivityDiagnosticDeletes = 0
   EntraPlan = @(); EntraCalls = [Collections.Generic.List[string]]::new(); EntraFails = ''
 }
 $resourceGroupId = "/subscriptions/$($fixture.Subscription)/resourceGroups/$($fixture.ResourceGroup)"
 $workspaceId = "$resourceGroupId/providers/Microsoft.OperationalInsights/workspaces/law-test"
+$fixture.ActivityWorkspaceId = $workspaceId
 $unsupportedId = "$resourceGroupId/providers/Microsoft.OperationsManagement/solutions/ContainerInsights(law-test)"
 $associationId = "$workspaceId/providers/Microsoft.Insights/dataCollectionRuleAssociations/test-association"
 $dcrId = "$resourceGroupId/providers/Microsoft.Insights/dataCollectionRules/dcr-test"
@@ -179,6 +181,16 @@ function az {
       if ($resourceId -notin @($associationId, $dcrId, $dceId)) { throw 'Unexpected resource deletion.' }
       $fixture.Deletes.Add($resourceId)
     }
+    'monitor diagnostic-settings' {
+      $operation = $args[3]
+      if ($operation -eq 'list') { return $fixture.ActivityWorkspaceId }
+      if ($operation -ne 'delete' -or $args[[Array]::IndexOf($args, '--name') + 1] -ne 'amlab-activity-to-law' -or
+          $args[[Array]::IndexOf($args, '--subscription') + 1] -ne $fixture.Subscription.ToString()) {
+        throw 'Unexpected subscription diagnostic-setting cleanup.'
+      }
+      $fixture.ActivityDiagnosticDeletes++
+      return
+    }
     default { throw 'Unexpected native Azure request.' }
   }
 }
@@ -218,6 +230,12 @@ try {
     }
   }
   $fixture.DiscoveryError = 'ERROR: (UnsupportedResourceType) Associations unsupported for this resource.'
+  if ($fixture.ActivityDiagnosticDeletes -eq 0) { throw 'Teardown must remove Activity Log routing owned by the selected lab.' }
+  $ownedDiagnosticDeletes = $fixture.ActivityDiagnosticDeletes
+  $fixture.ActivityWorkspaceId = "/subscriptions/$($fixture.Subscription)/resourceGroups/rg-other-lab/providers/Microsoft.OperationalInsights/workspaces/law-other"
+  & (Join-Path $directory 'teardown.ps1') -ResourceGroup $fixture.ResourceGroup -KeepServiceGroup -Yes | Out-Null
+  if ($fixture.ActivityDiagnosticDeletes -ne $ownedDiagnosticDeletes) { throw 'Teardown must preserve Activity Log routing owned by another resource group.' }
+  $fixture.ActivityWorkspaceId = $workspaceId
   $fixture.Deletes.Clear()
   $fixture.TenantCleanup.Clear()
   & (Join-Path $directory 'teardown.ps1') -ResourceGroup $fixture.ResourceGroup -KeepServiceGroup -Yes | Out-Null

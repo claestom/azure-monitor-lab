@@ -76,6 +76,12 @@ Write-Info "AKS: $($aks.name)"
 Write-Info "Central LAW: $($centralLaw.name)"
 Write-Info "Application Insights: $($appInsights.name)"
 
+Write-Step "Ensuring subscription Activity Log ships to the central LAW"
+& (Join-Path $PSScriptRoot 'setup-activity-log.ps1') `
+  -SubscriptionId $active.id `
+  -ResourceGroup $ResourceGroup `
+  -WorkspaceName $centralLaw.name
+
 Write-Step "Resolving App Insights through ARM"
 $appInsightsConnectionString = az resource show `
   --ids $appInsights.id `

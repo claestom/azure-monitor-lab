@@ -21,6 +21,7 @@ locals {
       "workloads/k8s/02-loadgen.yaml",
       "workloads/k8s/03-loadgen-ramp.yaml",
       "scripts/post-staged-deploy.ps1",
+      "scripts/setup-activity-log.ps1",
       "scripts/post-deploy.ps1",
       "scripts/prepare-webapp-package.ps1",
       "scripts/wait-webapp-publication.ps1",
