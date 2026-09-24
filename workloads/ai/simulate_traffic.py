@@ -171,15 +171,21 @@ def setup_tracing():
         print(f"Could not enable Azure Monitor tracing: {exc}")
 
 
-def main():
+def main(argv=None, on_started=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--conversations", type=int, default=150)
     parser.add_argument("--max-turns", type=int, default=2)
+    parser.add_argument(
+        "--agents-file", type=Path,
+        default=Path(__file__).with_name("agents.json"),
+    )
     parser.add_argument("--loop", action="store_true",
                         help="Run continuously, feeding traffic in repeated batches.")
     parser.add_argument("--interval", type=float, default=30,
                         help="Seconds to wait between batches when --loop is set.")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    if args.conversations < 1 or args.max_turns < 1:
+        parser.error("Conversation and turn counts must be positive.")
 
     endpoint = os.environ.get("AZURE_AI_PROJECT_ENDPOINT")
     if not endpoint:
@@ -187,7 +193,7 @@ def main():
     model = os.environ.get("AZURE_CHAT_DEPLOYMENT", "gpt-5-mini")
     router_deployment = os.environ.get("AZURE_ROUTER_DEPLOYMENT", "model-router")
 
-    agents_file = Path(__file__).with_name("agents.json")
+    agents_file = args.agents_file
     if not agents_file.exists():
         sys.exit("agents.json not found — run create_agents.py first.")
     agents = json.loads(agents_file.read_text(encoding="utf-8"))
@@ -213,6 +219,8 @@ def main():
     totals = {"prompt": 0, "completion": 0, "runs": 0}
 
     with client:
+        if on_started is not None:
+            on_started()
         batch = 0
         while True:
             batch += 1
@@ -287,6 +295,7 @@ def main():
     if totals.get("cached"):
         print(f"Cached input tokens: {totals['cached']:,}")
     print("Traces/metrics flow to Application Insights (allow a few minutes to appear).")
+    return totals
 
 
 if __name__ == "__main__":

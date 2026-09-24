@@ -1,0 +1,31 @@
+name: grafana-access
+
+on:
+  push:
+    branches: [dev, integration, master]
+    paths:
+      - 'infra/**'
+      - 'terraform/**'
+      - 'scripts/sync-config.ps1'
+      - 'scripts/tests/grafana-*.Tests.ps1'
+      - 'lab.config.json.example'
+      - 'README.md'
+      - '.github/workflows/grafana-access.yml'
+  pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Grafana access
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify compiled Grafana assignments and deployment links
+        shell: pwsh
+        run: ./scripts/tests/grafana-access.Tests.ps1
+      - name: Verify generated operator configuration
+        shell: pwsh
+        run: ./scripts/tests/grafana-config.Tests.ps1

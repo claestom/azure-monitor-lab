@@ -77,6 +77,14 @@ $siemWebhookUrl   = Coalesce $cfg.siemWebhookUrl   ''
 $subscriptionName = Coalesce $cfg.subscriptionName '<unset>'
 $forbiddenSubs    = if ($null -eq $cfg.forbiddenSubscriptionIds) { @() } else { @($cfg.forbiddenSubscriptionIds) }
 
+$grafanaAdminObjectId = Coalesce $cfg.grafanaAdminObjectId ''
+if ($grafanaAdminObjectId -ne '') {
+  $parsedGrafanaAdmin = [guid]::Empty
+  if (-not [guid]::TryParseExact($grafanaAdminObjectId, 'D', [ref]$parsedGrafanaAdmin) -or $parsedGrafanaAdmin -eq [guid]::Empty) {
+    throw 'grafanaAdminObjectId must be empty or a nonzero Microsoft Entra user or group object ID in GUID format.'
+  }
+}
+
 $enableLawReplication   = if ($null -eq $cfg.enableLawReplication) { $false } else { [bool]$cfg.enableLawReplication }
 $lawReplicationLocation = Coalesce $cfg.lawReplicationLocation ''
 if ($enableLawReplication -and [string]::IsNullOrWhiteSpace($lawReplicationLocation)) {
@@ -132,6 +140,7 @@ $bicepParams = [ordered]@{
     'deployLinuxVm'   = @{ value = $deployLinuxVm }
     'dailyCapGb'      = @{ value = [int]$dailyCapGb }
     'aksNodeCount'    = @{ value = [int]$aksNodeCount }
+    'grafanaAdminObjectId' = @{ value = $grafanaAdminObjectId }
     'enableAi'        = @{ value = $enableStageAI }
     'enableSreAgent'  = @{ value = $enableStageSreAgent }
     'enableLawReplication'   = @{ value = $enableLawReplication }
@@ -162,6 +171,7 @@ $tfLines = @(
   "vm_admin_password   = `"$(Esc $cfg.vmAdminPassword)`""
   "daily_cap_gb        = $([int]$dailyCapGb)"
   "aks_node_count      = $([int]$aksNodeCount)"
+  "grafana_admin_object_id = `"$(Esc $grafanaAdminObjectId)`""
   "deploy_windows_vm   = $($deployWindowsVm.ToString().ToLower())"
   "deploy_linux_vm     = $($deployLinuxVm.ToString().ToLower())"
   "siem_webhook_url    = `"$(Esc $siemWebhookUrl)`""

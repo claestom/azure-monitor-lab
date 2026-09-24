@@ -44,6 +44,9 @@ param aksNodeVmSize string = 'Standard_B2s'
 @description('AKS node count.')
 param aksNodeCount int = 1
 
+@description('Optional Microsoft Entra object ID of the Grafana lab operator or group. Empty grants Grafana Admin to the deployment identity; set explicitly for CI deployments.')
+param grafanaAdminObjectId string = ''
+
 @description('Public GitHub repo deployed to the App Service (Microsoft .NET hello world sample).')
 param appServiceRepoUrl string = 'https://github.com/Azure-Samples/dotnetcore-docs-hello-world-linux'
 
@@ -404,6 +407,7 @@ module grafana 'modules/grafana.bicep' = {
   name: 'grafana'
   params: {
     name: grafanaName
+    adminObjectId: grafanaAdminObjectId
     location: location
     azureMonitorWorkspaceId: amw.outputs.id
     tags: commonTags
@@ -427,6 +431,17 @@ module appService 'modules/appservice.bicep' = {
     diagEventHubAuthRuleId: eventHub.outputs.sendRuleId
     diagEventHubName: eventHub.outputs.hubName
     tags: commonTags
+  }
+}
+
+module consolePlatform 'modules/lab-console-platform.bicep' = {
+  name: 'lab-console-platform'
+  params: {
+    webAppName: appService.outputs.webAppName
+    centralLawId: lawCentral.outputs.id
+    location: appServiceLocation
+    tags: commonTags
+    cpuVmNames: deployLinuxVm && deployWindowsVm ? [vmLinux!.outputs.vmName, vmWindows!.outputs.vmName] : []
   }
 }
 
@@ -566,7 +581,7 @@ resource alertVmCpuDynamic 'Microsoft.Insights/metricAlerts@2018-03-01' = if (de
   location: 'global'
   tags: commonTags
   properties: {
-    description: 'Lab VM CPU anomaly detected by ML-learned dynamic thresholds (medium sensitivity)'
+    description: 'Lab VM CPU above its ML-learned baseline (medium sensitivity)'
     severity: 3
     enabled: true
     scopes: filter([
@@ -576,7 +591,7 @@ resource alertVmCpuDynamic 'Microsoft.Insights/metricAlerts@2018-03-01' = if (de
     targetResourceType: 'Microsoft.Compute/virtualMachines'
     targetResourceRegion: location
     evaluationFrequency: 'PT5M'
-    windowSize: 'PT10M'
+    windowSize: 'PT15M'
     criteria: {
       'odata.type': 'Microsoft.Azure.Monitor.MultipleResourceMultipleMetricCriteria'
       allOf: [
@@ -584,13 +599,13 @@ resource alertVmCpuDynamic 'Microsoft.Insights/metricAlerts@2018-03-01' = if (de
           name: 'CpuDynamic'
           metricNamespace: 'Microsoft.Compute/virtualMachines'
           metricName: 'Percentage CPU'
-          operator: 'GreaterOrLessThan'
+          operator: 'GreaterThan'
           timeAggregation: 'Average'
           criterionType: 'DynamicThresholdCriterion'
           alertSensitivity: 'Medium'
           failingPeriods: {
-            numberOfEvaluationPeriods: 4
-            minFailingPeriodsToAlert: 3
+            numberOfEvaluationPeriods: 1
+            minFailingPeriodsToAlert: 1
           }
         }
       ]

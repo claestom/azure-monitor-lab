@@ -35,7 +35,8 @@ param(
   [string] $Location       = 'northeurope',
   [string] $ParametersFile = (Join-Path $PSScriptRoot '..' 'infra' 'main.parameters.json'),
   [switch] $SkipPreflight,
-  [int]    $MaxDeployRetries = 0
+  [int]    $MaxDeployRetries = 0,
+  [guid[]] $ConsoleOperatorObjectIds
 )
 
 $ErrorActionPreference = 'Stop'
@@ -97,9 +98,10 @@ function Assert-AllowedSubscription {
     throw "BLOCKED: active sub '$($active.name)' is on the forbidden list."
   }
   Write-Host "   OK — $($active.name)" -ForegroundColor Green
+  return $active
 }
 
-Assert-AllowedSubscription
+$active = Assert-AllowedSubscription
 
 # 0. Sanity
 Write-Step "Active subscription"
@@ -144,6 +146,8 @@ function Register-ResourceProvider {
 
 Write-Step "Ensuring preview resource providers are registered"
 Register-ResourceProvider -Namespace 'Microsoft.CloudHealth'
+Register-ResourceProvider -Namespace 'Microsoft.App'
+Register-ResourceProvider -Namespace 'Microsoft.ContainerRegistry'
 
 # 2. Deploy
 Write-Step "Deploying main.bicep (this takes about 5 minutes: AKS + VMs + Grafana)"
@@ -284,16 +288,10 @@ $winVm            = $outputs.windowsVmNameOut.value
 #     can be a future version that hasn't shipped to all regions yet (e.g. '2026-03-01'
 #     returning NoRegisteredProviderFound in swedencentral).
 Write-Step "Ensuring subscription Activity Log ships to law-amlab-central (scenario 43 prereq)"
-$lawArmId = az monitor log-analytics workspace show -g $ResourceGroup -n $centralLawName --query id -o tsv
-$diagName = 'amlab-activity-to-law'
-$existingWs = az monitor diagnostic-settings subscription list --query "value[?name=='$diagName'].workspaceId | [0]" -o tsv 2>$null
-if ($existingWs -and $existingWs -eq $lawArmId) {
-  Write-Host "   '$diagName' already routes Activity Log to law-amlab-central" -ForegroundColor DarkGray
-} else {
-  $logsJson = '[{"category":"Administrative","enabled":true},{"category":"Security","enabled":true},{"category":"ServiceHealth","enabled":true},{"category":"Alert","enabled":true},{"category":"Recommendation","enabled":true},{"category":"Policy","enabled":true},{"category":"Autoscale","enabled":true},{"category":"ResourceHealth","enabled":true}]'
-  az monitor diagnostic-settings subscription create --name $diagName --location global --workspace $lawArmId --logs $logsJson --only-show-errors | Out-Null
-  Write-Host "   '$diagName' created -> Activity Log will start landing in law-amlab-central (5-15 min latency)" -ForegroundColor Green
-}
+& (Join-Path $PSScriptRoot 'setup-activity-log.ps1') `
+  -SubscriptionId $active.id `
+  -ResourceGroup $ResourceGroup `
+  -WorkspaceName $centralLawName
 
 Write-Host ""
 Write-Host "Deployment outputs:" -ForegroundColor Green
@@ -306,7 +304,7 @@ Write-Host "  Windows VM     : $winVm"
 
 # 3. Post-deploy
 $postDeploy = Join-Path $PSScriptRoot 'post-deploy.ps1'
-& $postDeploy -ResourceGroup $ResourceGroup -WebAppName $webAppName -AksName $aksName -WebAppHost $webAppHost -CentralLawName $centralLawName
+& $postDeploy -SubscriptionId $active.id -TenantId $active.tenantId -ResourceGroup $ResourceGroup -WebAppName $webAppName -AksName $aksName -WebAppHost $webAppHost -CentralLawName $centralLawName -ConsoleOperatorObjectIds $ConsoleOperatorObjectIds
 
 # 4. Service Group (tenant-scoped, preview) + service group member relationship.
 #    Required before SLIs can be attached as extensions on the group.
@@ -319,24 +317,7 @@ Write-Step "Verifying demo SLI prerequisites and source metrics (scenario 46)"
 $setupSli = Join-Path $PSScriptRoot 'setup-slis.ps1'
 & $setupSli -SubscriptionId $active.id -ResourceGroup $ResourceGroup
 
-# 6. Optional AI feature — create the demo agents + simulate GenAI traffic, but only
-#    when lab.config.json enabled it (stageToggles.enableStageAI -> Bicep enableAi).
-$aiEnabled = $false
-if ($null -ne $labCfg -and $null -ne $labCfg.stageToggles -and $null -ne $labCfg.stageToggles.enableStageAI) {
-  $aiEnabled = [bool]$labCfg.stageToggles.enableStageAI
-}
-if ($aiEnabled) {
-  Write-Step "AI feature enabled — creating agents + simulating traffic (scripts/setup-ai.ps1)"
-  $setupAi = Join-Path $PSScriptRoot 'setup-ai.ps1'
-  try {
-    & $setupAi -ResourceGroup $ResourceGroup
-  } catch {
-    Write-Host "  AI setup failed: $($_.Exception.Message)" -ForegroundColor Yellow
-    Write-Host "  Re-run manually once Python + az are ready: ./scripts/setup-ai.ps1" -ForegroundColor Yellow
-  }
-}
-
-# 7. Optional SRE Agent stage. Bicep creates the agent and Azure Monitor connectors;
+# 6. Optional SRE Agent stage. Bicep creates the agent and Azure Monitor connectors;
 #    this verifies the deployed resource and prints the portal URL.
 $sreAgentEnabled = $false
 if ($null -ne $labCfg -and $null -ne $labCfg.stageToggles -and $null -ne $labCfg.stageToggles.enableStageSreAgent) {
@@ -345,7 +326,28 @@ if ($null -ne $labCfg -and $null -ne $labCfg.stageToggles -and $null -ne $labCfg
 if ($sreAgentEnabled) {
   Write-Step "SRE Agent stage enabled - verifying the deployed agent and Azure Monitor connectors"
   $setupSreAgent = Join-Path $PSScriptRoot 'setup-sre-agent.ps1'
-  & $setupSreAgent -SubscriptionId $labCfg.subscriptionId -ResourceGroup $ResourceGroup
+  & $setupSreAgent -SubscriptionId $active.id -ResourceGroup $ResourceGroup
 }
 
-Write-Host "`n✅ Lab is up. See README.md for the demo flow." -ForegroundColor Green
+# 7. Optional AI feature - create the demo agents + simulate GenAI traffic, but only
+#    when lab.config.json enabled it (stageToggles.enableStageAI -> Bicep enableAi).
+$aiEnabled = $false
+$aiTrafficStarted = $false
+if ($null -ne $labCfg -and $null -ne $labCfg.stageToggles -and $null -ne $labCfg.stageToggles.enableStageAI) {
+  $aiEnabled = [bool]$labCfg.stageToggles.enableStageAI
+}
+if ($aiEnabled) {
+  Write-Step "AI feature enabled - preparing agents and starting background traffic"
+  $setupAi = Join-Path $PSScriptRoot 'setup-ai.ps1'
+  try {
+    & $setupAi -ResourceGroup $ResourceGroup -SubscriptionId $active.id -TenantId $active.tenantId -BackgroundTraffic
+    $aiTrafficStarted = $true
+  } catch {
+    Write-Host "  Optional AI traffic could not start: $($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host '  Console agent provisioning completed earlier. This warning concerns optional demo traffic.' -ForegroundColor Yellow
+  }
+}
+
+$completionMessage = 'Lab setup complete.'
+if ($aiTrafficStarted) { $completionMessage += ' Agent traffic started in the background.' }
+Write-Host "`n$completionMessage" -ForegroundColor Green

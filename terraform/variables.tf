@@ -68,6 +68,21 @@ variable "aks_node_count" {
   default = 1
 }
 
+variable "grafana_admin_object_id" {
+  type        = string
+  default     = ""
+  nullable    = false
+  description = "Microsoft Entra object ID of the Grafana lab operator or group. Empty grants Grafana Admin to the ARM deployment identity; set explicitly for CI deployments."
+
+  validation {
+    condition = var.grafana_admin_object_id == "" || (
+      can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", var.grafana_admin_object_id)) &&
+      var.grafana_admin_object_id != "00000000-0000-0000-0000-000000000000"
+    )
+    error_message = "Use an empty value or a nonzero Microsoft Entra user or group object ID in GUID format."
+  }
+}
+
 variable "siem_webhook_url" {
   type      = string
   default   = ""

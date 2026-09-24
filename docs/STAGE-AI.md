@@ -82,21 +82,25 @@ az monitor app-insights query --app appi-amlab -g $rg --analytics-query "depende
 
 ## 6) Enable + run
 
-`setup-ai.ps1` pip-installs the packages in [`workloads/ai/requirements.txt`](../workloads/ai/requirements.txt) (azure-ai-projects, azure-ai-agents, azure-identity, azure-monitor-opentelemetry, opentelemetry-sdk, openai, python-dotenv) before creating the agents and simulating traffic.
+[AI setup](../scripts/setup-ai.ps1) installs the [Python dependencies](../workloads/ai/requirements.txt), reuses or creates the four matching agents, then starts a finite background batch of 150 conversations. `-Conversations` changes the finite batch size. `-SkipTraffic` prepares agents without traffic. The legacy `-BackgroundTraffic` switch is accepted but no longer needed; false does not restore foreground mode.
 
-**Bicep one-shot** (`lab.config.json`): set `stageToggles.enableStageAI = true` → `deploy.ps1` passes `enableAi=true` to `main.bicep` and runs `setup-ai.ps1` at the end.
+**Bicep one-shot:** set `stageToggles.enableStageAI = true` in the central config. [The deployment script](../scripts/deploy.ps1) prepares console agents/access before publication, validates selected SRE resources, then starts background AI traffic as its final step.
 
-**Terraform / staged**: `enable_stage_ai = true` (deploys `infra/stages/50-ai.json`), then run `scripts/setup-ai.ps1`.
+**Terraform:** set `enable_stage_ai = true` and follow [the Terraform runbook](DEPLOY-TERRAFORM-STEP-BY-STEP.md#step-7---enable-stage-ai-optional). With B enabled, apply refreshes console inventory/access and prepares agents with `-SkipTraffic`, including when AI is added later. No second console wrapper is required. Optional traffic is a separate background setup invocation. Without B, use the standalone AI helper to prepare agents.
 
-**Standalone Bicep stage**:
+**Raw Bicep:** follow [the Stage AI preview, deploy, and completion sequence](DEPLOY-BICEP-STEP-BY-STEP.md#stage-ai-deploy-optional). It uses the dedicated AI template's parameter schema, refreshes an existing Web App before optional traffic, and skips Web App work for an A+AI lab. Do not pass the entire main parameters file to the AI template.
+
+**Portal/Cloud Shell:** finish the [portal deployment and Cloud Shell wrapper](../README.md#option-1-deploy-to-azure-portal-no-local-setup) first. Then request optional traffic with the [AI Cloud Shell helper](../scripts/setup-ai-cloud-shell.ps1), which verifies and forwards account context and uses core ARM discovery without optional CLI extensions:
 
 ```powershell
-az deployment group create -g $rg -n stage-ai-foundry `
-  --template-file infra/stages/50-ai.bicep -p namePrefix=amlab alertEmail=you@contoso.com
-./scripts/setup-ai.ps1 -g $rg
+./scripts/setup-ai-cloud-shell.ps1 -SubscriptionId $sub -ResourceGroup $rg -NamePrefix amlab
 ```
 
-> **Verify the Model Router version for your region first:** `az cognitiveservices model list -l swedencentral` and pass `-p routerModelVersion=<version>` (or `router_model_version` in Terraform) if the default has rolled forward.
+The Cloud Shell helper also works locally. Both helpers return after the worker acknowledges startup, not after the conversations finish. The PID and log/status paths are printed; keep the host and its Azure CLI sign-in available. Cloud Shell or CI termination can interrupt traffic, there is no automatic restart, and each invocation starts a new billable batch. The worker runs on the deployment machine, not in the Web App or an Azure job. Its status and logs are stored under `%LOCALAPPDATA%/azure-monitor-lab/ai-traffic` on Windows or `$XDG_STATE_HOME/azure-monitor-lab/ai-traffic` on Linux, defaulting to `~/.local/state`. A `running` status confirms startup only; inspect the log for successful model responses.
+
+When adding AI after Stage E, rerun Stage E with `enableAi=true` to add its AI health tier. An A+AI deployment can instead opt into Stage AI's separate health model with `enableHealthModel=true`. Neither health-model option is required for the Foundry Playground; that console tab requires Stage B plus AI.
+
+Verify the Model Router version available in the chosen AI region before deployment. Supply `routerModelVersion` through the staged helper's nonsecret overrides, or `router_model_version` in Terraform, when the default is no longer available.
 
 ## 7) Tear-down nuance
 

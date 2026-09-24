@@ -42,14 +42,13 @@ function fixture() {
   return { state, calls, github, context, core, run: () => enforcePromotion({ github, context, core }) };
 }
 
-test('accepts current same-repository integration and binds success to the PR test merge', async () => {
+test('accepts current same-repository integration and reports success on the required head context', async () => {
   const setup = fixture();
   await setup.run();
   assert.equal(setup.calls.checks.length, 1);
   assert.equal(setup.calls.checks[0].name, checkName);
   assert.equal(setup.calls.checks[0].conclusion, 'success');
-  assert.equal(setup.calls.checks[0].head_sha, mergeSha);
-  assert.notEqual(setup.calls.checks[0].head_sha, integrationSha);
+  assert.equal(setup.calls.checks[0].head_sha, integrationSha);
   assert.equal(setup.calls.closes.length, 0);
   assert.equal(setup.calls.failures.length, 0);
 });
@@ -60,7 +59,7 @@ for (const branch of ['dev', 'feature/change', 'Integration', 'integration-copy'
     setup.state.pull.head.ref = branch;
     await setup.run();
     assert.equal(setup.calls.checks[0].conclusion, 'failure');
-    assert.equal(setup.calls.checks[0].head_sha, mergeSha);
+    assert.equal(setup.calls.checks[0].head_sha, integrationSha);
     assert.deepEqual(setup.calls.closes, [{ owner: 'example', repo: 'lab', pull_number: 42, state: 'closed' }]);
     assert.equal(setup.calls.comments.length, 1);
     assert.equal(setup.calls.failures.length, 1);

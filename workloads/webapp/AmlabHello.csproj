@@ -7,6 +7,19 @@
     <AssemblyName>AmlabHello</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="AmlabHello.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Azure.AI.Agents.Persistent" Version="1.1.0" />
+    <PackageReference Include="Azure.Identity" Version="1.21.0" />
+    <PackageReference Include="Azure.Monitor.Query.Logs" Version="1.0.0" />
+    <PackageReference Include="JsonSchema.Net" Version="7.3.4" />
     <PackageReference Include="Microsoft.ApplicationInsights.AspNetCore" Version="2.22.0" />
+    <PackageReference Include="ModelContextProtocol.Core" Version="2.2.0" />
+    <PackageReference Include="OpenAI" Version="2.13.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Remove="frontend/**;tests/**;test-results/**;playwright-report/**;node_modules/**;package*.json" />
+    <Content Update="lab-console.json" CopyToPublishDirectory="Never" />
   </ItemGroup>
 </Project>

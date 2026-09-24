@@ -2,7 +2,7 @@
 
 > 👈 **New here? Start with the [README](../README.md).** This is the deep-dive reference: full capability matrix, every deployed resource, the demo walkthrough, cost breakdown, folder layout, operational helpers, and troubleshooting.
 
-A self-contained, reproducible demo of the **Azure Monitor + Microsoft Sentinel** stack. The lab primarily uses one resource group, plus the AKS-managed resource group and optional tenant-scoped artifacts. It provides two IaC paths (Bicep or Terraform), two delivery modes (**one-shot** for internal demos or a **5-stage workshop** for customer-facing progressive enablement), and 60 numbered demo scenarios (`0` through `59`), all driven from one central config file.
+A self-contained, reproducible demo of the **Azure Monitor + Microsoft Sentinel** stack. The lab primarily uses one resource group, plus the AKS-managed resource group and optional tenant-scoped artifacts. It provides two IaC paths (Bicep or Terraform), two delivery modes (**one-shot** for internal demos or a **5-stage workshop** for customer-facing progressive enablement), and 61 numbered demo scenarios (`0` through `60`), all driven from one central config file.
 
 ## Capabilities
 
@@ -100,6 +100,8 @@ rg-azure-monitor-lab/
 
 > **Region pinning:** the **App Service** (plan + site) and its diagnostic sinks (dedicated storage + Event Hub) are pinned to **`westeurope`**; the **Health Model** preview and the **AI stage** are pinned to **`swedencentral`**. Everything else follows the lab region (default `northeurope`).
 
+The Control Center also provisions four runner resources in the Web App's region: a Basic `acrlabops<suffix>` registry, a `cae-labops-<suffix>` Consumption environment, an `id-labops-<suffix>` managed identity, and a manual `job-labops-<suffix>` job. Custom runner/launcher roles, scoped assignments, and environment diagnostics support them. The job and image are completed by workload publication, not by the raw portal template alone. The Entra sign-in registration is tenant-level and is not removed by resource-group deletion. Resource counts vary with selected stages and whether child resources, deployments, and role assignments are counted.
+
 Inside the central LAW you also get **12+ saved KQL searches** and **KQL functions** under category `AzureMonitorDemoLab` (Logs > Saved searches / Functions). The one-shot deployment wrapper runs `post-deploy.ps1`, creates the Service Group and RG membership with `setup-health-model.ps1`, and verifies SLI prerequisites with `setup-slis.ps1`. Optional operational helpers layer demos and telemetry on top. See [Operational and optional helpers](#operational-and-optional-helpers) below.
 
 ---
@@ -112,6 +114,7 @@ Inside the central LAW you also get **12+ saved KQL searches** and **KQL functio
 - PowerShell 7+ (the deploy scripts and helpers are `.ps1`)
 - A subscription with quota for: 1 AKS cluster (2 × `Standard_B2s`), 2 VMs (2 × `Standard_B2s`), 1 Linux VMSS (1 × `Standard_B2s`), 1 App Service B1 (in `westeurope`), 1 Managed Grafana Essential, 2 Storage accounts, 1 Event Hub namespace, 1 Key Vault.
 - *(Optional AI stage only)* Python 3.10+ for `scripts/setup-ai.ps1` (creates the demo agents + traffic simulator in `workloads/ai/`); the Foundry models it deploys are **billable**.
+- Console completion additionally requires the .NET 8 SDK, ACR Tasks availability, Container Apps Consumption capacity, and rights to manage the sign-in registration and scoped roles. See [Lab Operations prerequisites](../workloads/webapp/LAB-OPERATIONS.md#prerequisites).
 
 The deploy script lazily registers `Microsoft.ContainerService`, `Microsoft.OperationsManagement`, `Microsoft.Dashboard`, `Microsoft.AlertsManagement`, and `Microsoft.CloudHealth` (Service Groups preview) — that may already be done in your sub, otherwise it takes ~3 min.
 
@@ -164,7 +167,7 @@ Two delivery modes — pick whichever fits your audience.
 
 Defaults: resource group `rg-azure-monitor-lab`, region `northeurope`, parameters in `infra/main.parameters.json` (auto-generated from `lab.config.json` — see Bootstrap above). Some resources auto-pin to their own region regardless of the lab region: the **App Service** tier (plan + site + its diagnostic storage + Event Hub) to **`westeurope`** (no Basic App Service quota in `northeurope` on the sponsored subs), and the **Health Model** preview + optional **AI stage** to **`swedencentral`**.
 
-End-to-end: ~20–25 minutes (AKS + Grafana are the slowest). After it finishes, the script prints the App Service URL, the AKS LB IP, the Grafana URL, and the Workbook resource ID.
+End-to-end deployment can take tens of minutes, including AKS/Grafana provisioning, the runner image build, MCP packaging, ZIP upload, and app-version verification. The script prints the App Service URL, the AKS LB IP, the Grafana URL, and the Workbook resource ID. Optional AI traffic starts last as a finite background batch; setup completion does not wait for every conversation.
 
 ### Option 2 — Staged workshop (customer-facing, progressive enablement)
 
@@ -193,11 +196,11 @@ Walk-through docs:
 
 ## Demo flow
 
-The lab supports **60 numbered demo scenarios** (`0` through `59`), each with a story, a click-path, and a "killer line". See [`DEMO-SCENARIOS.md`](DEMO-SCENARIOS.md) for the full catalogue, including audience-pivoted shortlists (App Service, AKS, Cost, Security, and Workload health).
+The lab supports **61 numbered demo scenarios** (`0` through `60`), each with a story, a click-path, and a "killer line". See [`DEMO-SCENARIOS.md`](DEMO-SCENARIOS.md) for the full catalogue, including audience-pivoted shortlists (App Service, AKS, Cost, Security, and Workload health).
 
 **Suggested 25-minute "first taste" walkthrough** (covers the cross-stack story):
 
-1. **Resource group overview** — show the ~35 resources, all tagged `purpose=azure-monitor-lab`.
+1. **Resource group overview** - show the resources from the selected stages, including the Control Center runner, and filter by `purpose=azure-monitor-lab`.
 2. **🚦 Traffic Lights workbook** ([scenario 1](DEMO-SCENARIOS.md#s1)) → currently all **Green**. Talk through the cross-workspace KQL behind it.
 3. **VM Insights** ([scenario 2](DEMO-SCENARIOS.md#s2)) → portal → Insights → Map → topology + Performance for the Linux VM, same for Windows.
 4. **AKS → Insights** ([scenario 4](DEMO-SCENARIOS.md#s4)) → Container Insights blades, then **Workbooks → AKS Prometheus**, then **Grafana** with AMW data source pre-wired.
@@ -236,6 +239,8 @@ Rough monthly burn if left running 24/7. USD estimates use a planning rate of EU
 | LAW ingestion — capped at 1 GB/day × 2 (EUR 2.30/GB / USD 2.53/GB) | 5–140 | 6–154 |
 | Workbooks · Action Groups · Policy · Sentinel onboarding | 0 | 0 |
 | **Total (idle demo use)** | **~190 + ingestion** | **~209 + ingestion** |
+
+This historical baseline excludes the Control Center runner added later. Include Basic Container Registry service/storage, ACR Tasks builds, Container Apps job CPU/memory usage, and runner log ingestion when estimating the current lab. The runner has no always-running application replica; model traffic and started workloads remain separately billable. Use the selected regions' current prices and actual usage rather than treating the baseline or stage-table amounts as all-inclusive quotes.
 
 > **Optional AI stage** adds pay-per-token Foundry model spend (gpt-5-mini / text-embedding-3-small / gpt-5.4 / model-router) — near EUR 0 / USD 0 at idle, driven entirely by `setup-ai.ps1` traffic. Delete the Foundry account (or skip the stage) to zero it out.
 
@@ -281,8 +286,9 @@ azure-monitor-lab/
 │   │   ├─ 00-foundation.bicep      ← LAW · AppI · AMW · DCE · network · storage · EH · KV
 │   │   ├─ 10-workloads.bicep       ← VMs · VMSS · AKS · App Service · Grafana
 │   │   ├─ 20-alerting.bicep        ← Action Group · alerts · AMBA · processing rules
-│   │   ├─ 30-security-posture.bicep← Sentinel · security alerts · LAW RBAC
-│   │   ├─ 40-optional-advanced.bicep ← Connection Monitor · flow logs · data export · etc.
+│   │   ├─ 30-security-posture.bicep← Security alerts · LAW RBAC
+│   │   ├─ 40-optional-advanced.bicep ← Sentinel onboarding · data export · health model · etc.
+│   │   ├─ 41-sentinel-content.bicep ← Sentinel analytics rule after onboarding
 │   │   ├─ 50-ai.bicep              ← (optional) Foundry GenAI workload · token alerts · AI FinOps observability
 │   │   └─ 60-sre-agent.bicep       ← (optional) SRE Agent · connectors · identity and RBAC
 │   └─ modules/                     ← 45 reusable Bicep modules (including optional AI and SRE stages)
@@ -333,7 +339,7 @@ azure-monitor-lab/
 
 ## Ideas to extend beyond current scope
 
-The lab covers 60 numbered scenarios (`0` through `59`) out of the box; here are well-scoped follow-ups for deeper sessions:
+The lab covers 61 numbered scenarios (`0` through `60`) out of the box; here are well-scoped follow-ups for deeper sessions:
 
 - **Multi-region DR drill** — pair the central LAW with a paired region (the `enableLawReplication` parameter wires this up) and walk alert + workbook continuity during a regional outage.
 - **Cross-subscription workbook rollup** — clone the Traffic Lights workbook into a management-group-scoped variant.

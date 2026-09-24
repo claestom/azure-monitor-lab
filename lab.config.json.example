@@ -16,6 +16,8 @@
   "vmAdminUsername":  "azureuser",
   "dailyCapGb":       1,
   "aksNodeCount":     2,
+  "grafanaAdminObjectId": "",
+  "_grafanaAdminObjectIdDocs": "Leave empty to grant Grafana Admin to the deploying identity. When a pipeline deploys, set the Microsoft Entra object ID of the human lab operator or group that must access Grafana, not an application client ID.",
   "deployWindowsVm":  true,
   "deployLinuxVm":    true,
 

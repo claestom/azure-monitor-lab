@@ -143,12 +143,26 @@ def main():
     )
     created = {}
     with client:
+        existing = list(client.list_agents())
         for spec in AGENTS:
-            agent = client.create_agent(
-                model=model, name=spec["name"], instructions=spec["instructions"]
+            agent = next(
+                (
+                    candidate
+                    for candidate in existing
+                    if candidate.name == spec["name"]
+                    and candidate.model == model
+                    and candidate.instructions == spec["instructions"]
+                    and not getattr(candidate, "tools", [])
+                ),
+                None,
             )
+            if agent is None:
+                agent = client.create_agent(
+                    model=model, name=spec["name"], instructions=spec["instructions"]
+                )
+                existing.append(agent)
             created[spec["key"]] = {"id": agent.id, "name": spec["name"]}
-            print(f"Created agent '{spec['name']}' -> {agent.id}")
+            print(f"Agent ready '{spec['name']}' -> {agent.id}")
 
     out = Path(__file__).with_name("agents.json")
     out.write_text(json.dumps(created, indent=2), encoding="utf-8")

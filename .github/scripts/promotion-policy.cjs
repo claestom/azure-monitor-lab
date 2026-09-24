@@ -31,7 +31,7 @@ async function enforcePromotion({ github, context, core }) {
     await github.rest.checks.create({
       ...context.repo,
       name: checkName,
-      head_sha: pull.merge_commit_sha,
+      head_sha: pull.head.sha,
       status: 'completed',
       conclusion,
       external_id: `promotion:${pullNumber}:${pull.head.sha}:${pull.base.sha}`,
@@ -88,7 +88,7 @@ async function enforcePromotion({ github, context, core }) {
     return;
   }
 
-  await publish(latest, 'success', 'The source is this repository\'s current integration branch, it contains the current master, and this check applies to the exact PR test-merge commit. Required CI and a manual merge are still required.');
+  await publish(latest, 'success', 'The source is this repository\'s current integration branch, it contains the current master, and the exact PR test-merge commit was validated. Required CI and a manual merge are still required.');
   core.info('Integration source and master ancestry verified. No code was merged.');
 }
 

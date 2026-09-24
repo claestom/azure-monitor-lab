@@ -14,12 +14,13 @@
 
   By default, calls return immediately (--no-wait where supported). Pass -Wait
   to poll until every resource reaches a Running state.
+  Pass -WhatIf to perform resource discovery without issuing start commands.
 .EXAMPLE
   ./scripts/start-the-lab.ps1 -ResourceGroup rg-azure-monitor-lab
 .EXAMPLE
   ./scripts/start-the-lab.ps1 -ResourceGroup rg-azure-monitor-lab -Wait
 #>
-[CmdletBinding()]
+[CmdletBinding(SupportsShouldProcess)]
 param(
   [Parameter(Mandatory)] [string] $ResourceGroup,
   [switch] $Wait,
@@ -58,27 +59,32 @@ foreach ($vm in $vms) {
     Write-Info "$($vm.name) already running"
     $skipped.vm += $vm.name
   } else {
-    Write-Ok  "starting $($vm.name) (was: $($vm.power))"
-    az vm start -g $ResourceGroup -n $vm.name --no-wait | Out-Null
-    $started.vm += $vm.name
+    if ($PSCmdlet.ShouldProcess($vm.name, 'Start virtual machine')) {
+      Write-Ok  "starting $($vm.name) (was: $($vm.power))"
+      az vm start -g $ResourceGroup -n $vm.name --no-wait | Out-Null
+      $started.vm += $vm.name
+    }
   }
 }
 
 # --- 2. VM Scale Sets ----------------------------------------------------------
 Write-Step "VM Scale Sets"
+$vmssPowerStateQuery = "[].{power:instanceView.statuses[?starts_with(code,'PowerState/')].code | [0]}"
 $vmsses = az vmss list -g $ResourceGroup --query "[].name" -o tsv
 if (-not $vmsses) { Write-Info "no VMSS in $ResourceGroup" }
 foreach ($name in $vmsses) {
   # A VMSS has no single power state — count deallocated instances.
-  $instances = az vmss list-instances -g $ResourceGroup -n $name -d --query "[].powerState" -o json | ConvertFrom-Json
-  $stoppedCount = ($instances | Where-Object { $_ -ne 'VM running' }).Count
+  $instances = az vmss list-instances -g $ResourceGroup -n $name --expand instanceView --query $vmssPowerStateQuery -o json | ConvertFrom-Json
+  $stoppedCount = @($instances | Where-Object { $_.power -ne 'PowerState/running' }).Count
   if ($stoppedCount -eq 0) {
     Write-Info "$name all instances running"
     $skipped.vmss += $name
   } else {
-    Write-Ok  "starting $name ($stoppedCount/$($instances.Count) instances stopped)"
-    az vmss start -g $ResourceGroup -n $name --no-wait | Out-Null
-    $started.vmss += $name
+    if ($PSCmdlet.ShouldProcess($name, 'Start virtual machine scale set')) {
+      Write-Ok  "starting $name ($stoppedCount/$($instances.Count) instances stopped)"
+      az vmss start -g $ResourceGroup -n $name --no-wait | Out-Null
+      $started.vmss += $name
+    }
   }
 }
 
@@ -91,9 +97,11 @@ foreach ($aks in $aksClusters) {
     Write-Info "$($aks.name) already Running"
     $skipped.aks += $aks.name
   } else {
-    Write-Ok  "starting $($aks.name) (was: $($aks.power))"
-    az aks start -g $ResourceGroup -n $aks.name --no-wait | Out-Null
-    $started.aks += $aks.name
+    if ($PSCmdlet.ShouldProcess($aks.name, 'Start AKS cluster')) {
+      Write-Ok  "starting $($aks.name) (was: $($aks.power))"
+      az aks start -g $ResourceGroup -n $aks.name --no-wait | Out-Null
+      $started.aks += $aks.name
+    }
   }
 }
 
@@ -106,10 +114,17 @@ foreach ($wa in $webapps) {
     Write-Info "$($wa.name) already Running"
     $skipped.webapp += $wa.name
   } else {
-    Write-Ok  "starting $($wa.name) (was: $($wa.state))"
-    az webapp start -g $ResourceGroup -n $wa.name | Out-Null
-    $started.webapp += $wa.name
+    if ($PSCmdlet.ShouldProcess($wa.name, 'Start web app')) {
+      Write-Ok  "starting $($wa.name) (was: $($wa.state))"
+      az webapp start -g $ResourceGroup -n $wa.name | Out-Null
+      $started.webapp += $wa.name
+    }
   }
+}
+
+if ($WhatIfPreference) {
+  Write-Host 'Resource discovery completed. No start commands were issued.'
+  return
 }
 
 # --- Summary -------------------------------------------------------------------
@@ -139,7 +154,7 @@ while ((Get-Date) -lt $deadline) {
     if ($p -ne 'VM running') { $pending += "vm/$n=$p" }
   }
   foreach ($n in $started.vmss) {
-    $stoppedCount = (az vmss list-instances -g $ResourceGroup -n $n -d --query "[?powerState!='VM running'] | length(@)" -o tsv)
+    $stoppedCount = (az vmss list-instances -g $ResourceGroup -n $n --expand instanceView --query "$vmssPowerStateQuery | [?power!='PowerState/running'] | length(@)" -o tsv)
     if ([int]$stoppedCount -gt 0) { $pending += "vmss/$n=$stoppedCount-stopped" }
   }
   foreach ($n in $started.aks) {

@@ -74,18 +74,16 @@ $sliApi = '2025-03-01-preview'
 $sgApi = '2024-02-01-preview'
 $sgUrl = "https://management.azure.com/providers/Microsoft.Management/serviceGroups/$ServiceGroupId" + "?api-version=$sgApi"
 
-function Get-SliUrl {
-  param([string] $SliName)
-  return "https://management.azure.com/providers/Microsoft.Management/serviceGroups/$ServiceGroupId/providers/Microsoft.Monitor/slis/$SliName" + "?api-version=$sliApi"
-}
-
 if ($Teardown) {
   Write-Step 'Removing documented sample SLIs'
   foreach ($sliName in @('sli-aks-pods-running', 'sli-aks-pod-start-latency')) {
-    az rest --method delete --url (Get-SliUrl -SliName $sliName) --only-show-errors 2>$null | Out-Null
-    Write-Info "Delete submitted: $sliName"
+    $sliResourceId = "/providers/Microsoft.Management/serviceGroups/$ServiceGroupId/providers/Microsoft.Monitor/slis/$sliName"
+    $submitted = & (Join-Path $PSScriptRoot 'remove-arm-resource.ps1') `
+      -SubscriptionId $SubscriptionId -ResourceId $sliResourceId -ApiVersion $sliApi
+    if ($submitted) { Write-Info "Delete submitted: $sliName" }
+    else { Write-Info "Already absent: $sliName" }
   }
-  Write-Host "`nTeardown submitted. DELETE is idempotent." -ForegroundColor Green
+  Write-Host "`nSLI cleanup finished: deletes submitted or resources already absent." -ForegroundColor Green
   return
 }
 
@@ -152,6 +150,28 @@ if (-not $queryEndpoint) {
   throw "Azure Monitor Workspace 'amw-amlab' has no Prometheus query endpoint."
 }
 
+function Get-PrometheusQueryToken {
+  $PSNativeCommandUseErrorActionPreference = $false
+  $tokenOutput = az account get-access-token --subscription $SubscriptionId `
+    --resource https://prometheus.monitor.azure.com --query accessToken -o tsv --only-show-errors 2>&1
+  $tokenExitCode = $LASTEXITCODE
+  if ($tokenExitCode -ne 0) {
+    if (($tokenOutput -join "`n") -match 'Audience\s+https://prometheus[.]monitor[.]azure[.]com/?\s+is not a supported MSI token audience') {
+      throw @"
+Cloud Shell's built-in credential cannot request the Azure Monitor Prometheus token audience. Source metrics have not been verified.
+
+The Cloud Shell post-deployment wrapper handles this limitation automatically and continues after preparing SLI permissions. To verify source series separately, run this helper from a host whose user or workload credential supports the Prometheus audience. No workload redeployment is required.
+"@
+    }
+    throw "Could not acquire an Azure Monitor Prometheus query token (Azure CLI exit code $tokenExitCode). Source metrics have not been verified; check your sign-in for the selected tenant and subscription."
+  }
+  $tokenLines = @($tokenOutput | Where-Object { $_ -is [string] -and -not [string]::IsNullOrWhiteSpace($_) })
+  if ($tokenLines.Count -ne 1) {
+    throw 'Could not acquire an Azure Monitor Prometheus query token: Azure CLI returned no single token. Source metrics have not been verified.'
+  }
+  return $tokenLines[0].Trim()
+}
+
 $metricQueries = [ordered]@{
   'up' = 'up'
   'kube_pod_status_phase' = 'kube_pod_status_phase'
@@ -160,10 +180,7 @@ $metricQueries = [ordered]@{
 }
 $metricDeadline = (Get-Date).AddMinutes($MetricWaitMinutes)
 do {
-  $queryToken = az account get-access-token --resource https://prometheus.monitor.azure.com --query accessToken -o tsv
-  if (-not $queryToken) {
-    throw 'Could not acquire an Azure Monitor Prometheus query token.'
-  }
+  $queryToken = Get-PrometheusQueryToken
 
   $metricCounts = @{}
   foreach ($entry in $metricQueries.GetEnumerator()) {
