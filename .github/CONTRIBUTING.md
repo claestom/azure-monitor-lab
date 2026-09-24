@@ -73,7 +73,8 @@ lab before a maintainer manually promotes it.
   dev from integration before starting the next development cycle.
 - For `integration -> master`, integration must already contain the latest
   master commit. CI tests the PR's combined result; the source gate checks live
-  PR metadata and reports against that PR's exact test-merge commit.
+  PR metadata, validates that PR's exact test-merge commit, and reports the
+  required status against the validated integration head.
 - A passing gate does not perform a merge or prove a live deployment was tested.
   Complete the lab rehearsal and explicitly merge the promotion PR yourself.
 
