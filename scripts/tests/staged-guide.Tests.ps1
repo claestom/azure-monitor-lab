@@ -2,19 +2,15 @@ $ErrorActionPreference = 'Stop'
 $previousExitCode = $global:LASTEXITCODE
 $source = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $guide = Get-Content -LiteralPath (Join-Path $source 'docs/DEPLOY-BICEP-STEP-BY-STEP.md') -Raw
-$readme = Get-Content -LiteralPath (Join-Path $source 'README.md') -Raw
-$readmeStageE = $readme.IndexOf("Invoke-LabStage -Stage '40-optional-advanced'")
-$readmeSentinelContent = $readme.IndexOf("Invoke-LabStage -Stage '41-sentinel-content'")
-if ($readmeStageE -lt 0 -or $readmeSentinelContent -le $readmeStageE -or
-    $readme -notmatch 'Skip `41-sentinel-content` when Sentinel is disabled' -or
-    $readme -notmatch 'Terraform runs this sequence automatically') {
-  throw 'The root README must document the ordered staged Sentinel deployment and automatic Terraform path.'
+$guideStageE = $guide.IndexOf('--template-file ./infra/stages/40-optional-advanced.bicep')
+$guideSentinelContent = $guide.IndexOf('--template-file ./infra/stages/41-sentinel-content.bicep')
+if ($guideStageE -lt 0 -or $guideSentinelContent -le $guideStageE -or
+    $guide -notmatch 'Run `41-sentinel-content` only when Sentinel is enabled' -or
+    $guide -notmatch 'analytics-rule provider cannot preview a rule until the workspace is already onboarded') {
+  throw 'The Bicep guide must document the ordered staged Sentinel deployment and its onboarding dependency.'
 }
 $blocks = [regex]::Matches($guide, '(?ms)^```powershell\r?\n(.*?)^```')
 $helperImport = '. ./scripts/staged-deploy-helpers.ps1'
-if (-not $guide.Contains($helperImport) -or -not $readme.Contains($helperImport)) {
-  throw 'The Bicep guide and root README must load the versioned stage helpers.'
-}
 foreach ($relativePath in @('README.md', 'docs/DEPLOY-TERRAFORM-STEP-BY-STEP.md', 'docs/POST-DEPLOYMENT.md', 'docs/STAGE-AI.md', 'scripts/README.md')) {
   $text = Get-Content -LiteralPath (Join-Path $source $relativePath) -Raw
   foreach ($example in [regex]::Matches($text, '(?ms)^```powershell\r?\n(.*?)^```')) {
@@ -117,7 +113,16 @@ try {
   if ($allowedStages -notcontains '41-sentinel-content') { throw 'Reloading must replace the stale Stage ValidateSet.' }
   Write-Output 'PASS: dot-sourcing replaces stale stage helpers, accepts Stage 41, and preserves inputs without Azure calls.'
   foreach ($stage in @('00-foundation', '10-workloads', '20-alerting', '30-security-posture', '40-optional-advanced', '41-sentinel-content', '50-ai', '60-sre-agent')) {
-    if ($guide -notmatch "Invoke-LabStage -Stage '$stage'") { throw "The guide is missing the $stage deployment." }
+    $templateReference = "--template-file ./infra/stages/$stage.bicep"
+    $parameterReference = '--parameters "@$($stageParameterFiles[''{0}''])"' -f $stage
+    if (-not $guide.Contains($templateReference) -or -not $guide.Contains($parameterReference)) {
+      throw "The guide must deploy $stage with its native Azure CLI command and projected parameter file."
+    }
+  }
+  if ([regex]::Matches($guide, '--confirm-with-what-if').Count -lt 9) {
+    throw 'Every staged deployment command must include a what-if confirmation.'
+  }
+  foreach ($stage in @('00-foundation', '10-workloads', '20-alerting', '30-security-posture', '40-optional-advanced', '41-sentinel-content', '50-ai', '60-sre-agent')) {
     $fixture.Stage = $stage
     $fixture.Events.Clear()
     $fixture.AccountChecks = 0

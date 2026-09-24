@@ -102,32 +102,70 @@ $sourceParameters = (Get-Content ./infra/main.parameters.json -Raw | ConvertFrom
 $prefix = $sourceParameters.namePrefix.value
 $location = $sourceParameters.location.value
 
-. ./scripts/staged-deploy-helpers.ps1
-
-Assert-LabAccount
+az account set --subscription $sub
+$account = az account show --query '{id:id,tenantId:tenantId}' --output json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0 -or $account.id -ne $sub.ToString() -or $account.tenantId -ne $tenant.ToString()) {
+   throw 'Subscription or tenant mismatch. Stop before deploying.'
+}
 az group create --subscription $sub --name $rg --location $location --output none
+
+$stageNames = @(
+   '00-foundation', '10-workloads', '20-alerting', '30-security-posture',
+   '40-optional-advanced', '41-sentinel-content', '50-ai', '60-sre-agent'
+)
+$stageParameterDirectory = Join-Path ([IO.Path]::GetTempPath()) ('azure-monitor-lab-stages-' + [guid]::NewGuid().ToString('N'))
+$null = New-Item -ItemType Directory -Path $stageParameterDirectory
+$stageParameterFiles = @{}
+foreach ($stage in $stageNames) {
+   $schema = Get-Content "./infra/stages/$stage.json" -Raw | ConvertFrom-Json -AsHashtable
+   $parameters = @{}
+   foreach ($name in $schema.parameters.Keys) {
+      if ($sourceParameters.ContainsKey($name)) { $parameters[$name] = $sourceParameters[$name] }
+   }
+   foreach ($name in $schema.parameters.Keys) {
+      if (-not $parameters.ContainsKey($name) -and -not $schema.parameters[$name].ContainsKey('defaultValue')) {
+         throw "Missing required parameter '$name' for $stage."
+      }
+   }
+   $parameterFile = Join-Path $stageParameterDirectory "$stage.parameters.json"
+   if (-not $IsWindows) {
+      New-Item -ItemType File -Path $parameterFile | Out-Null
+      [IO.File]::SetUnixFileMode($parameterFile, [IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite)
+   }
+   @{ '$schema' = 'https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#'; contentVersion = '1.0.0.0'; parameters = $parameters } |
+      ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $parameterFile
+   $stageParameterFiles[$stage] = $parameterFile
+}
 ```
 
-The leading dot loads [the stage helpers](../scripts/staged-deploy-helpers.ps1) into the current session. After updating the repository, rerun `. ./scripts/staged-deploy-helpers.ps1` to replace an older `Invoke-LabStage` definition. Loading this file makes no Azure calls and preserves your current inputs; it does not rerun any stage.
-
-The helper reads each shipped compiled template's parameter schema, copies only matching inputs from the generated main parameters, and preserves secure values or ARM Key Vault references. It passes a temporary parameters-file path to Azure CLI, never the VM password itself, restricts that file to its owner on Linux, and removes it in `finally`. On Windows, use your private user temp directory. Keep the config and generated files private; do not commit them or paste secrets into `-Overrides`.
-
-Stage-specific inputs can be supplied with `-Overrides`, for example `@{ routerModelVersion = '<available-version>' }` for AI. Inputs not supplied use that stage's defaults. Do not pass the complete main parameters file directly to a stage template. If editing Bicep, rebuild the corresponding JSON schema too, as described in [the Terraform guide](DEPLOY-TERRAFORM-STEP-BY-STEP.md#regenerating-stage-templates-from-bicep).
+The bootstrap projects only the parameters accepted by each stage and preserves secure values or ARM Key Vault references in private temporary files. Do not pass the complete main parameters file directly to a stage template. Keep the config, generated files, and temporary directory private. If editing Bicep, rebuild the corresponding JSON schema too, as described in [the Terraform guide](DEPLOY-TERRAFORM-STEP-BY-STEP.md#regenerating-stage-templates-from-bicep).
 
 Config stage toggles select one-shot/Terraform stages; they do not execute these Bicep stage calls. Run only the stages you want. Rerun the bootstrap block after changing shared config. Keep the same resource group, prefix, and VM-enable settings across dependent stages.
 
 ### Stage A deploy
 
 ```powershell
-Invoke-LabStage -Stage '00-foundation'
+az deployment group create `
+   --subscription $sub `
+   --resource-group $rg `
+   --name stage-00-foundation `
+   --template-file ./infra/stages/00-foundation.bicep `
+   --parameters "@$($stageParameterFiles['00-foundation'])" `
+   --mode Incremental `
+   --confirm-with-what-if `
+   --output none
 ```
 
-This deploys [foundation only](../infra/stages/00-foundation.bicep). There is no AKS node pool or Web App in Stage A.
+This deploys [foundation only](../infra/stages/00-foundation.bicep). `--confirm-with-what-if` previews the changes and asks for confirmation before deployment. There is no AKS node pool or Web App in Stage A.
 
 ### Stage B deploy
 
 ```powershell
-Invoke-LabStage -Stage '10-workloads'
+az deployment group create `
+   --subscription $sub --resource-group $rg --name stage-10-workloads `
+   --template-file ./infra/stages/10-workloads.bicep `
+   --parameters "@$($stageParameterFiles['10-workloads'])" `
+   --mode Incremental --confirm-with-what-if --output none
 ./scripts/post-staged-deploy.ps1 -SubscriptionId $sub -ResourceGroup $rg -NamePrefix $prefix -EnableStageE $false
 ```
 
@@ -136,7 +174,11 @@ Completion publishes and verifies the App Service, initializes the Control Cente
 ### Stage C deploy
 
 ```powershell
-Invoke-LabStage -Stage '20-alerting'
+az deployment group create `
+   --subscription $sub --resource-group $rg --name stage-20-alerting `
+   --template-file ./infra/stages/20-alerting.bicep `
+   --parameters "@$($stageParameterFiles['20-alerting'])" `
+   --mode Incremental --confirm-with-what-if --output none
 ```
 
 This stage requires the VMSS administrator password and notification email from the private inputs, even when the optional standalone VMs are disabled.
@@ -146,13 +188,16 @@ This stage requires the VMSS administrator password and notification email from 
 Ensure AzureActivity is routed to the actual suffixed central LAW before validating the security scenarios:
 
 ```powershell
-Assert-LabAccount
 $workspaces = az monitor log-analytics workspace list --subscription $sub -g $rg -o json | ConvertFrom-Json
 $centralLaw = $workspaces | Where-Object { $_.name -like "law-$prefix-central-*" } | Select-Object -First 1
 if (-not $centralLaw.id) { throw 'Central workspace not found.' }
 $logs = '[{"category":"Administrative","enabled":true},{"category":"Security","enabled":true},{"category":"ServiceHealth","enabled":true},{"category":"Alert","enabled":true},{"category":"Recommendation","enabled":true},{"category":"Policy","enabled":true},{"category":"Autoscale","enabled":true},{"category":"ResourceHealth","enabled":true}]'
 az monitor diagnostic-settings subscription create --subscription $sub --name "$prefix-activity-to-law" --location global --workspace $centralLaw.id --logs $logs
-Invoke-LabStage -Stage '30-security-posture'
+az deployment group create `
+   --subscription $sub --resource-group $rg --name stage-30-security-posture `
+   --template-file ./infra/stages/30-security-posture.bicep `
+   --parameters "@$($stageParameterFiles['30-security-posture'])" `
+   --mode Incremental --confirm-with-what-if --output none
 ```
 
 The security template reuses the Stage A LAW and Stage C action group. It does not deploy workloads or enable a SIEM.
@@ -160,15 +205,22 @@ The security template reuses the Stage A LAW and Stage C action group. It does n
 ### Stage E deploy
 
 ```powershell
-. ./scripts/staged-deploy-helpers.ps1
-Invoke-LabStage -Stage '40-optional-advanced' -Overrides @{ enableAi = $false }
-Invoke-LabStage -Stage '41-sentinel-content'
+az deployment group create `
+   --subscription $sub --resource-group $rg --name stage-40-optional-advanced `
+   --template-file ./infra/stages/40-optional-advanced.bicep `
+   --parameters "@$($stageParameterFiles['40-optional-advanced'])" `
+   --mode Incremental --confirm-with-what-if --output none
+az deployment group create `
+   --subscription $sub --resource-group $rg --name stage-41-sentinel-content `
+   --template-file ./infra/stages/41-sentinel-content.bicep `
+   --parameters "@$($stageParameterFiles['41-sentinel-content'])" `
+   --mode Incremental --confirm-with-what-if --output none
 ./scripts/post-staged-deploy.ps1 -SubscriptionId $sub -ResourceGroup $rg -NamePrefix $prefix -EnableStageE $true
 ```
 
-The first line refreshes the helper so an older session accepts `41-sentinel-content`. If Stage 40 already succeeded with Sentinel enabled, load the helper and resume at Stage 41, then run the completion script. Stages A through D do not need to be rerun.
+If Stage 40 already succeeded with Sentinel enabled, resume at Stage 41, then run the completion script. Stages A through D do not need to be rerun.
 
-Use `enableAi = $true` only when Stage AI already exists. Sentinel onboarding and the optional DCRs follow the supplied parameters or stage defaults; review the preview and billing implications. Run `41-sentinel-content` only when Sentinel is enabled. Completion configures the Service Group and verifies SLI prerequisites. Create the preview SLIs in the portal using the printed handoff.
+Stage E's `enableAi` value follows `stages.enableStageAI` from the central config; enable it only when Stage AI already exists. Sentinel onboarding and the optional DCRs follow the supplied parameters or stage defaults; review the preview and billing implications. Run `41-sentinel-content` only when Sentinel is enabled. Completion configures the Service Group and verifies SLI prerequisites. Create the preview SLIs in the portal using the printed handoff.
 
 Sentinel uses two deployments because its analytics-rule provider cannot preview a rule until the workspace is already onboarded. Stage E first creates the onboarding state, then `41-sentinel-content` previews and creates the dependent demo rule with normal provider validation.
 
@@ -177,7 +229,11 @@ Sentinel uses two deployments because its analytics-rule provider cannot preview
 Deploy after Stage A. Verify Model Router version availability for `aiLocation` before opting in; the default is `swedencentral`. If Stage B already exists, refresh its package, inventory, and agent permissions before starting optional traffic:
 
 ```powershell
-Invoke-LabStage -Stage '50-ai'
+az deployment group create `
+   --subscription $sub --resource-group $rg --name stage-50-ai `
+   --template-file ./infra/stages/50-ai.bicep `
+   --parameters "@$($stageParameterFiles['50-ai'])" `
+   --mode Incremental --confirm-with-what-if --output none
 $apps = az webapp list --subscription $sub --resource-group $rg -o json | ConvertFrom-Json
 $webApp = $apps | Where-Object { $_.name -like "app-$prefix-*" } | Select-Object -First 1
 if ($webApp) {
@@ -188,7 +244,7 @@ if ($webApp) {
 
 The refresh uses [the existing app deployment helper](../scripts/deploy-webapp.ps1), which configures console access and verifies the new publication without reapplying AKS workloads. Its bootstrap prepares agents with `-SkipTraffic`. The final [AI setup](../scripts/setup-ai.ps1) reuses those agents and always starts a finite background batch, default 150 conversations. Add `-SkipTraffic` there to prepare agents without model traffic. The [Cloud Shell AI wrapper](../scripts/setup-ai-cloud-shell.ps1) offers the same background behavior with core ARM discovery.
 
-Without Stage B, the refresh is skipped and the standalone AI scenario still works. Adding Stage B later initializes its console normally. To add the AI tier to an existing Stage E health model, rerun Stage E with `-Overrides @{ enableAi = $true }`; do not deploy Stage E solely for an A+AI lab. A separate AI health model can instead be requested with Stage AI's `enableHealthModel` override.
+Without Stage B, the refresh is skipped and the standalone AI scenario still works. Adding Stage B later initializes its console normally. To add the AI tier to an existing Stage E health model, set `stages.enableStageAI` to `true` in `lab.config.json`, rerun the bootstrap block, then rerun the native Stage 40 command above. Do not deploy Stage E solely for an A+AI lab.
 
 The worker prints its PID and log/status paths. Keep the deployment host and Azure CLI sign-in available until it finishes; Cloud Shell/CI termination can stop it. Startup is not evidence of successful model responses. See [background traffic details](POST-DEPLOYMENT.md#background-ai-traffic).
 
@@ -197,7 +253,11 @@ The worker prints its PID and log/status paths. Keep the deployment host and Azu
 Deploy after Stage A. The template creates the `swedencentral` agent, managed identities, monitoring connectors, and RBAC. Subscription-scope role-assignment permission is required. Validate the deployed resource before refreshing any existing console:
 
 ```powershell
-Invoke-LabStage -Stage '60-sre-agent'
+az deployment group create `
+   --subscription $sub --resource-group $rg --name stage-60-sre-agent `
+   --template-file ./infra/stages/60-sre-agent.bicep `
+   --parameters "@$($stageParameterFiles['60-sre-agent'])" `
+   --mode Incremental --confirm-with-what-if --output none
 ./scripts/setup-sre-agent.ps1 -SubscriptionId $sub -ResourceGroup $rg
 $apps = az webapp list --subscription $sub --resource-group $rg -o json | ConvertFrom-Json
 $webApp = $apps | Where-Object { $_.name -like "app-$prefix-*" } | Select-Object -First 1
@@ -209,6 +269,12 @@ if ($webApp) {
 An A+SRE deployment needs no Web App or AKS, so it uses [the standalone validator](../scripts/setup-sre-agent.ps1), not the Stage B completion wrapper. With B and AI present, the refresh enables the Control Center's SRE MCP Assistant. The validator is read-only unless explicitly asked to grant missing roles; it does not start an investigation.
 
 Follow [Stage SRE Agent](STAGE-SRE-AGENT.md) only when demonstrating the separate portal investigator and Review-mode response-plan scenarios. Those are not required for Control Center MCP questions and approved operations.
+
+After the final stage in the current session, remove the temporary parameter files:
+
+```powershell
+Remove-Item -LiteralPath $stageParameterDirectory -Recurse -Force
+```
 
 ## 6) Stage boundaries and reruns
 

@@ -76,6 +76,12 @@ $resourceGroup = Read-Host 'Resource group name'
 ./scripts/post-cloud-shell-deploy.ps1 -TenantId $tenantId -SubscriptionId $subscriptionId -ResourceGroup $resourceGroup
 ```
 
+If you enabled the optional AI stage and want to generate AI telemetry, run this next from the same Cloud Shell session. Skip it when AI is disabled:
+
+```powershell
+./scripts/setup-ai-cloud-shell.ps1 -SubscriptionId $subscriptionId -ResourceGroup $resourceGroup -NamePrefix amlab
+```
+
 > **Next:** Follow the [post-deployment guide for the portal option](docs/POST-DEPLOYMENT.md#portal-deployment) to finish the scenarios and optional stages you enabled.
 
 ### Option 2: Scripted one-shot (Bicep / Terraform, full control)
@@ -119,18 +125,6 @@ Step-by-step guides:
 
 - [Bicep staged deployment](docs/DEPLOY-BICEP-STEP-BY-STEP.md)
 - [Terraform staged deployment](docs/DEPLOY-TERRAFORM-STEP-BY-STEP.md)
-
-When Sentinel is enabled in a manual staged Bicep deployment, deploy it in two steps after loading the `Invoke-LabStage` helper from the Bicep guide. The first stage onboards the central workspace; the second adds the demo analytics rule only after onboarding succeeds:
-
-```powershell
-. ./scripts/staged-deploy-helpers.ps1
-Invoke-LabStage -Stage '40-optional-advanced' -Overrides @{ enableAi = $false }
-Invoke-LabStage -Stage '41-sentinel-content'
-```
-
-The leading dot reloads the versioned helper in your current session without deploying anything or changing your inputs. Use it after updating the repository if an older function rejects Stage 41. If Stage 40 already succeeded with Sentinel enabled, resume at Stage 41; do not rerun earlier stages.
-
-Skip `41-sentinel-content` when Sentinel is disabled. Terraform runs this sequence automatically when both `enable_stage_e` and `enable_sentinel` are true. The scripted one-shot and Deploy to Azure button also handle the dependency automatically.
 
 > **Next:** Follow the [post-deployment guide for the staged option](docs/POST-DEPLOYMENT.md#staged-deployment) after completing the stages you selected.
 
