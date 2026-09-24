@@ -56,7 +56,7 @@ Write down what should happen from deployment to first successful use:
 - How is the feature disabled, redeployed, and removed?
 - What is the incremental daily cost and what can cause that cost to increase?
 
-Prefer an unattended and repeatable setup. A customer should not need to copy resource IDs, create role assignments manually, or run undocumented portal steps after deployment. When an Azure platform limitation makes a manual step unavoidable, automate every prerequisite and document the smallest remaining action in `docs/POST-DEPLOYMENT.md`.
+Prefer an unattended and repeatable setup. A customer should not need to copy resource IDs, create role assignments manually, or run undocumented portal steps after deployment. When an Azure platform limitation makes a manual step unavoidable, automate every prerequisite and document the smallest remaining action in the owning deployment or stage guide.
 
 ### 4. Implement every supported deployment path
 
@@ -81,7 +81,7 @@ At minimum, review and update the documents affected by the feature:
 
 - `README.md` for capabilities, prerequisites, regional constraints, deployment behavior, and the headline cost range.
 - `docs/REFERENCE.md` for the resource inventory, configuration reference, architecture, detailed cost table, and troubleshooting.
-- `docs/POST-DEPLOYMENT.md` for any conditional verification or unavoidable customer action.
+- The owning deployment or stage guide for any conditional verification or unavoidable customer action.
 - The relevant stage guide under `docs/` for deployment and presenter notes.
 - `docs/DEMO-SCENARIOS.md` for a customer-ready scenario with a story, portal path, expected result, cleanup or reset steps, and a concise value statement.
 - `docs/CUSTOMER-STAGE-HANDOUT.md` when stage timing or cost changes.

@@ -19,7 +19,9 @@
 
 > Cross-stage references (no module-to-module wiring): `law-amlab-central`, `law-amlab-appinsights`, `appi-amlab`, `amw-amlab`, `dce-amlab`, `dcr-amlab-vminsights`, `vnet-amlab`/`snet-workload`, `st<amlab><suffix>`, `evhns-amlab-<suffix>` are all `existing` references from Stage A.
 
-Console completion requires permission to manage its Entra sign-in registration and scoped Azure roles, plus ACR Tasks availability. The registry has ongoing charges; image builds, job execution, and logs add usage charges. Stage B does not enable the optional Stage E Service Group or SLI setup. See [deployment prerequisites and rerun checks](POST-DEPLOYMENT.md#redeployment-checks).
+Console completion requires permission to manage its Entra sign-in registration and scoped Azure roles, plus ACR Tasks availability. The registry has ongoing charges; image builds, job execution, and logs add usage charges. Stage B does not enable the optional Stage E Service Group or SLI setup. See [deployment prerequisites and upgrade behavior](../workloads/webapp/LAB-OPERATIONS.md#automatic-deployment).
+
+The templates grant **Grafana Admin** at the Managed Grafana instance scope to the deploying identity by default. For service-principal deployments, set `grafanaAdminObjectId` in Bicep or `grafana_admin_object_id` in Terraform to the intended operator or group object ID. New role assignments can take time to propagate. Azure resource ownership and Monitoring Reader on the Grafana managed identity do not grant a user Grafana data-plane access.
 
 ## 2) Speaker notes
 

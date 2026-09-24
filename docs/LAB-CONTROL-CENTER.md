@@ -17,7 +17,7 @@ The screenshots use example resource names, simulated health results, and local 
 
 ## Open The Application
 
-1. Deploy the lab and complete the [post-deployment steps](POST-DEPLOYMENT.md) for your deployment method. The portal template provisions infrastructure; its Cloud Shell follow-up publishes the application.
+1. Deploy the lab using one of the [documented deployment options](../README.md#deploy). The portal option includes the required Cloud Shell follow-up that publishes the application.
 2. In the Azure portal, open the lab resource group, select its **App Service**, and choose **Browse**. The app opens at `/` with **Infra Health** selected. **Traffic & Faults** remains available without health or agent access.
 3. Check the resource group and App Service shown in the environment strip before sending traffic or approving an operation.
 4. For **Infra Health**, **Lab Operations**, **Foundry Playground**, or **SRE MCP Assistant**, select **Sign In** with an approved lab operator account when prompted. Normal deployment configures console sign-in and permissions automatically. Optional agent tabs require their infrastructure stages to be selected.
@@ -109,7 +109,7 @@ Related Scenarios links are navigation, not execution shortcuts. The [scenario c
 
 ## Setup And Reference
 
-- [Lab deployment options](../README.md#deploy) and [post-deployment steps](POST-DEPLOYMENT.md).
+- [Lab deployment options](../README.md#deploy).
 - [Infrastructure health configuration and read-only access](../workloads/webapp/README.md#infrastructure-health).
 - [Lab Operations runner configuration, permissions, and recovery](../workloads/webapp/LAB-OPERATIONS.md).
 - [Foundry access and developer reference](../workloads/webapp/README.md#enable-foundry-access).

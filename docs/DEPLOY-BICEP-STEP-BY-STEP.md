@@ -246,7 +246,7 @@ The refresh uses [the existing app deployment helper](../scripts/deploy-webapp.p
 
 Without Stage B, the refresh is skipped and the standalone AI scenario still works. Adding Stage B later initializes its console normally. To add the AI tier to an existing Stage E health model, set `stages.enableStageAI` to `true` in `lab.config.json`, rerun the bootstrap block, then rerun the native Stage 40 command above. Do not deploy Stage E solely for an A+AI lab.
 
-The worker prints its PID and log/status paths. Keep the deployment host and Azure CLI sign-in available until it finishes; Cloud Shell/CI termination can stop it. Startup is not evidence of successful model responses. See [background traffic details](POST-DEPLOYMENT.md#background-ai-traffic).
+The worker prints its PID and log/status paths. Keep the deployment host and Azure CLI sign-in available until it finishes; Cloud Shell/CI termination can stop it. Startup is not evidence of successful model responses. See [Stage AI traffic behavior](STAGE-AI.md#6-enable--run).
 
 ### Stage SRE Agent deploy (optional)
 

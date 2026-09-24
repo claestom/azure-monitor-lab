@@ -241,7 +241,7 @@ To generate optional AI telemetry from the repo root, run the account-scoped hel
 ./scripts/setup-ai-cloud-shell.ps1 -SubscriptionId $sub -ResourceGroup $rg -NamePrefix amlab
 ```
 
-This helper also works locally. It verifies and forwards the subscription and tenant, discovers Foundry and App Insights through core ARM commands, and starts a finite 150-conversation batch in the background. Add `-SkipTraffic` to prepare agents without traffic, or `-Conversations <count>` to select a finite batch size. Keep the host/sign-in available; see [background traffic details](POST-DEPLOYMENT.md#background-ai-traffic).
+This helper also works locally. It verifies and forwards the subscription and tenant, discovers Foundry and App Insights through core ARM commands, and starts a finite 150-conversation batch in the background. Add `-SkipTraffic` to prepare agents without traffic, or `-Conversations <count>` to select a finite batch size. Keep the host/sign-in available; see [Stage AI traffic behavior](STAGE-AI.md#6-enable--run).
 
 An AI-only deployment without Stage B has no Web App completion hook and uses the same helper to prepare its standalone scenario. Stage AI creates the Foundry resources, model deployments, tracing connection, token alerts, query pack, and workbook. Its workload health tier is present only when Stage E is also enabled.
 

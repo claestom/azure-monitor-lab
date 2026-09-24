@@ -90,13 +90,13 @@ az monitor app-insights query --app appi-amlab -g $rg --analytics-query "depende
 
 **Raw Bicep:** follow [the Stage AI preview, deploy, and completion sequence](DEPLOY-BICEP-STEP-BY-STEP.md#stage-ai-deploy-optional). It uses the dedicated AI template's parameter schema, refreshes an existing Web App before optional traffic, and skips Web App work for an A+AI lab. Do not pass the entire main parameters file to the AI template.
 
-**Portal/Cloud Shell:** finish the [portal workload wrapper](POST-DEPLOYMENT.md#portal-deployment) first. Then request optional traffic with the [AI Cloud Shell helper](../scripts/setup-ai-cloud-shell.ps1), which verifies and forwards account context and uses core ARM discovery without optional CLI extensions:
+**Portal/Cloud Shell:** finish the [portal deployment and Cloud Shell wrapper](../README.md#option-1-deploy-to-azure-portal-no-local-setup) first. Then request optional traffic with the [AI Cloud Shell helper](../scripts/setup-ai-cloud-shell.ps1), which verifies and forwards account context and uses core ARM discovery without optional CLI extensions:
 
 ```powershell
 ./scripts/setup-ai-cloud-shell.ps1 -SubscriptionId $sub -ResourceGroup $rg -NamePrefix amlab
 ```
 
-The Cloud Shell helper also works locally. Both helpers return after the worker acknowledges startup, not after the conversations finish. The PID and log/status paths are printed; keep the host and its Azure CLI sign-in available. Cloud Shell or CI termination can interrupt traffic, there is no automatic restart, and each invocation starts a new billable batch. See [background traffic details](POST-DEPLOYMENT.md#background-ai-traffic).
+The Cloud Shell helper also works locally. Both helpers return after the worker acknowledges startup, not after the conversations finish. The PID and log/status paths are printed; keep the host and its Azure CLI sign-in available. Cloud Shell or CI termination can interrupt traffic, there is no automatic restart, and each invocation starts a new billable batch. The worker runs on the deployment machine, not in the Web App or an Azure job. Its status and logs are stored under `%LOCALAPPDATA%/azure-monitor-lab/ai-traffic` on Windows or `$XDG_STATE_HOME/azure-monitor-lab/ai-traffic` on Linux, defaulting to `~/.local/state`. A `running` status confirms startup only; inspect the log for successful model responses.
 
 When adding AI after Stage E, rerun Stage E with `enableAi=true` to add its AI health tier. An A+AI deployment can instead opt into Stage AI's separate health model with `enableHealthModel=true`. Neither health-model option is required for the Foundry Playground; that console tab requires Stage B plus AI.
 

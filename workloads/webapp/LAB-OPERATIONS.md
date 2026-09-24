@@ -46,12 +46,12 @@ Status refresh runs every ten seconds only while the tab and browser document ar
 
 - **Scripted Bicep:** the normal [deploy.ps1](../../scripts/deploy.ps1) includes console initialization.
 - **Terraform:** a successful `terraform apply -var-file stages.tfvars` with Stage B enabled includes workload publication and console initialization. Relevant source, stage, or operator changes rerun the hook.
-- **Raw ARM/Bicep or portal templates:** these remain infrastructure-only. Their normal [workload completion wrapper](../../docs/POST-DEPLOYMENT.md) also initializes the console, with no additional console-specific setup. Use scripted deployment or Terraform for the complete automated flow.
+- **Raw ARM/Bicep or portal templates:** these remain infrastructure-only. Follow the wrapper documented for the relevant [deployment option](../../README.md#deploy); it also initializes the console, with no additional console-specific setup. Use scripted deployment or Terraform for the complete automated flow.
 - **Existing lab upgrade:** [deploy-webapp.ps1](../../scripts/deploy-webapp.ps1) publishes the app and provisions missing console dependencies without reapplying AKS workloads. Its `-WhatIf` describes the infrastructure and access scope.
 
 After successful deployment, open the Web App and sign in. The default operator is the signed-in Azure CLI user, or existing operators on an upgrade. Noninteractive deployments supply user object IDs using `-ConsoleOperatorObjectIds` or Terraform's `console_operator_object_ids`. These are deployment inputs, not a separate setup step.
 
-Infrastructure updates preserve runtime-owned sign-in and console app settings through a secure settings merge. Bootstrap retains the selected lab tags and any runner-specific tags present when bootstrap starts. Both publishing paths wait for the exact new assembly's publication ID, so a reachable older app cannot satisfy deployment completion. See [redeployment checks](../../docs/POST-DEPLOYMENT.md#redeployment-checks) for the live verification criteria and cleanup boundaries.
+Infrastructure updates preserve runtime-owned sign-in and console app settings through a secure settings merge. Bootstrap retains the selected lab tags and any runner-specific tags present when bootstrap starts. Both publishing paths wait for the exact new assembly's publication ID, so a reachable older app cannot satisfy deployment completion. A deployment that stops during bootstrap must be completed before using the controls. Before promoting deployment changes, test a fresh lab and a rerun with the same approved operators, then verify the published version, operator sign-in, health and runner readiness, and retained tags.
 
 ### Prerequisites
 

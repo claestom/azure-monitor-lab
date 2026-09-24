@@ -70,7 +70,7 @@ The Control Center's [Lab Operations tab](../workloads/webapp/LAB-OPERATIONS.md)
 
 ## Recommended sequence after deployment
 
-Start with the [post-deployment guide](../docs/POST-DEPLOYMENT.md) to determine what your deployment method already completed and which enabled stages need follow-up. The commands below generate optional demo telemetry; they are not required after every deployment. AI traffic always returns after background startup; keep the deployment host and sign-in available until the finite batch ends. The printed PID and log/status paths identify the run.
+Start with the [deployment option](../README.md#deploy) you used. Its instructions state when setup is complete, and the staged guides include their own completion commands. Use the [manual scenario setup](../docs/POST-DEPLOYMENT.md) only for scenarios you plan to present. The commands below generate optional demo telemetry; they are not required after every deployment. AI traffic always returns after background startup; keep the deployment host and sign-in available until the finite batch ends. The printed PID and log/status paths identify the run.
 
 ```powershell
 $rg = "rg-azure-monitor-lab"  # replace with the RG used for your deployment
