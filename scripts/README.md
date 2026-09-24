@@ -120,7 +120,7 @@ Cleanup includes name-matched auxiliary groups such as `MC_<lab-rg>_...` and Azu
 
 Azure normally removes the Monitor managed group when its workspace is deleted. Teardown checks whether it still exists and rechecks its ownership before requesting cleanup. A rerun can find a leftover group through its `managedBy` link even if the target lab group is already gone. Groups with missing or different ownership metadata are not selected. Delete requests remain asynchronous; an accepted request is not confirmation that the group is gone.
 
-When other labs share the tenant-level `amlab-workload` Service Group and SLIs, add `-KeepServiceGroup` to preserve them. The selected lab's resource-group membership is removed with its resource group.
+Teardown checks for the exact `sgm-amlab-rg` membership in the selected resource group before attempting tenant-scoped SLI or Service Group deletion. If the membership is absent, shared cleanup is skipped automatically. When the membership exists but other labs share the tenant-level `amlab-workload` Service Group and SLIs, add `-KeepServiceGroup` to preserve them. The selected lab's resource-group membership is removed with its resource group.
 
 ```powershell
 ./scripts/teardown.ps1 -ResourceGroup $rg -KeepServiceGroup -Yes

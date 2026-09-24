@@ -14,6 +14,7 @@ $fixture = @{
   GroupInventoryFails = $false; MonitorDeleteFails = $false; MonitorCascadeDuringDelete = $false
   MonitorOwnerChanged = $false
   RealTenantCleanup = $false; TenantDeleteError = ''
+  ServiceGroupMembershipExists = $true
   EntraPlan = @(); EntraCalls = [Collections.Generic.List[string]]::new(); EntraFails = ''
 }
 $resourceGroupId = "/subscriptions/$($fixture.Subscription)/resourceGroups/$($fixture.ResourceGroup)"
@@ -126,6 +127,10 @@ function az {
       if ($args[[Array]::IndexOf($args, '-g') + 1] -ne $fixture.ResourceGroup) { throw 'Unexpected cleanup scope.' }
       if ($args -contains '--resource-type') {
         switch ($args[[Array]::IndexOf($args, '--resource-type') + 1]) {
+          'Microsoft.Relationships/serviceGroupMember' {
+            if ($fixture.ServiceGroupMembershipExists) { return ConvertTo-Json -InputObject @(@{ id = "$resourceGroupId/providers/Microsoft.Relationships/serviceGroupMember/sgm-amlab-rg" }) }
+            return '[]'
+          }
           'Microsoft.App/agents' { return '[]' }
           'Microsoft.OperationalInsights/workspaces' { return '[]' }
           'Microsoft.Insights/dataCollectionRuleAssociations' { return ConvertTo-Json -InputObject @(@{ id = $associationId }) }
@@ -304,11 +309,13 @@ try {
   }
   $fixture.RealTenantCleanup = $true
   foreach ($tenantCase in @(
-    @{ Error = 'ERROR: Not Found({"error":{"code":"ResourceNotFound","message":"The resource does not exist."}})'; Fails = $false; Keep = $false },
-    @{ Error = 'ERROR: (AuthorizationFailed) Tenant cleanup was denied.'; Fails = $true; Keep = $false },
-    @{ Error = 'ERROR: (AuthorizationFailed) Tenant cleanup was denied.'; Fails = $false; Keep = $true }
+    @{ Error = 'ERROR: Not Found({"error":{"code":"ResourceNotFound","message":"The resource does not exist."}})'; Fails = $false; Keep = $false; Membership = $true },
+    @{ Error = 'ERROR: (AuthorizationFailed) Tenant cleanup was denied.'; Fails = $true; Keep = $false; Membership = $true },
+    @{ Error = 'ERROR: (AuthorizationFailed) Tenant cleanup was denied.'; Fails = $false; Keep = $true; Membership = $true },
+    @{ Error = 'ERROR: (AuthorizationFailed) Tenant cleanup was denied.'; Fails = $false; Keep = $false; Membership = $false }
   )) {
     $fixture.TenantDeleteError = $tenantCase.Error
+    $fixture.ServiceGroupMembershipExists = $tenantCase.Membership
     $fixture.Deletes.Clear()
     $fixture.TenantCleanup.Clear()
     & {
@@ -323,7 +330,7 @@ try {
         }
       } else {
         $expectedDeletes = @($associationId, $dcrId, $dceId, "group:$($fixture.ResourceGroup)", "group:$auxiliaryGroup", "group:$monitorGroup")
-        $expectedTenantDeletes = if ($tenantCase.Keep) { @() } else { @($tenantDeleteApis.Keys) }
+        $expectedTenantDeletes = if ($tenantCase.Keep -or -not $tenantCase.Membership) { @() } else { @($tenantDeleteApis.Keys) }
         if ($failure -or ($fixture.Deletes -join ',') -ne ($expectedDeletes -join ',') -or
             ($fixture.TenantCleanup -join ',') -ne ($expectedTenantDeletes -join ',')) {
           throw "Real tenant cleanup must continue on absent resources and skip shared resources when requested: $failure"
@@ -331,7 +338,7 @@ try {
       }
     }
   }
-  Write-Output 'PASS: real tenant cleanup helpers continue on absent SLIs/groups, stop before group deletion on errors, and are bypassed by KeepServiceGroup. No Azure calls.'
+  Write-Output 'PASS: tenant cleanup requires an exact lab membership, continues on absent SLIs/groups, stops on proven-scope errors, and honors KeepServiceGroup. No Azure calls.'
   Write-Output 'PASS: Entra cleanup plans are confirmed and processed before Azure deletion; cancellation, directory failures, and KeepEntraApplications preserve identities. No Azure calls.'
   Write-Output 'PASS: unsupported and missing association probes work with both native-error preferences; unexpected failures retain diagnostics and block deletion. No Azure calls.'
   Write-Output 'PASS: cleanup order, deduplication, matched group scope, tenant guard, and cancellation are preserved. No Azure calls.'

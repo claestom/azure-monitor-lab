@@ -7,8 +7,9 @@
   managed groups owned by Azure Monitor workspaces in this exact resource group.
 
 .PARAMETER KeepServiceGroup
-  Preserve tenant-scoped Service Group and SLI resources used by other labs.
-  The selected resource group's membership is removed with the resource group.
+  Preserve tenant-scoped Service Group and SLI resources even when the selected
+  resource group has the lab's Service Group membership. Teardown automatically
+  skips these shared resources when that membership is absent.
 
 .PARAMETER KeepEntraApplications
   Preserve Entra app registrations and service principals. Otherwise, remove only
@@ -101,6 +102,15 @@ $resourceGroupsToDelete = @(
     $monitorManagedResourceGroupNames
   ) | Sort-Object -Unique { if ($_ -ieq $ResourceGroup) { 0 } elseif ($_ -in $monitorManagedResourceGroupNames) { 2 } else { 1 } }, { $_ }
 )
+$primaryResourceGroupExists = @($allResourceGroupNames | Where-Object { $_ -ieq $ResourceGroup }).Count -gt 0
+$serviceGroupMembershipId = "/subscriptions/$($active.id)/resourceGroups/$ResourceGroup/providers/Microsoft.Relationships/serviceGroupMember/sgm-amlab-rg"
+$hasServiceGroupMembership = $false
+if ($primaryResourceGroupExists) {
+  $serviceGroupMemberships = @(az resource list --subscription $active.id -g $ResourceGroup `
+    --resource-type Microsoft.Relationships/serviceGroupMember -o json --only-show-errors | ConvertFrom-Json)
+  if ($LASTEXITCODE -ne 0) { throw "Could not inspect Service Group memberships in '$ResourceGroup'." }
+  $hasServiceGroupMembership = @($serviceGroupMemberships | Where-Object { $_.id -ieq $serviceGroupMembershipId }).Count -gt 0
+}
 
 $entraIdentities = @()
 $entraCleanup = Join-Path $PSScriptRoot 'remove-lab-entra-identities.ps1'
@@ -131,7 +141,6 @@ if ($KeepEntraApplications) {
   & $entraCleanup -SubscriptionId $active.id -TenantId $active.tenantId -ResourceGroup $ResourceGroup -Identities $entraIdentities
 }
 
-$primaryResourceGroupExists = @($allResourceGroupNames | Where-Object { $_ -ieq $ResourceGroup }).Count -gt 0
 if (-not $primaryResourceGroupExists) {
   Write-Host "The original resource group no longer exists; deleting matched auxiliary resource groups directly." -ForegroundColor Yellow
   if ($resourceGroupsToDelete.Count) { Remove-MatchingResourceGroups -Names $resourceGroupsToDelete }
@@ -223,7 +232,9 @@ foreach ($dce in @($dces)) {
 # Tear down tenant-scoped artefacts FIRST (they survive RG delete otherwise and
 # end up dangling against the deleted AMW). Safe + idempotent — both helper
 # scripts swallow 404s.
-if ($KeepServiceGroup) {
+if (-not $hasServiceGroupMembership) {
+  Write-Host "No lab Service Group membership exists in '$ResourceGroup'; skipping shared Service Group and SLI cleanup." -ForegroundColor DarkGray
+} elseif ($KeepServiceGroup) {
   Write-Host 'Preserving shared Service Group and SLIs; this resource group membership is removed with the RG.' -ForegroundColor Yellow
 } else {
   Write-Host "Removing demo SLIs (scenario 46) ..." -ForegroundColor Yellow
