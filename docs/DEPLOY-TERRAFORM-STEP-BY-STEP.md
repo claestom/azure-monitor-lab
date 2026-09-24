@@ -175,14 +175,20 @@ enable_stage_sre_agent = false
 Terraform looks the RG up via data source rather than creating it, so `terraform destroy` will not nuke it. Create it once (idempotent - safe to re-run):
 
 ```powershell
-$rg = "rg-azure-monitor-lab"   # set this to the RG used for this deployment
+$config = Get-Content ./lab.config.json -Raw | ConvertFrom-Json
+$sub = $config.subscriptionId.ToString()
+$tenant = $config.tenantId.ToString()
+$rg = $config.resourceGroup
+$location = $config.location
 az account set --subscription $sub
 $active = az account show --query '{id:id,tenantId:tenantId}' -o json | ConvertFrom-Json
-if ($LASTEXITCODE -ne 0 -or $active.id -ne $sub) { throw 'Subscription mismatch.' }
-az group create --subscription $sub -n $rg -l northeurope --tags purpose=azure-monitor-lab owner=demo-lab
+if ($LASTEXITCODE -ne 0 -or $active.id -ne $sub -or $active.tenantId -ne $tenant) {
+	throw 'Subscription or tenant mismatch.'
+}
+az group create --subscription $sub -n $rg -l $location --tags purpose=azure-monitor-lab owner=demo-lab
 ```
 
-If you omit `resource_group_name` from `stages.tfvars`, Terraform defaults to `rg-azure-monitor-lab`. If you use another RG, set the same name in `stages.tfvars` and in `$rg` before running the commands below. If you skip this step, `terraform plan` will fail because the configured resource group was not found.
+This uses the same central config that `sync-config.ps1` projects into `terraform/stages.tfvars`. If you chose the hand-edited tfvars workflow instead, set `$sub`, `$tenant`, `$rg`, and `$location` manually to the matching values. If you omit `resource_group_name` from `stages.tfvars`, Terraform defaults to `rg-azure-monitor-lab`. If you skip this step, `terraform plan` will fail because the configured resource group was not found.
 
 ### Step 4 - Init
 
@@ -319,12 +325,15 @@ The resource group is BYO (Terraform does not own it via data source), so `terra
 The wrapper cleans up Azure dependencies before deleting the resource group. This is the same cleanup path used after one-shot or staged Bicep deployments.
 
 ```powershell
-$sub='<your-subscription-id>'
-$rg='rg-azure-monitor-lab'
+$config = Get-Content ./lab.config.json -Raw | ConvertFrom-Json
+$sub = $config.subscriptionId.ToString()
+$rg = $config.resourceGroup
 az account set --subscription $sub
 az account show --query "{name:name,id:id,tenantId:tenantId}" -o table
 .\scripts\teardown.ps1 -ResourceGroup $rg -Yes
 ```
+
+If you used hand-edited tfvars without `lab.config.json`, set `$sub` and `$rg` manually to the matching Terraform values.
 
 After the asynchronous resource-group deletion completes, clear the Terraform deployment records so the next apply starts clean:
 
