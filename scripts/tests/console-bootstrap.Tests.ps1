@@ -70,6 +70,10 @@ foreach ($directory in @('workloads/k8s', 'workloads/operations', 'infra/modules
 foreach ($file in @('scripts/invoke-lab-operation.ps1', 'scripts/start-the-lab.ps1', 'scripts/break-the-lab.ps1', 'scripts/restore-the-lab.ps1', 'scripts/start-ramp.ps1', 'scripts/simulate-high-cpu.ps1', 'scripts/send-custom-logs.ps1', 'scripts/send-release-annotation.ps1', 'workloads/k8s/02-loadgen.yaml', 'workloads/k8s/03-loadgen-ramp.yaml', 'workloads/operations/Dockerfile', 'infra/modules/lab-console-job.bicep')) {
   Copy-Item -LiteralPath (Join-Path $source $file) -Destination (Join-Path $root $file)
 }
+$runnerDockerfile = Get-Content -LiteralPath (Join-Path $root 'workloads/operations/Dockerfile') -Raw
+if ($runnerDockerfile -notmatch 'Acquire::Retries=5' -or $runnerDockerfile -notmatch '(?s)rm -rf /var/lib/apt/lists/\*.+apt-get -o Acquire::Retries=5 update') {
+  throw 'Runner package installation must retry downloads and refresh a stale APT index.'
+}
 @'
 param($SubscriptionId, $TenantId, $ResourceGroup, $WebAppName, $AllowedUserObjectIds, [switch]$AuthenticationOnly)
 if (-not $AuthenticationOnly -or $AllowedUserObjectIds.Count -ne 1) { throw 'Unexpected automatic sign-in inputs.' }
