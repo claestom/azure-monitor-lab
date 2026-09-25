@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const repository = path.resolve(__dirname, '../../..');
-const docsUrl = 'https://github.com/claestom/azure-monitor-lab/blob/master/docs/';
+const docsUrl = 'https://github.com/Azure-Samples/azure-monitor-lab/blob/main/docs/';
 const context = { resourceGroup: 'rg-azure-monitor-lab', appService: 'app-amlab-demo', sreUrl: null, foundryUrl: null };
 const catalog = { available: true, message: 'Connected to existing lab agents', agents: [{ key: 'triage', name: 'Support Triage', model: 'example-model' }] };
 

@@ -52,27 +52,27 @@ contributing:
    tear it down with `scripts/teardown.ps1`.
 5. Commit with a clear message and either push directly to `integration` or open a
   pull request against it, describing the change and how you validated it. Do not
-  target `master` directly.
+  target `main` directly.
 
 ## Branch promotion
 
-The release route is `dev -> integration -> master`. Feature branches also target
+The release route is `dev -> integration -> main`. Feature branches also target
 `integration`. Use integration to rehearse the combined changes and validate the
 lab before a maintainer manually promotes it.
 
 - `dev` remains the normal development branch.
 - `integration` accepts direct fast-forward pushes and pull requests. Force-pushes
   and deletion are blocked.
-- `master` has the same protections and additionally requires the
+- `main` has the same protections and additionally requires the
   **Integration promotion gate**. Only this repository's `integration` branch
   can pass it; a fork branch with the same name is not accepted.
 - GitHub permits opening PRs from other branches, but the policy automatically
-  closes those targeting `master`. Reopen the change against `integration`.
-- Keep integration current with master through a `master -> integration` PR
+  closes those targeting `main`. Reopen the change against `integration`.
+- Keep integration current with main through a `main -> integration` PR
   after promotion. Merge commits preserve the shared branch ancestry. Update
   dev from integration before starting the next development cycle.
-- For `integration -> master`, integration must already contain the latest
-  master commit. CI tests the PR's combined result; the source gate checks live
+- For `integration -> main`, integration must already contain the latest
+  main commit. CI tests the PR's combined result; the source gate checks live
   PR metadata, validates that PR's exact test-merge commit, and reports the
   required status against the validated integration head.
 - A passing gate does not perform a merge or prove a live deployment was tested.
