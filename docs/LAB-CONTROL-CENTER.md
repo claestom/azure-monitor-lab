@@ -116,4 +116,4 @@ Related Scenarios links are navigation, not execution shortcuts. The [scenario c
 - [SRE MCP configuration, permissions, limits, and recovery](../workloads/webapp/SRE-MCP.md).
 - [Complete guided scenarios](DEMO-SCENARIOS.md).
 
-The app's Guide and Scenarios links target the published `master` documentation. When previewing an unmerged feature branch, read this guide from that branch until it is merged. No Azure redeployment is performed by reading the guide.
+The app's Guide and Scenarios links target the published `main` documentation. When previewing an unmerged feature branch, read this guide from that branch until it is merged. No Azure redeployment is performed by reading the guide.

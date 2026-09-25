@@ -11,16 +11,16 @@ Use this guide together with the repository's [general contribution guide](../.g
 Changes follow this staged promotion path:
 
 ```text
-feature branch -> integration -> master
+feature branch -> integration -> main
 ```
 
 Each transition has a separate purpose:
 
-1. **Feature branch to `integration`:** Open the feature pull request against `integration`. Reviewers validate the implementation, deployment parity, tests, documentation, cost, and cleanup evidence. Feature branches must never target `master` directly.
+1. **Feature branch to `integration`:** Open the feature pull request against `integration`. Reviewers validate the implementation, deployment parity, tests, documentation, cost, and cleanup evidence. Feature branches must never target `main` directly.
 2. **Validate on `integration`:** Rehearse the feature together with other accepted changes. Confirm the combined lab still deploys and behaves correctly before release promotion.
-3. **`integration` to `master`:** A maintainer opens and manually merges the promotion pull request after `integration` contains the latest `master` commit and the required promotion gate passes. The PM does not bypass this release gate.
+3. **`integration` to `main`:** A maintainer opens and manually merges the promotion pull request after `integration` contains the latest `main` commit and the required promotion gate passes. The PM does not bypass this release gate.
 
-Merging the feature pull request into `integration` means the contribution has been accepted for integration testing. It does not mean the feature has been released. The feature reaches the supported release branch only after the separate `integration` to `master` promotion succeeds.
+Merging the feature pull request into `integration` means the contribution has been accepted for integration testing. It does not mean the feature has been released. The feature reaches the supported release branch only after the separate `integration` to `main` promotion succeeds.
 
 ### 1. Fork the repository
 
@@ -29,7 +29,7 @@ Fork the repository into your GitHub account or approved organization, then clon
 ```powershell
 git clone https://github.com/<your-account>/azure-monitor-lab.git
 cd azure-monitor-lab
-git remote add upstream https://github.com/claestom/azure-monitor-lab.git
+git remote add upstream https://github.com/Azure-Samples/azure-monitor-lab.git
 ```
 
 ### 2. Create a feature branch
@@ -128,7 +128,7 @@ If a deployment option cannot support the feature, document the technical reason
 
 ### 7. Open a pull request to `integration`
 
-Push the branch to your fork and open a pull request against this repository's `integration` branch. Do not target `master`.
+Push the branch to your fork and open a pull request against this repository's `integration` branch. Do not target `main`.
 
 ```powershell
 git push --set-upstream origin feature/<short-feature-name>
@@ -148,7 +148,7 @@ Include the following in the pull request:
 - Teardown result and confirmation that no unexpected resources remain.
 - Documentation updated.
 
-Respond to review feedback and keep the branch current with `integration`. After the feature branch is merged into `integration`, support any combined lab validation requested by the maintainer. A maintainer will then manage the separate `integration` to `master` promotion.
+Respond to review feedback and keep the branch current with `integration`. After the feature branch is merged into `integration`, support any combined lab validation requested by the maintainer. A maintainer will then manage the separate `integration` to `main` promotion.
 
 ## Definition of done
 
@@ -162,6 +162,6 @@ A feature integration is complete when:
 - Redeployment is safe and teardown is complete.
 - Costs, permissions, dependencies, limitations, expected wait times, and verification steps are documented.
 - No secrets, personal data, customer data, or Microsoft-confidential information are present.
-- The feature pull request targets `integration`, contains enough evidence for a maintainer to reproduce the result, and follows the `feature branch -> integration -> master` promotion path.
+- The feature pull request targets `integration`, contains enough evidence for a maintainer to reproduce the result, and follows the `feature branch -> integration -> main` promotion path.
 
 The goal is not only to deploy a resource. The goal is to deliver a feature experience that a customer can discover, trust, demonstrate, and remove as part of the lab.
