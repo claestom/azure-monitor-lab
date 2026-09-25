@@ -26,6 +26,7 @@ Pick a workload (or theme) and run only those scenarios. Each row links to the n
 | **AI / ML in Azure Monitor** | <ul><li>[16](#s16) Copilot</li><li>[13](#s13) Smart Detection</li><li>[17](#s17) Dynamic Thresholds</li><li>[18](#s18) Code Optimizations</li><li>[19](#s19) Predictive autoscale</li></ul> |
 | **GenAI observability (optional AI stage)** | <ul><li>[53](#s53) AI FinOps — token / trace / cost</li></ul> |
 | **Azure SRE Agent (optional trial)** | <ul><li>[54](#s54) Trial readiness</li><li>[55](#s55) Alert-driven App Service investigation</li><li>[56](#s56) AKS crash-loop diagnosis</li><li>[57](#s57) Change correlation</li><li>[58](#s58) Alert merging and verified recovery</li><li>[59](#s59) Automatic incident command brief</li></ul> |
+| **Azure Copilot Observability Agent (optional preview)** | <ul><li>[61](#s61) Slow tool</li><li>[62](#s62) Wrong tool</li><li>[63](#s63) Partial failure</li><li>[64](#s64) Alert storm correlation</li><li>[65](#s65) Token-cost spike</li><li>[66](#s66) Deployment regression</li><li>[67](#s67) Platform versus application failure</li></ul> |
 | **Platform foundations** | <ul><li>[5](#s5) Policy auto-onboard</li><li>[6](#s6) Cross-workspace KQL</li><li>[24](#s24) Custom Logs Ingestion API</li><li>[26](#s26) KQL Functions</li><li>[51](#s51) Platform logs at scale (DCR)</li></ul> |
 
 > **Suggested 25-min "by-workload" demos:** App Service → 3, 22, 28, 29, 33 · AKS → 4, 14, 30, 31 · Cost → 9, 11, 20, 39, 42 · Security → 27, 47, 48 · Workload health → 1 + 45 + 46.
@@ -2757,6 +2758,153 @@ The Lab Control Center brings health, traffic generation, approved lab operation
 
 ---
 
+<a id="s61"></a>
+## 61 · Agentic application - slow tool call
+
+**Audience:** application developers, SREs, AI platform teams.
+**Time:** 5-8 min.
+
+### Story
+The agent eventually returns the right answer, but the customer waits too long. A top-level duration alone cannot tell whether the model, orchestration, tool, or downstream system caused the delay. The trace can.
+
+### Click-path
+1. Deploy the [Observability Agent stage](STAGE-OBSERVABILITY-AGENT.md) and open the Control Center.
+2. Under **Troubleshooting scenarios**, choose **Slow customer lookup**, select **Broken**, approve synthetic telemetry, and generate the trace.
+3. In Application Insights transaction search, locate the trace and compare the parent `GenAI` operation with the `AgentTool` dependency. Confirm the tool is correct but slow.
+4. In Observability Agent, ask which span dominates duration and what evidence would disprove a downstream-tool bottleneck.
+5. Run the **Fixed** profile and compare the tool duration and overall outcome.
+
+### Killer line
+> *"The agent was not thinking slowly; it was waiting on the right tool. The trace tells us where the user's time went."*
+
+---
+
+<a id="s62"></a>
+## 62 · Agentic application - wrong tool selection
+
+**Audience:** agent developers, support engineering, SREs.
+**Time:** 5-8 min.
+
+### Story
+The model responds quickly but chooses an inventory lookup for an order-status request. Availability and latency look healthy while task correctness is broken.
+
+### Click-path
+1. Choose **Wrong tool selection**, run the **Broken** profile, and capture the trace ID.
+2. Inspect `gen_ai.tool.name`, `expected_tool`, and `tool.selection.correct` in Application Insights.
+3. Ask Observability Agent to explain why this is an orchestration failure rather than a tool-service outage.
+4. Challenge the answer by checking that the selected dependency succeeded technically.
+5. Run **Fixed** and verify that the selected and expected tools match.
+
+### Killer line
+> *"A 200 response can still be a failed agent task. Correctness needs semantic telemetry, not just uptime."*
+
+---
+
+<a id="s63"></a>
+## 63 · Agentic application - partial task failure
+
+**Audience:** workflow owners, developers, incident responders.
+**Time:** 6-10 min.
+
+### Story
+A multi-step task retrieves the right customer record, then fails while completing the requested action. Without trace hierarchy, support sees either a generic failure or misleading evidence that the first tool succeeded.
+
+### Click-path
+1. Choose **Partial task failure** and run **Broken**.
+2. Follow the trace through the successful first dependency and failed later dependency.
+3. In Observability Agent, ask which work completed, which step failed, and whether retrying the entire workflow is safe.
+4. Check the agent's conclusion against span ordering and status.
+5. Run **Fixed** and verify the full task completes.
+
+### Killer line
+> *"The trace preserves partial progress, so engineers can fix or retry the failed step instead of guessing from the final error."*
+
+---
+
+<a id="s64"></a>
+## 64 · Customer impact - alert storm correlation
+
+**Audience:** NOC teams, SRE leads, incident commanders.
+**Time:** 5-8 min after alerts fire.
+
+### Story
+One customer-facing dependency failure triggers latency, failure-rate, and availability alerts. Three pages should become one issue when they represent the same impact.
+
+### Click-path
+1. Generate repeated broken slow-tool and partial-failure traces within one alert evaluation window.
+2. Open the Observability Agent issue list and inspect whether related signals were correlated.
+3. Compare timestamps, affected Application Insights resource, operation, and customer impact.
+4. Confirm unrelated infrastructure alerts remain separate, as required by the configured instructions.
+5. Run fixed profiles and verify recovery with the original alert conditions.
+
+### Killer line
+> *"Correlation turns a page storm into one customer-impact story without hiding unrelated failures."*
+
+---
+
+<a id="s65"></a>
+## 65 · AI FinOps - token or model-cost spike
+
+**Audience:** AI platform owners, FinOps, engineering leads.
+**Time:** 6-10 min.
+
+### Story
+A routing or retry change increases token use and cost even though requests still succeed. Operations needs to connect the cost anomaly to the deployment and trace behavior before optimizing it.
+
+### Click-path
+1. Use the optional AI stage and Scenario 53 to generate a bounded token anomaly.
+2. Review the AI FinOps workbook and token alert evidence.
+3. Ask Observability Agent to correlate the time window with Application Insights traces and recent changes, while treating unsupported causal claims as hypotheses.
+4. Use terminal-side GitHub Copilot/Azure tooling to inspect code or configuration if desired; do not describe this as direct Observability Agent MCP integration.
+5. Generate a bounded post-fix batch and compare token and request outcomes.
+
+### Killer line
+> *"Successful requests can still be an operational regression when every answer suddenly costs three times as much."*
+
+---
+
+<a id="s66"></a>
+## 66 · Change correlation - deployment regression
+
+**Audience:** developers, release engineers, SREs.
+**Time:** 6-10 min.
+
+### Story
+Agent failures begin shortly after a deployment. Temporal correlation is useful evidence, but it is not proof that the release caused the problem.
+
+### Click-path
+1. Add a release annotation, then generate a broken agent scenario.
+2. In Application Insights, align the annotation with failure rate, dependency behavior, and trace attributes.
+3. Ask Observability Agent for the likely regression and the evidence that supports or weakens it.
+4. Inspect the targeted code or configuration in the terminal and make only the bounded demo correction.
+5. Run the fixed profile and verify the same telemetry dimensions now show the expected outcome.
+
+### Killer line
+> *"The release is a lead, not a verdict; the trace and the controlled post-fix run close the evidence loop."*
+
+---
+
+<a id="s67"></a>
+## 67 · Triage - platform failure versus application failure
+
+**Audience:** application and platform teams, incident commanders.
+**Time:** 6-10 min.
+
+### Story
+An agent request fails while Azure platform signals and application dependencies are both visible. The first operational decision is ownership: application, model/tool chain, or Azure platform.
+
+### Click-path
+1. Generate a broken agent scenario and open the corresponding application trace.
+2. Open the Traffic-Lights workbook or health model as a companion business-impact view.
+3. Ask Observability Agent to separate direct trace evidence from platform-health context and list missing evidence.
+4. Confirm whether failures are isolated to one operation/tool or coincide with platform Resource Health, availability, or broader workload signals.
+5. Route the incident to the appropriate owner and verify recovery using both the original application signal and the companion platform signal.
+
+### Killer line
+> *"Shared context shortens the ownership debate, but engineers still verify whether the evidence points to the app, its tools, or the platform."*
+
+---
+
 ## Updated demo flow (≈50 min)
 
 | Min | Scenario |
@@ -2799,6 +2947,7 @@ The Lab Control Center brings health, traffic generation, approved lab operation
 | **AI/ML curious** | 16 → 13 → 17 → 18 → 19 → 53 |
 | **Workload owners / SRE leads** | 60 → 1 → 45 → 12 → 7 → 8 (Root entity flips Unhealthy) |
 | **SRE Agent evaluation** | 54 → 55 → 56 → 57 → 58 → 59 |
+| **Agentic application troubleshooting** | 61 → 62 → 63 → 64 → 66 → 67 |
 
 ## Reset between demos
 

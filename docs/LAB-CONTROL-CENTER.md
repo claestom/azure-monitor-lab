@@ -1,6 +1,6 @@
 # Azure Monitor Lab Control Center
 
-The Control Center is the operational interface for the Azure Monitor Lab: check infrastructure health, generate application traffic, run approved lab scripts, try the existing Foundry agents, and use direct SRE MCP management tools from the deployed web app. It brings those activities together without replacing the Azure portal or the lab's [guided scenarios](DEMO-SCENARIOS.md).
+The Control Center is the operational interface for the Azure Monitor Lab: check infrastructure health, generate application traffic, run approved lab scripts, try the existing Foundry agents, generate deterministic agent-failure telemetry, and use direct SRE MCP management tools from the deployed web app. It brings those activities together without replacing the Azure portal or the lab's [guided scenarios](DEMO-SCENARIOS.md).
 
 ![Infrastructure Health first tab with resource counts and separate platform and telemetry signals](images/infrastructure-health.png)
 
@@ -114,6 +114,7 @@ Related Scenarios links are navigation, not execution shortcuts. The [scenario c
 - [Lab Operations runner configuration, permissions, and recovery](../workloads/webapp/LAB-OPERATIONS.md).
 - [Foundry access and developer reference](../workloads/webapp/README.md#enable-foundry-access).
 - [SRE MCP configuration, permissions, limits, and recovery](../workloads/webapp/SRE-MCP.md).
+- [Observability Agent deployment, cost, privacy, and demo workflow](STAGE-OBSERVABILITY-AGENT.md).
 - [Complete guided scenarios](DEMO-SCENARIOS.md).
 
 The app's Guide and Scenarios links target the published `main` documentation. When previewing an unmerged feature branch, read this guide from that branch until it is merged. No Azure redeployment is performed by reading the guide.

@@ -181,8 +181,9 @@ try {
   }
   if (-not $config.LabConsole.Health.CentralWorkspaceResourceId) { throw 'The lab central health workspace was not found.' }
   $sreAgents = @($inventory | Where-Object { $_.type -ieq 'Microsoft.App/agents' })
+  $observabilityAgents = @($inventory | Where-Object { $_.type -ieq 'Microsoft.Monitor/observabilityAgents' })
   $projects = @($inventory | Where-Object { $_.type -ieq 'Microsoft.CognitiveServices/accounts/projects' })
-  if ($projects.Count -gt 1 -or $sreAgents.Count -gt 1) { throw 'Multiple optional agent targets were found. Deployment cannot select an arbitrary target.' }
+  if ($projects.Count -gt 1 -or $sreAgents.Count -gt 1 -or $observabilityAgents.Count -gt 1) { throw 'Multiple optional agent targets were found. Deployment cannot select an arbitrary target.' }
   if ($projects.Count -eq 1) {
     $phase = 'optional demo agent provisioning'
     if (-not $projects[0].id.StartsWith("$resourceBase/providers/Microsoft.CognitiveServices/accounts/", [StringComparison]::OrdinalIgnoreCase)) { throw 'The Foundry project is outside the selected lab.' }
@@ -218,6 +219,11 @@ try {
   }
   $settings['LabConsole__Foundry__Enabled'] = [string]($projects.Count -eq 1)
   $settings['LabConsole__Sre__Enabled'] = [string]($projects.Count -eq 1 -and $sreAgents.Count -eq 1)
+  if ($observabilityAgents.Count -eq 1) {
+    $settings['LabConsole__Links__ObservabilityAgent'] = "https://portal.azure.com/#resource$($observabilityAgents[0].id)"
+  } else {
+    $settings.Remove('LabConsole__Links__ObservabilityAgent')
+  }
   $settings['LabConsole__ResourceGroup'] = $ResourceGroup
   $settings['LabConsole__AppService'] = $WebAppName
   if ($projects.Count -eq 1 -and $config.LabConsole.Foundry.ProjectEndpoint) { $settings['LabConsole__Foundry__ProjectEndpoint'] = $config.LabConsole.Foundry.ProjectEndpoint }

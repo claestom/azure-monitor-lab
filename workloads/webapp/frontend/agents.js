@@ -69,6 +69,7 @@ export function initializeAgentViews({ resizeChart, toast, refreshIcons, checkWe
       byId('sre-app').textContent = context.appService || 'Not configured';
       byId('sre-destination-status').textContent = setDestination('sre-open', context.sreUrl) ? 'SRE Agent destination configured' : 'SRE Agent destination not configured';
       setDestination('foundry-open', context.foundryUrl);
+      setDestination('observability-open', context.observabilityAgentUrl);
     } catch {
       byId('lab-resource').textContent = 'Unavailable';
       byId('lab-app').textContent = 'Unavailable';
@@ -116,6 +117,61 @@ export function initializeAgentViews({ resizeChart, toast, refreshIcons, checkWe
   }
   byId('agent-refresh').addEventListener('click', loadCatalog);
   for (const id of ['agent-choice', 'agent-prompt', 'agent-consent']) byId(id).addEventListener('input', updateAgentControls);
+
+  function updateScenarioControls() {
+    byId('agent-scenario-run').disabled = !byId('agent-scenario-consent').checked || !byId('agent-scenario').value;
+  }
+  async function loadScenarioCatalog() {
+    try {
+      const response = await fetch('/api/agents/scenarios', { cache: 'no-store', referrerPolicy: 'same-origin' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      const select = byId('agent-scenario');
+      select.replaceChildren();
+      const scenarios = Array.isArray(data) ? data : data.scenarios || [];
+      for (const scenario of scenarios) {
+        const option = document.createElement('option');
+        option.value = scenario.key;
+        option.textContent = scenario.name;
+        select.append(option);
+      }
+      if (!select.value) throw new Error('No scenarios are available');
+      updateScenarioControls();
+    } catch (error) {
+      byId('agent-scenario').replaceChildren();
+      byId('agent-scenario-status').textContent = `Scenario catalog unavailable: ${error.message || 'request failed'}`;
+      updateScenarioControls();
+    }
+  }
+  byId('agent-scenario-consent').addEventListener('input', updateScenarioControls);
+  byId('agent-scenario-form').addEventListener('submit', async event => {
+    event.preventDefault();
+    const button = byId('agent-scenario-run');
+    button.disabled = true;
+    byId('agent-scenario-status').textContent = 'Generating deterministic agent telemetry...';
+    const payload = {
+      scenario: byId('agent-scenario').value,
+      mode: byId('agent-scenario-mode').value,
+      consent: byId('agent-scenario-consent').checked
+    };
+    try {
+      const response = await fetch('/api/agents/scenarios/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Amlab-Agent-Request': 'true' },
+        referrerPolicy: 'same-origin',
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(10000)
+      });
+      const data = await response.json();
+      if (!response.ok && !data.status) throw new Error(data.error || `HTTP ${response.status}`);
+      byId('agent-scenario-status').textContent = `${data.scenario} / ${data.mode}: ${data.status}; ${Math.round(data.durationMs).toLocaleString()} ms; selected ${data.selectedTool}`;
+    } catch (error) {
+      byId('agent-scenario-status').textContent = `Scenario failed: ${error.message || 'request unavailable'}`;
+    } finally {
+      byId('agent-scenario-consent').checked = false;
+      updateScenarioControls();
+    }
+  });
 
   function element(tag, text, className) {
     const item = document.createElement(tag);
@@ -209,5 +265,6 @@ export function initializeAgentViews({ resizeChart, toast, refreshIcons, checkWe
     updateAgentControls();
   });
   activate(tabs[0]);
+  loadScenarioCatalog();
   loadContext();
 }

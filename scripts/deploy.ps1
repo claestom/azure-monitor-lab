@@ -329,7 +329,20 @@ if ($sreAgentEnabled) {
   & $setupSreAgent -SubscriptionId $active.id -ResourceGroup $ResourceGroup
 }
 
-# 7. Optional AI feature - create the demo agents + simulate GenAI traffic, but only
+# 7. Optional Azure Copilot Observability Agent. Bicep creates the agent, its
+#    dedicated Azure Monitor workspace, monitored Application Insights child,
+#    and least-privilege role assignments; this verifies the deployed contract.
+$observabilityAgentEnabled = $false
+if ($null -ne $labCfg -and $null -ne $labCfg.stageToggles -and $null -ne $labCfg.stageToggles.enableStageObservabilityAgent) {
+  $observabilityAgentEnabled = [bool]$labCfg.stageToggles.enableStageObservabilityAgent
+}
+if ($observabilityAgentEnabled) {
+  Write-Step "Observability Agent stage enabled - verifying resource, scope, operations, and RBAC"
+  $setupObservabilityAgent = Join-Path $PSScriptRoot 'setup-observability-agent.ps1'
+  & $setupObservabilityAgent -SubscriptionId $active.id -ResourceGroup $ResourceGroup
+}
+
+# 8. Optional AI feature - create the demo agents + simulate GenAI traffic, but only
 #    when lab.config.json enabled it (stageToggles.enableStageAI -> Bicep enableAi).
 $aiEnabled = $false
 $aiTrafficStarted = $false

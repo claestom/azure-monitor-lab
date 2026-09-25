@@ -10,6 +10,7 @@ async function ready(page) {
   await page.goto('/');
   await page.getByRole('tab', { name: 'Foundry Playground' }).click();
   await expect(page.getByLabel('Agent', { exact: true })).toBeEnabled();
+  await expect(page.getByLabel('Observability scenario').locator('option')).toHaveCount(3);
 }
 async function approve(page) {
   await page.getByLabel('Task', { exact: true }).fill('The app returns an error.');
@@ -36,8 +37,61 @@ test('agent API rejects unsafe requests, enforces consent and size, defaults off
   expect((await available.json()).available).toBe(false);
   expect(available.headers()['cache-control']).toBe('no-store');
   const context = await request.get('/api/agents/context');
-  expect(Object.keys(await context.json()).sort()).toEqual(['appService', 'foundryUrl', 'resourceGroup', 'sreUrl']);
+  expect(Object.keys(await context.json()).sort()).toEqual(['appService', 'foundryUrl', 'observabilityAgentUrl', 'resourceGroup', 'sreUrl']);
   expect(await context.text()).not.toMatch(/InstrumentationKey|ConnectionString|password/i);
+});
+
+test('observability scenarios compare broken and fixed metadata-only traces', async ({ page }) => {
+  const submissions = [];
+  await page.route('**/api/agents/scenarios/run', async route => {
+    const data = route.request().postDataJSON();
+    submissions.push(data);
+    expect(route.request().headers()['x-amlab-agent-request']).toBe('true');
+    const broken = data.mode === 'broken';
+    await route.fulfill({
+      status: broken && data.scenario === 'wrong-tool' ? 409 : 200,
+      json: {
+        scenario: data.scenario,
+        mode: data.mode,
+        status: broken ? 'wrong_tool' : 'completed',
+        selectedTool: broken ? 'inventory_lookup' : 'order_lookup',
+        expectedTool: 'order_lookup',
+        durationMs: broken ? 2500 : 100,
+        traceId: 'scenario-trace'
+      }
+    });
+
+  });
+  await ready(page);
+  await page.getByLabel('Observability scenario').selectOption('wrong-tool');
+  await page.getByLabel('Scenario profile').selectOption('broken');
+  await page.getByLabel('I approve generation of synthetic, metadata-only demo telemetry.').check();
+  await page.getByRole('button', { name: 'Generate Trace' }).click();
+  await expect(page.locator('#agent-scenario-status')).toContainText('wrong_tool');
+  await expect(page.getByLabel('I approve generation of synthetic, metadata-only demo telemetry.')).not.toBeChecked();
+  await page.getByLabel('Scenario profile').selectOption('fixed');
+  await page.getByLabel('I approve generation of synthetic, metadata-only demo telemetry.').check();
+  await page.getByRole('button', { name: 'Generate Trace' }).click();
+  await expect(page.locator('#agent-scenario-status')).toContainText('completed');
+  expect(submissions).toEqual([
+    { scenario: 'wrong-tool', mode: 'broken', consent: true },
+    { scenario: 'wrong-tool', mode: 'fixed', consent: true }
+  ]);
+});
+
+test('observability scenario failures are not replayed and non-JSON responses stay inert', async ({ page }) => {
+  let attempts = 0;
+  await page.route('**/api/agents/scenarios/run', route => {
+    attempts++;
+    route.fulfill({ status: 502, contentType: 'text/html', body: '<script>window.injected=true</script>' });
+  });
+  await ready(page);
+  await page.getByLabel('I approve generation of synthetic, metadata-only demo telemetry.').check();
+  await page.getByRole('button', { name: 'Generate Trace' }).click();
+  await expect(page.locator('#agent-scenario-status')).toContainText('Scenario failed');
+  await expect(page.getByLabel('I approve generation of synthetic, metadata-only demo telemetry.')).not.toBeChecked();
+  expect(attempts).toBe(1);
+  expect(await page.evaluate(() => window.injected)).toBeUndefined();
 });
 
 test('tabs preserve console state, support keyboard navigation, and validate agent destinations', async ({ page }) => {
