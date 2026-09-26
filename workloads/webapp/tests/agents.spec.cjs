@@ -130,15 +130,18 @@ test('alert storm generates a bounded mixed batch and can stop without replay', 
 
 test('token anomaly runs only the approved real-call batch and aggregates usage', async ({ page }) => {
   const submissions = [];
+  let pricing = 'available';
+  let callInBatch = 0;
   await page.route('**/api/agents/run', async route => {
     const data = route.request().postDataJSON();
     submissions.push(data);
+    callInBatch++;
     await route.fulfill({
       json: {
         ...answer,
         inputTokens: 1200,
         outputTokens: 30,
-        estimatedCostUsd: 0.001,
+        estimatedCostUsd: pricing === 'unavailable' || (pricing === 'partial' && callInBatch === 2) ? null : 0.001,
         traceId: `token-${submissions.length}`,
         runId: `run-${submissions.length}`
       }
@@ -154,31 +157,17 @@ test('token anomaly runs only the approved real-call batch and aggregates usage'
   expect(new Set(submissions.map(item => item.batchId)).size).toBe(1);
   expect(submissions.every(item => item.scenario === 'token-anomaly' && item.consent && item.prompt.length <= 4000)).toBe(true);
   await expect(page.getByLabel('I approve this bounded batch of billable Foundry model calls.')).not.toBeChecked();
-});
 
-test('token anomaly reports unavailable pricing instead of a zero-dollar estimate', async ({ page }) => {
-  await page.route('**/api/agents/run', route => route.fulfill({
-    json: { ...answer, inputTokens: 1200, outputTokens: 30, estimatedCostUsd: null }
-  }));
-  await ready(page);
-  await page.getByLabel('Token anomaly calls').selectOption('3');
+  pricing = 'unavailable';
+  callInBatch = 0;
   await page.getByLabel('I approve this bounded batch of billable Foundry model calls.').check();
   await page.getByRole('button', { name: 'Generate Token Anomaly' }).click();
   await expect(page.locator('#token-anomaly-status')).toContainText('Completed 3 calls');
   await expect(page.locator('#token-anomaly-status')).toContainText('cost unavailable; model pricing is not configured');
   await expect(page.locator('#token-anomaly-status')).not.toContainText('$0.000000');
-});
 
-test('token anomaly labels a partial estimate when only some calls have pricing', async ({ page }) => {
-  let attempts = 0;
-  await page.route('**/api/agents/run', route => {
-    attempts++;
-    route.fulfill({
-      json: { ...answer, inputTokens: 1200, outputTokens: 30, estimatedCostUsd: attempts === 2 ? null : 0.001 }
-    });
-  });
-  await ready(page);
-  await page.getByLabel('Token anomaly calls').selectOption('3');
+  pricing = 'partial';
+  callInBatch = 0;
   await page.getByLabel('I approve this bounded batch of billable Foundry model calls.').check();
   await page.getByRole('button', { name: 'Generate Token Anomaly' }).click();
   await expect(page.locator('#token-anomaly-status')).toContainText('Completed 3 calls');
