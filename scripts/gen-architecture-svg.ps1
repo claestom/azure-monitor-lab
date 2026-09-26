@@ -24,7 +24,8 @@ $iconPaths = @{
   pol      = 'management_governance/Policy.svg'
   law      = 'management_governance/Log_Analytics_Workspaces.svg'
   ai       = 'management_governance/Application_Insights.svg'
-  amw      = 'management_governance/Monitor.svg'
+  # Azure Portal resource icon, pinned to the portal-icon catalog revision.
+  amw      = 'https://raw.githubusercontent.com/maskati/azure-icons/9ced4c629a4edfd2a31946e320ed0c309381787e/svg/Microsoft_Azure_Monitoring/MonitoringAccount.svg'
   storage  = 'storage/Storage_Accounts.svg'
   eventhub = 'iot/Event_Hubs.svg'
   keyvault = 'security/Key_Vaults.svg'
