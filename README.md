@@ -27,11 +27,11 @@ Everything lands in a single resource group (`rg-azure-monitor-lab`), with telem
 3. The telemetry backplane stores them.
 4. The consumption layer turns them into dashboards, alerts, and responses.
 
-The GenAI workload and Azure SRE Agent can also be deployed on the same telemetry backbone.
+The GenAI workload, Azure Copilot Observability Agent, and Azure SRE Agent can also be deployed on the same telemetry backbone. Observability Agent receives Application Insights and alert context and stores correlated issues in its dedicated Azure Monitor workspace.
 
 > 📦 For a full, resource-by-resource list of what gets created, see [REFERENCE.md → What gets deployed](docs/REFERENCE.md#what-gets-deployed).
 
-[![Azure Monitor Lab architecture including Container Apps Jobs and Azure Container Registry](docs/architecture-overview-sre.svg)](docs/architecture.drawio)
+[![Azure Monitor Lab architecture including Azure Copilot Observability Agent, Container Apps Jobs, and Azure Container Registry](docs/architecture-overview-sre.svg)](docs/architecture.drawio)
 
 ## Prerequisites
 
