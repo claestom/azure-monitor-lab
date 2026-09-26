@@ -52,13 +52,13 @@ The GenAI workload, Azure Copilot Observability Agent, and Azure SRE Agent can a
 
 <div align="center">
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FAzure-Samples%2Fazure-monitor-lab%2Fmain%2Finfra%2Fmain.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2FAzure-Samples%2Fazure-monitor-lab%2Fmain%2Finfra%2FcreateUiDefinition.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FAzure-Samples%2Fazure-monitor-lab%2Fintegration%2Finfra%2Fmain.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2FAzure-Samples%2Fazure-monitor-lab%2Fintegration%2Finfra%2FcreateUiDefinition.json)
 
 </div>
 
 Opens a guided Custom deployment wizard in the Azure Portal, where you enter every value in the UI and don't need any local files. Sensible defaults are pre-filled throughout; the only things you have to supply are an alert email and a VM admin password.
 
-The public button intentionally deploys the published `main` branch. When validating an `integration` or feature revision before promotion, use its revision-pinned `infra/main.json` and `infra/createUiDefinition.json` URLs in an Azure portal custom deployment instead of treating this button as evidence for that revision.
+This integration-branch button deploys the current `integration` templates. The button on `main` deploys the stable `main` templates.
 
 | Tab | You provide |
 |---|---|
@@ -70,7 +70,7 @@ The public button intentionally deploys the published `main` branch. When valida
 After the portal deployment succeeds, open **[Cloud Shell](https://learn.microsoft.com/en-us/azure/cloud-shell/get-started/ephemeral?tabs=azurecli#start-cloud-shell)** in the Azure portal, select **PowerShell**, and run the commands below. The Cloud Shell wrapper discovers the deployed resources, publishes the App Service sample, installs the AKS and Health Model demo components, and prepares the identity and RBAC prerequisites for the SLI demo without requiring optional Azure CLI extensions. It attempts to verify the Managed Prometheus source metrics and continues with a warning if Cloud Shell cannot request that token audience:
 
 ```powershell
-git clone --branch main https://github.com/Azure-Samples/azure-monitor-lab.git
+git clone --branch integration https://github.com/Azure-Samples/azure-monitor-lab.git
 cd azure-monitor-lab
 $tenantId = Read-Host 'Tenant ID'
 $subscriptionId = Read-Host 'Subscription ID'
