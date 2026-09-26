@@ -104,7 +104,7 @@ The script verifies the subscription and tenant guard, region, identity, issue a
 3. Choose **Slow customer lookup**, **Wrong tool selection**, or **Partial task failure**.
 4. Select **Broken**, approve synthetic telemetry generation, and select **Generate Trace**.
 5. Open Application Insights transaction search and follow the returned trace ID through the `GenAI` and `AgentTool` dependencies.
-6. Open Observability Agent from the Control Center. Review correlated issues or ask it to explain the evidence and distinguish application, model, tool, and downstream failures.
+6. Open Observability Agent from the Control Center, start a chat, and paste the trace-specific investigation prompt shown after the run. It asks the agent to explain evidence, identify the likely fault domain, state uncertainty, propose concrete next checks, and define measurable fixed-run verification.
 7. Challenge the conclusion: verify timestamps, tool name, duration, expected tool, downstream dependency, and missing evidence.
 8. Select **Fixed**, approve another run, and compare the new trace. Confirm the measured outcome changed; do not accept a code or configuration change as proof by itself.
 

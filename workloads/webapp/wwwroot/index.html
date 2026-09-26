@@ -209,7 +209,13 @@
               <div class="run-buttons"><button id="agent-scenario-run" class="button primary" type="submit" disabled><i data-lucide="activity"></i>Generate Trace</button></div>
             </form>
             <div id="agent-scenario-status" class="status-band" role="status">No observability scenario run</div>
-            <p class="history-note">Run the broken profile, investigate it in Application Insights or Observability Agent, then run the fixed profile and compare latency, tool selection, and task outcome.</p>
+            <section id="agent-scenario-investigation" class="scenario-investigation" aria-labelledby="agent-scenario-prompt-heading" hidden>
+              <h3 id="agent-scenario-prompt-heading">Observability Agent chat prompt</h3>
+              <p class="history-note">Open Observability Agent, start a chat, and paste this trace-specific prompt.</p>
+              <textarea id="agent-scenario-prompt" rows="9" readonly aria-label="Observability Agent investigation prompt"></textarea>
+              <div class="run-buttons"><button id="agent-scenario-copy" class="button secondary" type="button"><i data-lucide="copy"></i>Copy Prompt</button></div>
+            </section>
+            <p class="history-note">Run the broken profile, open Observability Agent chat with the generated prompt, then run the fixed profile and compare latency, tool selection, and task outcome.</p>
           </section>
           <div class="section-heading"><h2>Task results</h2><button id="agent-clear" class="icon-button" title="Clear task results" aria-label="Clear task results"><i data-lucide="trash-2"></i></button></div>
           <div id="agent-status" class="status-band" role="status">No tasks submitted</div>

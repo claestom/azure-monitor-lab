@@ -57,7 +57,8 @@ test('observability scenarios compare broken and fixed metadata-only traces', as
         selectedTool: broken ? 'inventory_lookup' : 'order_lookup',
         expectedTool: 'order_lookup',
         durationMs: broken ? 2500 : 100,
-        traceId: 'scenario-trace'
+        traceId: 'scenario-trace',
+        investigationPrompt: `Investigate trace scenario-trace for ${data.scenario} in ${data.mode} mode.`
       }
     });
 
@@ -68,6 +69,9 @@ test('observability scenarios compare broken and fixed metadata-only traces', as
   await page.getByLabel('I approve generation of synthetic, metadata-only demo telemetry.').check();
   await page.getByRole('button', { name: 'Generate Trace' }).click();
   await expect(page.locator('#agent-scenario-status')).toContainText('wrong_tool');
+  await expect(page.locator('#agent-scenario-status')).toContainText('trace scenario-trace');
+  await expect(page.getByLabel('Observability Agent investigation prompt')).toHaveValue(/scenario-trace.*wrong-tool.*broken/);
+  await expect(page.getByRole('button', { name: 'Copy Prompt' })).toBeVisible();
   await expect(page.getByLabel('I approve generation of synthetic, metadata-only demo telemetry.')).not.toBeChecked();
   await page.getByLabel('Scenario profile').selectOption('fixed');
   await page.getByLabel('I approve generation of synthetic, metadata-only demo telemetry.').check();

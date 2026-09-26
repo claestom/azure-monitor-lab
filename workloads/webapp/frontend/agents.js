@@ -144,6 +144,15 @@ export function initializeAgentViews({ resizeChart, toast, refreshIcons, checkWe
     }
   }
   byId('agent-scenario-consent').addEventListener('input', updateScenarioControls);
+  byId('agent-scenario-copy').addEventListener('click', async () => {
+    const prompt = byId('agent-scenario-prompt').value;
+    try {
+      await navigator.clipboard.writeText(prompt);
+      toast('Observability Agent prompt copied');
+    } catch {
+      toast('Clipboard unavailable. Select the prompt to copy it.');
+    }
+  });
   byId('agent-scenario-form').addEventListener('submit', async event => {
     event.preventDefault();
     const button = byId('agent-scenario-run');
@@ -164,9 +173,19 @@ export function initializeAgentViews({ resizeChart, toast, refreshIcons, checkWe
       });
       const data = await response.json();
       if (!response.ok && !data.status) throw new Error(data.error || `HTTP ${response.status}`);
-      byId('agent-scenario-status').textContent = `${data.scenario} / ${data.mode}: ${data.status}; ${Math.round(data.durationMs).toLocaleString()} ms; selected ${data.selectedTool}`;
+      const trace = data.traceId || 'unavailable';
+      byId('agent-scenario-status').textContent = `${data.scenario} / ${data.mode}: ${data.status}; ${Math.round(data.durationMs).toLocaleString()} ms; selected ${data.selectedTool}; trace ${trace}`;
+      if (typeof data.investigationPrompt === 'string' && data.investigationPrompt.trim()) {
+        byId('agent-scenario-prompt').value = data.investigationPrompt;
+        byId('agent-scenario-investigation').hidden = false;
+      } else {
+        byId('agent-scenario-prompt').value = '';
+        byId('agent-scenario-investigation').hidden = true;
+      }
     } catch (error) {
       byId('agent-scenario-status').textContent = `Scenario failed: ${error.message || 'request unavailable'}`;
+      byId('agent-scenario-prompt').value = '';
+      byId('agent-scenario-investigation').hidden = true;
     } finally {
       byId('agent-scenario-consent').checked = false;
       updateScenarioControls();

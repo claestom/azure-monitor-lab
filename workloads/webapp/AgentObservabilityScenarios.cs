@@ -1,11 +1,12 @@
 using Microsoft.ApplicationInsights;
 using Microsoft.ApplicationInsights.DataContracts;
+using Microsoft.ApplicationInsights.Extensibility;
 using System.Diagnostics;
 
 public sealed record AgentScenarioRequest(string? Scenario, string? Mode, bool Consent);
 public sealed record AgentScenarioEntry(string Key, string Name, string Description);
 public sealed record AgentScenarioResult(string Scenario, string Mode, string Status, string SelectedTool,
-    string ExpectedTool, double DurationMs, string? TraceId);
+    string ExpectedTool, double DurationMs, string? TraceId, string InvestigationPrompt);
 
 public interface IAgentScenarioDelay
 {
@@ -19,6 +20,8 @@ public sealed class AgentScenarioDelay : IAgentScenarioDelay
 
 public sealed class AgentObservabilityScenarios(TelemetryClient telemetry, IAgentScenarioDelay delay)
 {
+    private const int ToolLatencyBudgetMs = 500;
+
     public static readonly IReadOnlyList<AgentScenarioEntry> Catalog =
     [
         new("slow-tool", "Slow customer lookup", "A downstream customer lookup dominates the agent response time."),
@@ -40,22 +43,30 @@ public sealed class AgentObservabilityScenarios(TelemetryClient telemetry, IAgen
             return Results.BadRequest(new { error = "Confirm that this request generates demo telemetry." });
 
         var started = Stopwatch.StartNew();
+        var traceId = Activity.Current?.TraceId.ToString();
         var expectedTool = scenario == "slow-tool" ? "customer_lookup" : "order_lookup";
         var selectedTool = scenario == "wrong-tool" && mode == "broken" ? "inventory_lookup" : expectedTool;
         var status = "completed";
         var resultCode = "200";
         var success = true;
+        using var agentOperation = telemetry.StartOperation<DependencyTelemetry>("customer_support_agent");
+        traceId ??= Activity.Current?.TraceId.ToString();
+        var agentDependency = agentOperation.Telemetry;
+        agentDependency.Type = "GenAI";
+        agentDependency.Target = "obs-agent-demo";
+        foreach (var dimension in AgentDimensions(scenario, mode, selectedTool, expectedTool))
+            agentDependency.Properties[dimension.Key] = dimension.Value;
 
         try
         {
             if (scenario == "partial-failure")
             {
                 await TrackToolAsync("customer_lookup", TimeSpan.FromMilliseconds(100), true, "200",
-                    scenario, mode, expectedTool, cancellationToken);
+                    scenario, mode, expectedTool, agentDependency.Id, cancellationToken);
                 if (mode == "broken")
                 {
                     await TrackToolAsync("order_lookup", TimeSpan.FromMilliseconds(250), false, "503",
-                        scenario, mode, expectedTool, cancellationToken);
+                        scenario, mode, expectedTool, agentDependency.Id, cancellationToken);
                     status = "partial_failure";
                     resultCode = "502";
                     success = false;
@@ -63,7 +74,7 @@ public sealed class AgentObservabilityScenarios(TelemetryClient telemetry, IAgen
                 else
                 {
                     await TrackToolAsync("order_lookup", TimeSpan.FromMilliseconds(100), true, "200",
-                        scenario, mode, expectedTool, cancellationToken);
+                        scenario, mode, expectedTool, agentDependency.Id, cancellationToken);
                 }
             }
             else
@@ -73,7 +84,7 @@ public sealed class AgentObservabilityScenarios(TelemetryClient telemetry, IAgen
                     : TimeSpan.FromMilliseconds(100);
                 var correct = selectedTool == expectedTool;
                 await TrackToolAsync(selectedTool, duration, correct, correct ? "200" : "409",
-                    scenario, mode, expectedTool, cancellationToken);
+                    scenario, mode, expectedTool, agentDependency.Id, cancellationToken);
                 if (!correct)
                 {
                     status = "wrong_tool";
@@ -82,7 +93,7 @@ public sealed class AgentObservabilityScenarios(TelemetryClient telemetry, IAgen
                 }
             }
 
-            var properties = Dimensions(scenario, mode, selectedTool, expectedTool);
+            var properties = AgentDimensions(scenario, mode, selectedTool, expectedTool);
             properties["outcome"] = status;
             properties["tool.selection.correct"] = (selectedTool == expectedTool).ToString().ToLowerInvariant();
             telemetry.TrackEvent("AgentObservabilityScenarioCompleted", properties,
@@ -97,59 +108,94 @@ public sealed class AgentObservabilityScenarios(TelemetryClient telemetry, IAgen
         }
         finally
         {
-            var dependency = new DependencyTelemetry
-            {
-                Type = "GenAI",
-                Name = "customer_support_agent",
-                Target = "obs-agent-demo",
-                Timestamp = DateTimeOffset.UtcNow - started.Elapsed,
-                Duration = started.Elapsed,
-                Success = success,
-                ResultCode = resultCode
-            };
-            foreach (var dimension in Dimensions(scenario, mode, selectedTool, expectedTool))
-                dependency.Properties[dimension.Key] = dimension.Value;
-            dependency.Properties["outcome"] = status;
-            telemetry.TrackDependency(dependency);
+            agentDependency.Success = success;
+            agentDependency.ResultCode = resultCode;
+            agentDependency.Properties["outcome"] = status;
         }
 
         var response = new AgentScenarioResult(scenario, mode, status, selectedTool, expectedTool,
-            started.Elapsed.TotalMilliseconds, Activity.Current?.TraceId.ToString());
+            started.Elapsed.TotalMilliseconds, traceId, InvestigationPrompt(scenario, mode, traceId));
         return success
             ? Results.Json(response)
             : Results.Json(response, statusCode: scenario == "wrong-tool" ? 409 : 502);
     }
 
     private async Task TrackToolAsync(string tool, TimeSpan duration, bool success, string resultCode,
-        string scenario, string mode, string expectedTool, CancellationToken cancellationToken)
+        string scenario, string mode, string expectedTool, string agentSpanId,
+        CancellationToken cancellationToken)
     {
-        var started = DateTimeOffset.UtcNow;
-        await delay.WaitAsync(duration, cancellationToken);
-        var dependency = new DependencyTelemetry
-        {
-            Type = "AgentTool",
-            Name = tool,
-            Target = "lab-tool-simulator",
-            Timestamp = started,
-            Duration = duration,
-            Success = success,
-            ResultCode = resultCode
-        };
-        foreach (var dimension in Dimensions(scenario, mode, tool, expectedTool))
+        using var toolOperation = telemetry.StartOperation<DependencyTelemetry>(tool);
+        var dependency = toolOperation.Telemetry;
+        dependency.Type = "AgentTool";
+        dependency.Target = "lab-tool-simulator";
+        dependency.Context.Operation.ParentId = agentSpanId;
+        dependency.Success = success;
+        dependency.ResultCode = resultCode;
+        foreach (var dimension in ToolDimensions(scenario, mode, tool, expectedTool))
             dependency.Properties[dimension.Key] = dimension.Value;
         dependency.Properties["tool.selection.correct"] = (tool == expectedTool).ToString().ToLowerInvariant();
-        telemetry.TrackDependency(dependency);
+        dependency.Properties["dependency.role"] = "agent_tool_backend";
+        dependency.Properties["tool.latency_budget_ms"] = ToolLatencyBudgetMs.ToString();
+        dependency.Properties["tool.latency_budget_exceeded"] =
+            (duration.TotalMilliseconds > ToolLatencyBudgetMs).ToString().ToLowerInvariant();
+        dependency.Properties["tool.simulation_profile"] =
+            scenario == "slow-tool" && mode == "broken" ? "slow_response" : "normal_response";
+        try
+        {
+            await delay.WaitAsync(duration, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            dependency.Success = false;
+            dependency.ResultCode = "499";
+            throw;
+        }
     }
 
-    private static Dictionary<string, string> Dimensions(string scenario, string mode, string selectedTool, string expectedTool) => new()
+    private static string InvestigationPrompt(string scenario, string mode, string? traceId)
     {
-        ["gen_ai.agent.name"] = "Customer Support Agent",
-        ["gen_ai.operation.name"] = "execute_tool",
-        ["gen_ai.tool.name"] = selectedTool,
-        ["scenario"] = scenario,
-        ["demo.mode"] = mode,
-        ["expected_tool"] = expectedTool,
-        ["source"] = "obs-agent-demo",
-        ["content_recording.enabled"] = "false"
-    };
+        var trace = string.IsNullOrWhiteSpace(traceId) ? "<paste operation/trace ID>" : traceId;
+        return $"""
+            Investigate the Application Insights transaction with operation/trace ID {trace} from the last 30 minutes.
+            It was generated by POST /api/agents/scenarios/run with scenario={scenario} and demo.mode={mode}.
+
+            Do not only list the longest spans. Return these sections:
+            1. Evidence - reconstruct the request and dependency path; quantify each major span's contribution to end-to-end duration. Include gen_ai.tool.name, dependency target, success/result code, tool.latency_budget_ms, tool.latency_budget_exceeded, and tool.simulation_profile.
+            2. Hypothesis - identify the most likely fault domain (model, orchestration, agent tool, or tool backend) and distinguish telemetry facts from inference.
+            3. Trace quality - verify that the hierarchy is request -> customer_support_agent -> tool dependency. Report any missing or flattened parent-child relationship before drawing a causal conclusion.
+            4. Next checks - give three concrete checks or queries that would confirm or disprove the hypothesis. Do not claim the synthetic delay reveals a real backend cause.
+            5. Targeted fix - recommend the smallest appropriate remediation for the identified fault domain.
+            6. Verification - explain which broken-versus-fixed measurements would prove the fix, including tool duration against its latency budget and total request duration.
+            """;
+    }
+
+    private static Dictionary<string, string> AgentDimensions(string scenario, string mode,
+        string selectedTool, string expectedTool)
+    {
+        var dimensions = CommonDimensions(scenario, mode, expectedTool);
+        dimensions["gen_ai.agent.name"] = "Customer Support Agent";
+        dimensions["gen_ai.operation.name"] = "invoke_agent";
+        dimensions["selected_tool"] = selectedTool;
+        return dimensions;
+    }
+
+    private static Dictionary<string, string> ToolDimensions(string scenario, string mode,
+        string tool, string expectedTool)
+    {
+        var dimensions = CommonDimensions(scenario, mode, expectedTool);
+        dimensions["gen_ai.agent.name"] = "Customer Support Agent";
+        dimensions["gen_ai.operation.name"] = "execute_tool";
+        dimensions["gen_ai.tool.name"] = tool;
+        return dimensions;
+    }
+
+    private static Dictionary<string, string> CommonDimensions(string scenario, string mode,
+        string expectedTool) => new()
+        {
+            ["scenario"] = scenario,
+            ["demo.mode"] = mode,
+            ["expected_tool"] = expectedTool,
+            ["source"] = "obs-agent-demo",
+            ["content_recording.enabled"] = "false"
+        };
 }
