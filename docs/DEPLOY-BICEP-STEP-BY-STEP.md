@@ -4,7 +4,7 @@ This guide shows how to deploy the lab in controlled stages so you can enable sc
 
 ## 1) What you have today
 
-The repository already has seven dedicated [stage templates](../infra/stages). This guide uses those templates, with the same boundaries as Terraform. [The one-shot script](../scripts/deploy.ps1) continues to use [the full-lab template](../infra/main.bicep); it is a separate deployment path, not a foundation-only deployment.
+The repository has dedicated [stage templates](../infra/stages) for the core lab and optional add-ons. Bicep supports the preview Observability Agent stage; Terraform does not because that provisioning path is not supported by the preview. [The one-shot script](../scripts/deploy.ps1) continues to use [the full-lab template](../infra/main.bicep); it is a separate deployment path, not a foundation-only deployment.
 
 ## 2) Guardrails (must-do)
 
@@ -27,6 +27,7 @@ For workshop planning and customer expectation-setting, use:
 - [STAGE-E-OPTIONAL-ADVANCED.md](STAGE-E-OPTIONAL-ADVANCED.md)
 - [STAGE-AI.md](STAGE-AI.md)
 - [STAGE-SRE-AGENT.md](STAGE-SRE-AGENT.md)
+- [STAGE-OBSERVABILITY-AGENT.md](STAGE-OBSERVABILITY-AGENT.md)
 
 ## 3) Stage model (recommended)
 
@@ -39,6 +40,7 @@ Deploy in this order.
 5. Stage E - Optional advanced/security add-ons
 6. Stage AI - Optional Microsoft Foundry GenAI workload (off by default)
 7. Stage SRE Agent - Optional Azure SRE Agent evaluation (off by default)
+8. Stage Observability Agent - Optional autonomous alert correlation and agentic-application investigation (off by default)
 
 ## 4) Stage details (scenarios + deployed services)
 
@@ -53,6 +55,7 @@ Use this as the workshop script: each stage adds a bounded set of capabilities a
 | Stage E - Optional advanced/security add-ons | Layer advanced SOC and reliability preview capabilities. | 43, 44, 45, 46 | Optional Sentinel onboarding + analytics rule, Heartbeat data export, Managed Prometheus rule group, availability test, workload health model, SLI identity prerequisites, and optional platform-logs/metrics-export DCRs. Completion configures the Service Group and verifies SLI prerequisites; preview SLIs remain a portal step. |
 | Stage AI - Optional GenAI workload | Add a Microsoft Foundry workload emitting token/trace/cost telemetry, with AI FinOps observability. Off by default (billable models, region-limited). | - | Foundry account + project in swedencentral by default, four model deployments (gpt-5-mini, text-embedding-3-small, gpt-5.4, model-router), App Insights connection, token alerts, AI FinOps query pack + workbook. Stage E can add the AI health tier after AI is deployed; a standalone AI health model is separately opt-in. Agent setup starts a finite background traffic batch unless skipped. |
 | Stage SRE Agent - Optional incident investigation | Add Azure SRE Agent investigation and Review-mode response workflows. Off by default (preview and billable). | 54, 55, 56, 57, 58 | Azure SRE Agent hard pinned to swedencentral, system-assigned and user-assigned managed identities, Azure Monitor, Application Insights, and Log Analytics connectors, resource-group reader roles, and subscription-scope Monitoring Contributor. |
+| Stage Observability Agent - Optional autonomous operations | Correlate agentic-application alerts, create issues, investigate failures, and compare broken/fixed trace evidence. Off by default (preview; investigations consume Azure Agent Credits). | 61, 62, 63, 64, 65, 66, 67 | Azure Copilot Observability Agent and a dedicated Azure Monitor workspace in a supported region, one monitored Application Insights resource, system-assigned identity, Issue Contributor on the workspace, and subscription-scope Monitoring Reader. |
 
 ### Stage dependency chain
 
@@ -63,6 +66,7 @@ Use this as the workshop script: each stage adds a bounded set of capabilities a
 5. Stage E depends on A, B, and C. Its AI health tier additionally requires Stage AI to have been deployed.
 6. Stage AI depends only on Stage A (it connects to `appi-amlab`); deploy it any time after Stage A.
 7. Stage SRE Agent depends only on Stage A (Application Insights and central LAW); deploy it any time after Stage A.
+8. Stage Observability Agent depends only on Stage A (Application Insights); deploy it any time after Stage A. Its Control Center scenario runner additionally requires Stage B.
 
 The Control Center requires Stage B. Its Foundry Playground additionally requires AI; its SRE MCP Assistant requires both AI and SRE. An A+AI or A+SRE lab is valid without a Web App. Portal investigators and response plans are separate scenarios, not prerequisites for the MCP assistant.
 
@@ -75,6 +79,7 @@ The Control Center requires Stage B. Its Foundry Playground additionally require
 5. Stage E done: optional feature endpoints/blades become accessible and testable.
 6. Stage AI done: Foundry model deployments exist, App Insights receives AI telemetry, and the AI FinOps queries return data after `setup-ai.ps1` runs.
 7. Stage SRE Agent done: the agent is in `swedencentral`, all three connectors are configured, and identity-specific RBAC validation passes.
+8. Stage Observability Agent done: the agent and dedicated workspace share a supported region, Application Insights is monitored, automatic issue creation is enabled, investigation mode matches the explicit selection, and least-privilege RBAC validation passes.
 
 ## 5) Practical deployment commands (stage-by-stage)
 
@@ -111,7 +116,8 @@ az group create --subscription $sub --name $rg --location $location --output non
 
 $stageNames = @(
    '00-foundation', '10-workloads', '20-alerting', '30-security-posture',
-   '40-optional-advanced', '41-sentinel-content', '50-ai', '60-sre-agent'
+   '40-optional-advanced', '41-sentinel-content', '50-ai', '60-sre-agent',
+   '70-observability-agent'
 )
 $stageParameterDirectory = Join-Path ([IO.Path]::GetTempPath()) ('azure-monitor-lab-stages-' + [guid]::NewGuid().ToString('N'))
 $null = New-Item -ItemType Directory -Path $stageParameterDirectory
@@ -269,6 +275,26 @@ if ($webApp) {
 An A+SRE deployment needs no Web App or AKS, so it uses [the standalone validator](../scripts/setup-sre-agent.ps1), not the Stage B completion wrapper. With B and AI present, the refresh enables the Control Center's SRE MCP Assistant. The validator is read-only unless explicitly asked to grant missing roles; it does not start an investigation.
 
 Follow [Stage SRE Agent](STAGE-SRE-AGENT.md) only when demonstrating the separate portal investigator and Review-mode response-plan scenarios. Those are not required for Control Center MCP questions and approved operations.
+
+### Stage Observability Agent deploy (optional)
+
+Deploy after Stage A. The template creates the agent and dedicated Azure Monitor workspace in a supported region, monitors the Stage A Application Insights resource, and assigns least-privilege RBAC. Subscription-scope role-assignment permission is required. Automatic deep investigation remains off unless explicitly enabled.
+
+```powershell
+az deployment group create `
+   --subscription $sub --resource-group $rg --name stage-70-observability-agent `
+   --template-file ./infra/stages/70-observability-agent.bicep `
+   --parameters "@$($stageParameterFiles['70-observability-agent'])" `
+   --mode Incremental --confirm-with-what-if --output none
+./scripts/setup-observability-agent.ps1 -SubscriptionId $sub -ResourceGroup $rg
+$apps = az webapp list --subscription $sub --resource-group $rg -o json | ConvertFrom-Json
+$webApp = $apps | Where-Object { $_.name -like "app-$prefix-*" } | Select-Object -First 1
+if ($webApp) {
+   ./scripts/deploy-webapp.ps1 -SubscriptionId $sub -TenantId $tenant -ResourceGroup $rg -WebAppName $webApp.name
+}
+```
+
+An A+Observability Agent deployment can correlate and investigate Application Insights signals without a Web App. Stage B adds the Control Center's deterministic broken/fixed scenario runner. Follow [Stage Observability Agent](STAGE-OBSERVABILITY-AGENT.md) for supported regions, cost and privacy boundaries, validation, and the demo workflow.
 
 After the final stage in the current session, remove the temporary parameter files:
 
