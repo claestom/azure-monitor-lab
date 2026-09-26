@@ -98,6 +98,64 @@ test('observability scenario failures are not replayed and non-JSON responses st
   expect(await page.evaluate(() => window.injected)).toBeUndefined();
 });
 
+test('alert storm generates a bounded mixed batch and can stop without replay', async ({ page }) => {
+  const submissions = [];
+  await page.route('**/api/agents/scenarios/run', async route => {
+    const data = route.request().postDataJSON();
+    submissions.push(data);
+    await route.fulfill({
+      status: data.scenario === 'partial-failure' ? 502 : 200,
+      json: {
+        scenario: data.scenario,
+        mode: data.mode,
+        status: data.scenario === 'partial-failure' ? 'partial_failure' : 'completed',
+        selectedTool: 'customer_lookup',
+        expectedTool: data.scenario === 'partial-failure' ? 'order_lookup' : 'customer_lookup',
+        durationMs: 100,
+        traceId: `storm-${submissions.length}`,
+        investigationPrompt: 'Investigate the mixed batch.'
+      }
+    });
+  });
+  await ready(page);
+  await page.getByLabel('Alert storm requests').selectOption('12');
+  await page.getByLabel('Alert storm duration').selectOption('3');
+  await page.getByLabel('I approve repeated synthetic slow and failed agent requests.').check();
+  await page.getByRole('button', { name: 'Start Alert Storm' }).click();
+  await expect(page.locator('#alert-storm-counter')).toHaveText('1 / 12');
+  await page.locator('#alert-storm-stop').click();
+  await expect(page.locator('#alert-storm-status')).toContainText('Stopped after 1');
+  expect(submissions).toEqual([{ scenario: 'slow-tool', mode: 'broken', consent: true }]);
+});
+
+test('token anomaly runs only the approved real-call batch and aggregates usage', async ({ page }) => {
+  const submissions = [];
+  await page.route('**/api/agents/run', async route => {
+    const data = route.request().postDataJSON();
+    submissions.push(data);
+    await route.fulfill({
+      json: {
+        ...answer,
+        inputTokens: 1200,
+        outputTokens: 30,
+        estimatedCostUsd: 0.001,
+        traceId: `token-${submissions.length}`,
+        runId: `run-${submissions.length}`
+      }
+    });
+  });
+  await ready(page);
+  await page.getByLabel('Token anomaly calls').selectOption('3');
+  await page.getByLabel('I approve this bounded batch of billable Foundry model calls.').check();
+  await page.getByRole('button', { name: 'Generate Token Anomaly' }).click();
+  await expect(page.locator('#token-anomaly-status')).toContainText('Completed 3 calls');
+  await expect(page.locator('#token-anomaly-status')).toContainText('3,600 input + 90 output tokens');
+  expect(submissions).toHaveLength(3);
+  expect(new Set(submissions.map(item => item.batchId)).size).toBe(1);
+  expect(submissions.every(item => item.scenario === 'token-anomaly' && item.consent && item.prompt.length <= 4000)).toBe(true);
+  await expect(page.getByLabel('I approve this bounded batch of billable Foundry model calls.')).not.toBeChecked();
+});
+
 test('tabs preserve console state, support keyboard navigation, and validate agent destinations', async ({ page }) => {
   await page.route('**/api/agents/context', route => route.fulfill({ json: { resourceGroup: 'test-rg', appService: 'test-app', sreUrl: 'https://sre.azure.com/#/agent/test', foundryUrl: 'javascript:alert(1)' } }));
   await page.goto('/');

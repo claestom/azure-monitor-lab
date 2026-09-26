@@ -2849,7 +2849,7 @@ A multi-step task retrieves the right customer record, then fails while completi
 One customer-facing dependency failure triggers latency, failure-rate, and availability alerts. Three pages should become one issue when they represent the same impact.
 
 ### Click-path
-1. Generate repeated broken slow-tool and partial-failure traces within one alert evaluation window.
+1. In the Control Center **Foundry Playground**, use **Scenario 64 - Alert storm generator**. Choose the number of requests and duration, approve synthetic telemetry, and select **Start Alert Storm**. The default sends 18 requests over 5 minutes in a repeating one-slow/two-failed pattern; **Stop** cancels the active request and prevents further submissions.
 2. Open the Observability Agent issue list and inspect whether related signals were correlated.
 3. Compare timestamps, affected Application Insights resource, operation, and customer impact.
 4. Confirm unrelated infrastructure alerts remain separate, as required by the configured instructions.
@@ -2870,11 +2870,13 @@ One customer-facing dependency failure triggers latency, failure-rate, and avail
 A routing or retry change increases token use and cost even though requests still succeed. Operations needs to connect the cost anomaly to the deployment and trace behavior before optimizing it.
 
 ### Click-path
-1. Use the optional AI stage and Scenario 53 to generate a bounded token anomaly.
+1. In the Control Center **Foundry Playground**, use **Scenario 65 - Token anomaly generator**. Choose an available lab agent and 3, 5, or 10 calls, approve the explicitly billable batch, and select **Generate Token Anomaly**. The generator uses unique context-heavy prompts, reports actual returned token totals and estimated cost, and never automatically replays an ambiguous failure.
 2. Review the AI FinOps workbook and token alert evidence.
 3. Ask Observability Agent to correlate the time window with Application Insights traces and recent changes, while treating unsupported causal claims as hypotheses.
 4. Use terminal-side GitHub Copilot/Azure tooling to inspect code or configuration if desired; do not describe this as direct Observability Agent MCP integration.
 5. Generate a bounded post-fix batch and compare token and request outcomes.
+
+> A bounded Control Center batch demonstrates a token-volume change but is not guaranteed to cross the 200,000-token static alert threshold. Use the larger [Scenario 53](#s53) simulator when the demo specifically requires that alert to fire. Stopping a live batch requests cancellation; usage already submitted to Foundry may still be billed.
 
 ### Killer line
 > *"Successful requests can still be an operational regression when every answer suddenly costs three times as much."*

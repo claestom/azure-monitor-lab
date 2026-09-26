@@ -6,7 +6,7 @@ using Microsoft.ApplicationInsights;
 using Microsoft.ApplicationInsights.DataContracts;
 using System.Diagnostics;
 
-public sealed record AgentTask(string? Agent, string? Prompt, bool Consent);
+public sealed record AgentTask(string? Agent, string? Prompt, bool Consent, string? Scenario = null, string? BatchId = null);
 public sealed record AgentEntry(string Key, string Name, string Model);
 public sealed record AgentCatalog(bool Available, string State, string Message, IReadOnlyList<AgentEntry> Agents);
 public sealed record AgentAnswer(string Agent, string Model, string Text, string Status, long? InputTokens,
@@ -103,6 +103,10 @@ public sealed class AgentPlayground(IConfiguration configuration, ILogger<AgentP
             return Results.BadRequest(new { error = "Choose one of the supported lab agents." });
         if (string.IsNullOrWhiteSpace(task.Prompt) || task.Prompt.Length > 4000)
             return Results.BadRequest(new { error = "Enter a task between 1 and 4000 characters." });
+        if (task.Scenario is not null && task.Scenario != "token-anomaly")
+            return Results.BadRequest(new { error = "Choose a supported agent telemetry scenario." });
+        if (task.BatchId is not null && (!Guid.TryParse(task.BatchId, out _) || task.Scenario != "token-anomaly"))
+            return Results.BadRequest(new { error = "The telemetry batch identifier is invalid." });
         if (!task.Consent) return Results.BadRequest(new { error = "Confirm billable model usage before submitting." });
         if (!await runLock.WaitAsync(0, cancellationToken))
             return Results.Json(new { error = "Another agent task is running. Try again shortly." }, statusCode: 429);
@@ -115,6 +119,8 @@ public sealed class AgentPlayground(IConfiguration configuration, ILogger<AgentP
         };
         dependency.Properties["gen_ai.agent.name"] = AllowedAgents[task.Agent];
         dependency.Properties["source"] = "web-console";
+        if (task.Scenario is not null) dependency.Properties["scenario"] = task.Scenario;
+        if (task.BatchId is not null) dependency.Properties["batch.id"] = task.BatchId;
         var started = Stopwatch.StartNew();
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(TimeSpan.FromSeconds(90));
@@ -165,6 +171,8 @@ public sealed class AgentPlayground(IConfiguration configuration, ILogger<AgentP
                 ["gen_ai.agent.name"] = verified.Name, ["gen_ai.response.model"] = run.Model,
                 ["gen_ai.operation.name"] = "invoke_agent", ["run.id"] = run.Id, ["source"] = "web-console"
             };
+            if (task.Scenario is not null) dimensions["scenario"] = task.Scenario;
+            if (task.BatchId is not null) dimensions["batch.id"] = task.BatchId;
             var metrics = new Dictionary<string, double> { ["duration_ms"] = started.Elapsed.TotalMilliseconds };
             if (inputTokens.HasValue) metrics["gen_ai.usage.input_tokens"] = inputTokens.Value;
             if (outputTokens.HasValue) metrics["gen_ai.usage.output_tokens"] = outputTokens.Value;

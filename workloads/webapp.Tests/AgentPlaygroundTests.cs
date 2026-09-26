@@ -64,6 +64,18 @@ public sealed class AgentPlaygroundTests
         Assert.Null(answer.EstimatedCostUsd);
     }
 
+    [Theory]
+    [InlineData("unsupported", null)]
+    [InlineData(null, "9a812773-374f-481f-a1ec-4abfef3e3597")]
+    [InlineData("token-anomaly", "not-a-guid")]
+    public async Task InvalidTelemetryBatchMetadataIsRejected(string? scenario, string? batchId)
+    {
+        using var transport = new FakeFoundry();
+        var result = await Create(transport).RunAsync(new("triage", "test", true, scenario, batchId), default);
+        Assert.Equal(400, Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
+        Assert.Equal(0, transport.CreatedRuns);
+    }
+
     [Fact]
     public async Task FailedDiscoveryIsSanitizedAndCached()
     {

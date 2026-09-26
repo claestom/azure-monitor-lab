@@ -206,6 +206,7 @@ dialog p { font-size: 13px; color: #53636e; line-height: 1.7; margin-bottom: 14p
 .scenario-investigation { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
 .scenario-investigation h3 { margin: 0 0 6px; font-size: 14px; }
 .scenario-investigation textarea { margin-top: 10px; background: #fff; font-size: 11px; }
+.agent-scenario-panel progress { margin-top: 14px; }
 .sre-messages { min-height: 180px; max-height: 660px; overflow-y: auto; overflow-wrap: anywhere; }
 .sre-message { padding: 14px 12px 20px; }
 .sre-user-message { border-left: 3px solid var(--border); background: #f4f7f8; }

@@ -108,6 +108,8 @@ The script verifies the subscription and tenant guard, region, identity, issue a
 7. Challenge the conclusion: verify timestamps, tool name, duration, expected tool, downstream dependency, and missing evidence.
 8. Select **Fixed**, approve another run, and compare the new trace. Confirm the measured outcome changed; do not accept a code or configuration change as proof by itself.
 
+For Scenario 64, the same tab includes a bounded alert-storm generator with request-count, duration, progress, and Stop controls. For Scenario 65, it includes a separately consented generator that makes 3, 5, or 10 real Foundry calls and reports actual token totals and estimated cost. These controls never automatically replay failed or ambiguous requests.
+
 Use the additional customer scenarios in [DEMO-SCENARIOS.md](DEMO-SCENARIOS.md) for alert storms, token-cost spikes, deployment regressions, and platform-versus-application failures.
 
 ## Teardown
