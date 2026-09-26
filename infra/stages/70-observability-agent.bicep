@@ -30,11 +30,11 @@ param ownerTag string = 'demo-lab'
 param observabilityAgentLocation string = 'westeurope'
 
 @description('Run billable deep investigations automatically for agent-created issues.')
-param enableAutomaticInvestigation bool = false
+param enableObservabilityAgentAutomaticInvestigation bool = false
 
 @description('Natural-language guidance for alert correlation and issue creation.')
 @maxLength(8192)
-param issueCreationInstructions string = 'Correlate alerts for the lab application and its dependencies when they describe the same customer impact. Keep unrelated infrastructure alerts separate. Always create an issue for severity 1 or severity 2 agent task failures. Add [OPS-REVIEW] to issue titles.'
+param observabilityAgentInstructions string = 'Correlate alerts for the lab application and its dependencies when they describe the same customer impact. Keep unrelated infrastructure alerts separate. Always create an issue for severity 1 or severity 2 agent task failures. Add [OPS-REVIEW] to issue titles.'
 
 var suffix = uniqueString(resourceGroup().id)
 var appInsightsName = 'appi-${namePrefix}'
@@ -60,8 +60,8 @@ module observabilityAgent '../modules/observability-agent.bicep' = {
     monitoringAccountName: monitoringAccountName
     location: observabilityAgentLocation
     appInsightsId: appInsights.id
-    issueCreationInstructions: issueCreationInstructions
-    enableAutomaticInvestigation: enableAutomaticInvestigation
+    issueCreationInstructions: observabilityAgentInstructions
+    enableAutomaticInvestigation: enableObservabilityAgentAutomaticInvestigation
     tags: commonTags
   }
 }
@@ -78,4 +78,4 @@ output observabilityAgentName string = observabilityAgent.outputs.name
 output observabilityAgentId string = observabilityAgent.outputs.id
 output observabilityAgentPortalUrl string = observabilityAgent.outputs.portalUrl
 output observabilityAgentMonitoringAccountName string = observabilityAgent.outputs.monitoringAccountName
-output automaticInvestigationEnabled bool = enableAutomaticInvestigation
+output automaticInvestigationEnabled bool = enableObservabilityAgentAutomaticInvestigation

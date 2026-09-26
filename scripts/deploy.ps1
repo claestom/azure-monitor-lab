@@ -50,6 +50,8 @@ function Write-Step($msg) {
 $pfAksNodeCount    = 1
 $pfDeployWindowsVm = $true
 $pfDeployLinuxVm   = $true
+$pfDeployObservabilityAgent = $false
+$pfObservabilityAgentLocation = 'westeurope'
 
 # -------------------------------------------------------------------
 # Materialize derived files (.azure-target.json, main.parameters.json,
@@ -77,6 +79,12 @@ if (Test-Path $labConfigPath) {
   if ($null -ne $labCfg.aksNodeCount)    { $pfAksNodeCount    = [int]$labCfg.aksNodeCount }
   if ($null -ne $labCfg.deployWindowsVm) { $pfDeployWindowsVm = [bool]$labCfg.deployWindowsVm }
   if ($null -ne $labCfg.deployLinuxVm)   { $pfDeployLinuxVm   = [bool]$labCfg.deployLinuxVm }
+  if ($null -ne $labCfg.stageToggles.enableStageObservabilityAgent) {
+    $pfDeployObservabilityAgent = [bool]$labCfg.stageToggles.enableStageObservabilityAgent
+  }
+  if (-not [string]::IsNullOrWhiteSpace($labCfg.observabilityAgentLocation)) {
+    $pfObservabilityAgentLocation = $labCfg.observabilityAgentLocation
+  }
 }
 
 # -------------------------------------------------------------------
@@ -116,7 +124,10 @@ if ($SkipPreflight) {
   & $preflight -Location $Location `
                -AksNodeCount $pfAksNodeCount `
                -DeployWindowsVm $pfDeployWindowsVm `
-               -DeployLinuxVm $pfDeployLinuxVm
+               -DeployLinuxVm $pfDeployLinuxVm `
+               -DeployObservabilityAgent $pfDeployObservabilityAgent `
+               -ObservabilityAgentLocation $pfObservabilityAgentLocation `
+               -ResourceGroup $ResourceGroup
   if ($LASTEXITCODE -ne 0) {
     throw "Pre-flight check failed for region '$Location'. Fix the FAIL rows above (or re-run with -SkipPreflight to bypass) before deploying."
   }

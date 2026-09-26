@@ -43,6 +43,9 @@ rg-azure-monitor-lab/
 │   ├─ law-amlab-appinsights-XXXXX ← Log Analytics — App Insights backend
 │   ├─ appi-amlab                 ← Application Insights (workspace-based)
 │   ├─ amw-amlab                  ← Azure Monitor Workspace (Managed Prometheus)
+│   ├─ amw-amlab-obs              ← Optional dedicated Observability Agent issue workspace
+│   ├─ obs-amlab-XXXXX            ← Optional Observability Agent with a system-assigned identity
+│   │  └─ monitored resource      ← Enabled Application Insights target (`appi-amlab`)
 │   ├─ dce-amlab                  ← Data Collection Endpoint (Linux)
 │   ├─ dcr-amlab-vminsights       ← DCR — VM perf + Map → central LAW
 │   ├─ dcr-amlab-prometheus       ← DCR — Prometheus → AMW
@@ -96,6 +99,8 @@ rg-azure-monitor-lab/
 > **Optional AI stage (default off, billable):** a Microsoft **Foundry** account + project (pinned to `swedencentral`) with `gpt-5-mini` / `text-embedding-3-small` / `gpt-5.4` / **`model-router`** deployments, App Insights `gen_ai.*` tracing, **token anomaly + spike** alerts, an **AI FinOps** query pack + workbook, and an AI tier folded into the workload health model. Enable via `enableStageAI` (Bicep) / `enable_stage_ai` (Terraform), then run `scripts/setup-ai.ps1`. See [STAGE-AI.md](STAGE-AI.md).
 
 > **Optional SRE Agent stage (default off, trial/billable):** an SRE Agent and user-assigned identity in `swedencentral`, Azure Monitor / Application Insights / Log Analytics connectors, resource-group and subscription RBAC, and deployment validation through `setup-sre-agent.ps1`. Enable via `enableStageSreAgent`. Investigators and response plans are configured in `sre.azure.com`. See [STAGE-SRE-AGENT.md](STAGE-SRE-AGENT.md).
+
+> **Optional Observability Agent stage (default off, preview/billable):** an Observability Agent and dedicated Azure Monitor workspace in `observabilityAgentLocation`, one monitored Application Insights child, Issue Contributor on the dedicated workspace, and Monitoring Reader at subscription scope. The Monitor service can create managed resource groups for supporting resources. Enable via `enableStageObservabilityAgent`; automatic investigation remains off unless explicitly enabled. See [STAGE-OBSERVABILITY-AGENT.md](STAGE-OBSERVABILITY-AGENT.md).
 
 > **Optional LAW replication (default off, billable):** cross-region replication on the central LAW. Enable during deployment with `enableLawReplication`, or enable it on an existing workspace with `scripts/enable-law-replication.ps1` without redeploying the complete Bicep template.
 
@@ -244,6 +249,8 @@ Rough monthly burn if left running 24/7. USD estimates use a planning rate of EU
 This historical baseline excludes the Control Center runner added later. Include Basic Container Registry service/storage, ACR Tasks builds, Container Apps job CPU/memory usage, and runner log ingestion when estimating the current lab. The runner has no always-running application replica; model traffic and started workloads remain separately billable. Use the selected regions' current prices and actual usage rather than treating the baseline or stage-table amounts as all-inclusive quotes.
 
 > **Optional AI stage** adds pay-per-token Foundry model spend (gpt-5-mini / text-embedding-3-small / gpt-5.4 / model-router) — near EUR 0 / USD 0 at idle, driven entirely by `setup-ai.ps1` traffic. Delete the Foundry account (or skip the stage) to zero it out.
+
+> **Optional Observability Agent stage:** excluded from the baseline above. Pricing guidance was checked September 26, 2026. Correlation is unbilled during preview; chat and deep investigations consume Azure Agent Credits, with each deep investigation capped at 500 AAC. Estimate variable spend from actual AAC consumption at the current regional AAC rate, then add ingestion, retention, and query charges for the dedicated Azure Monitor workspace. See the [billing guidance](https://learn.microsoft.com/azure/azure-monitor/aiops/observability-agent-billing) and [Azure Monitor pricing](https://azure.microsoft.com/pricing/details/monitor/).
 
 **Cost guardrails baked in:**
 - Both LAWs capped at **1 GB/day** out of the box.

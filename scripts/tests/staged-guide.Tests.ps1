@@ -33,6 +33,17 @@ $tenant = [guid]::NewGuid()
 $rg = 'test-rg'
 $sourceParameters = (Get-Content -LiteralPath (Join-Path $source 'infra/main.parameters.json.template') -Raw | ConvertFrom-Json -AsHashtable).parameters
 $sourceParameters.vmAdminPassword = @{ reference = @{ keyVault = @{ id = "/subscriptions/$sub/resourceGroups/test-rg/providers/Microsoft.KeyVault/vaults/test-vault" }; secretName = 'vm-password' } }
+$observabilityStage = Get-Content -LiteralPath (Join-Path $source 'infra/stages/70-observability-agent.json') -Raw | ConvertFrom-Json -AsHashtable
+foreach ($name in @('enableObservabilityAgentAutomaticInvestigation', 'observabilityAgentInstructions')) {
+  if (-not $observabilityStage.parameters.ContainsKey($name) -or -not $sourceParameters.ContainsKey($name)) {
+    throw "Stage 70 must preserve shared Observability Agent parameter '$name'."
+  }
+}
+foreach ($legacyName in @('enableAutomaticInvestigation', 'issueCreationInstructions')) {
+  if ($observabilityStage.parameters.ContainsKey($legacyName)) {
+    throw "Stage 70 must not use legacy parameter '$legacyName' because staged projection would drop its configured value."
+  }
+}
 $stageE = Get-Content -LiteralPath (Join-Path $source 'infra/stages/40-optional-advanced.json') -Raw
 $sentinelContent = Get-Content -LiteralPath (Join-Path $source 'infra/stages/41-sentinel-content.json') -Raw
 if ($stageE -match 'Microsoft.SecurityInsights/alertRules' -or $stageE -notmatch 'Microsoft.SecurityInsights/onboardingStates' -or

@@ -2846,14 +2846,14 @@ A multi-step task retrieves the right customer record, then fails while completi
 **Time:** 5-8 min after alerts fire.
 
 ### Story
-One customer-facing dependency failure triggers latency, failure-rate, and availability alerts. Three pages should become one issue when they represent the same impact.
+Repeated customer-facing dependency failures cross two existing lab alert conditions: the App Service HTTP 5xx metric alert and the Application Insights failed-request alert. The slow requests add trace evidence but do not trigger a separate latency alert, and the generator does not make the availability-test endpoint unavailable. The demo tests whether the two related failure alerts become one issue without claiming signals the generator cannot produce.
 
 ### Click-path
 1. In the Control Center **Foundry Playground**, use **Scenario 64 - Alert storm generator**. Choose the number of requests and duration, approve synthetic telemetry, and select **Start Alert Storm**. The default sends 18 requests over 5 minutes in a repeating one-slow/two-failed pattern; **Stop** cancels the active request and prevents further submissions.
-2. Open the Observability Agent issue list and inspect whether related signals were correlated.
+2. Wait for the deployed `Http5xx > 5` and `failed requests > 10` evaluation windows, then open the Observability Agent issue list and inspect whether those related failure signals were correlated. Alert evaluation and issue correlation are asynchronous and are not guaranteed to complete during the request batch.
 3. Compare timestamps, affected Application Insights resource, operation, and customer impact.
 4. Confirm unrelated infrastructure alerts remain separate, as required by the configured instructions.
-5. Run fixed profiles and verify recovery with the original alert conditions.
+5. Run fixed profiles and verify recovery against those same two alert conditions.
 
 ### Killer line
 > *"Correlation turns a page storm into one customer-impact story without hiding unrelated failures."*
@@ -2870,7 +2870,7 @@ One customer-facing dependency failure triggers latency, failure-rate, and avail
 A routing or retry change increases token use and cost even though requests still succeed. Operations needs to connect the cost anomaly to the deployment and trace behavior before optimizing it.
 
 ### Click-path
-1. In the Control Center **Foundry Playground**, use **Scenario 65 - Token anomaly generator**. Choose an available lab agent and 3, 5, or 10 calls, approve the explicitly billable batch, and select **Generate Token Anomaly**. The generator uses unique context-heavy prompts, reports actual returned token totals and estimated cost, and never automatically replays an ambiguous failure.
+1. In the Control Center **Foundry Playground**, use **Scenario 65 - Token anomaly generator**. Choose an available lab agent and 3, 5, or 10 calls, approve the explicitly billable batch, and select **Generate Token Anomaly**. The generator uses unique context-heavy prompts, reports actual returned token totals, and never automatically replays an ambiguous failure. It reports an estimate only when model pricing is configured; otherwise it explicitly marks cost as unavailable.
 2. Review the AI FinOps workbook and token alert evidence.
 3. Ask Observability Agent to correlate the time window with Application Insights traces and recent changes, while treating unsupported causal claims as hypotheses.
 4. Use terminal-side GitHub Copilot/Azure tooling to inspect code or configuration if desired; do not describe this as direct Observability Agent MCP integration.

@@ -35,8 +35,7 @@ public sealed class AgentObservabilityScenariosTests
         var channel = new RecordingChannel();
         var telemetry = new TelemetryClient(new TelemetryConfiguration
         {
-            TelemetryChannel = channel,
-            ConnectionString = "InstrumentationKey=00000000-0000-0000-0000-000000000000"
+            TelemetryChannel = channel
         });
         return (new AgentObservabilityScenarios(telemetry, delay), delay, channel);
     }

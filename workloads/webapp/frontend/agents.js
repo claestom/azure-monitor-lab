@@ -320,6 +320,15 @@ export function initializeAgentViews({ resizeChart, toast, refreshIcons, checkWe
     return `${body.slice(0, 3650)}\nUsing only this synthetic context, return exactly three concise bullets: the likely cost risk, one monitoring check, and one guardrail.`;
   }
 
+  function tokenAnomalyCostSummary(batch) {
+    if (batch.unpricedCalls > 0) {
+      return batch.pricedCalls > 0
+        ? `partial estimate $${batch.cost.toFixed(6)}; pricing unavailable for ${batch.unpricedCalls} call${batch.unpricedCalls === 1 ? '' : 's'}`
+        : 'cost unavailable; model pricing is not configured';
+    }
+    return `estimated $${batch.cost.toFixed(6)}`;
+  }
+
   for (const id of ['token-anomaly-agent', 'token-anomaly-count', 'token-anomaly-consent']) {
     byId(id).addEventListener('input', () => {
       const count = Number(byId('token-anomaly-count').value);
@@ -333,7 +342,10 @@ export function initializeAgentViews({ resizeChart, toast, refreshIcons, checkWe
     if (activeRequest || alertStorm || tokenAnomaly || !availableAgents.length) return;
     const count = Math.min(10, Math.max(1, Number(byId('token-anomaly-count').value) || 5));
     const batchId = crypto.randomUUID();
-    tokenAnomaly = { stopped: false, completed: 0, inputTokens: 0, outputTokens: 0, cost: 0, batchId, controller: new AbortController() };
+    tokenAnomaly = {
+      stopped: false, completed: 0, inputTokens: 0, outputTokens: 0, cost: 0,
+      pricedCalls: 0, unpricedCalls: 0, batchId, controller: new AbortController()
+    };
     const batch = tokenAnomaly;
     byId('token-anomaly-progress').max = count;
     byId('token-anomaly-progress').value = 0;
@@ -359,7 +371,12 @@ export function initializeAgentViews({ resizeChart, toast, refreshIcons, checkWe
         const data = await response.json().catch(() => null);
         batch.inputTokens += Number(data?.inputTokens) || 0;
         batch.outputTokens += Number(data?.outputTokens) || 0;
-        batch.cost += Number(data?.estimatedCostUsd) || 0;
+        if (typeof data?.estimatedCostUsd === 'number' && Number.isFinite(data.estimatedCostUsd)) {
+          batch.cost += data.estimatedCostUsd;
+          batch.pricedCalls++;
+        } else {
+          batch.unpricedCalls++;
+        }
         if (!response.ok || typeof data?.agent !== 'string') {
           const retry = response.headers.get('Retry-After');
           const message = typeof data?.error === 'string' ? data.error : `HTTP ${response.status}`;
@@ -368,9 +385,9 @@ export function initializeAgentViews({ resizeChart, toast, refreshIcons, checkWe
         batch.completed++;
         byId('token-anomaly-progress').value = batch.completed;
         byId('token-anomaly-counter').textContent = `${batch.completed} / ${count}`;
-        byId('token-anomaly-status').textContent = `Running: ${(batch.inputTokens + batch.outputTokens).toLocaleString()} tokens; estimated $${batch.cost.toFixed(6)}`;
+        byId('token-anomaly-status').textContent = `Running: ${(batch.inputTokens + batch.outputTokens).toLocaleString()} tokens; ${tokenAnomalyCostSummary(batch)}`;
       }
-      byId('token-anomaly-status').textContent = `${batch.stopped ? 'Stopped' : 'Completed'} ${batch.completed} calls; ${batch.inputTokens.toLocaleString()} input + ${batch.outputTokens.toLocaleString()} output tokens; estimated $${batch.cost.toFixed(6)}; batch ${batch.batchId}`;
+      byId('token-anomaly-status').textContent = `${batch.stopped ? 'Stopped' : 'Completed'} ${batch.completed} calls; ${batch.inputTokens.toLocaleString()} input + ${batch.outputTokens.toLocaleString()} output tokens; ${tokenAnomalyCostSummary(batch)}; batch ${batch.batchId}`;
     } catch (error) {
       byId('token-anomaly-status').textContent = batch.stopped || error.name === 'AbortError'
         ? `Stopped after ${batch.completed} completed calls; ${(batch.inputTokens + batch.outputTokens).toLocaleString()} reported tokens may still be billed.`

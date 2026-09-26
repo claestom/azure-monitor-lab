@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.37.4.10188",
-      "templateHash": "11208007437274007753"
+      "templateHash": "7130874890888095787"
     }
   },
   "parameters": {
@@ -43,14 +43,14 @@
         "description": "Supported region for the Observability Agent and its Azure Monitor workspace."
       }
     },
-    "enableAutomaticInvestigation": {
+    "enableObservabilityAgentAutomaticInvestigation": {
       "type": "bool",
       "defaultValue": false,
       "metadata": {
         "description": "Run billable deep investigations automatically for agent-created issues."
       }
     },
-    "issueCreationInstructions": {
+    "observabilityAgentInstructions": {
       "type": "string",
       "defaultValue": "Correlate alerts for the lab application and its dependencies when they describe the same customer impact. Keep unrelated infrastructure alerts separate. Always create an issue for severity 1 or severity 2 agent task failures. Add [OPS-REVIEW] to issue titles.",
       "maxLength": 8192,
@@ -95,10 +95,10 @@
             "value": "[resourceId('Microsoft.Insights/components', variables('appInsightsName'))]"
           },
           "issueCreationInstructions": {
-            "value": "[parameters('issueCreationInstructions')]"
+            "value": "[parameters('observabilityAgentInstructions')]"
           },
           "enableAutomaticInvestigation": {
-            "value": "[parameters('enableAutomaticInvestigation')]"
+            "value": "[parameters('enableObservabilityAgentAutomaticInvestigation')]"
           },
           "tags": {
             "value": "[variables('commonTags')]"
@@ -347,7 +347,7 @@
     },
     "automaticInvestigationEnabled": {
       "type": "bool",
-      "value": "[parameters('enableAutomaticInvestigation')]"
+      "value": "[parameters('enableObservabilityAgentAutomaticInvestigation')]"
     }
   }
 }

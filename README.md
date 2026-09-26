@@ -58,12 +58,14 @@ The GenAI workload, Azure Copilot Observability Agent, and Azure SRE Agent can a
 
 Opens a guided Custom deployment wizard in the Azure Portal, where you enter every value in the UI and don't need any local files. Sensible defaults are pre-filled throughout; the only things you have to supply are an alert email and a VM admin password.
 
+The public button intentionally deploys the published `main` branch. When validating an `integration` or feature revision before promotion, use its revision-pinned `infra/main.json` and `infra/createUiDefinition.json` URLs in an Azure portal custom deployment instead of treating this button as evidence for that revision.
+
 | Tab | You provide |
 |---|---|
 | **Basics** | Resource group (recommended `rg-azure-monitor-lab`), Region (recommended `northeurope`), name prefix, alert email, VM admin username + password |
 | **Workloads** | Deploy Linux/Windows VMs, VM size, AKS node size + count |
 | **Monitoring & cost** | Daily ingestion cap, Sentinel, platform-logs/metrics-export DCRs, LAW replication |
-| **Advanced** | Owner tag, optional Grafana administrator object ID, App Service sample repo, optional SIEM/Teams webhook, optional AI and SRE Agent stages |
+| **Advanced** | Owner tag, optional Grafana administrator object ID, App Service sample repo, optional SIEM/Teams webhook, optional AI, SRE Agent, and Observability Agent stages |
 
 After the portal deployment succeeds, open **[Cloud Shell](https://learn.microsoft.com/en-us/azure/cloud-shell/get-started/ephemeral?tabs=azurecli#start-cloud-shell)** in the Azure portal, select **PowerShell**, and run the commands below. The Cloud Shell wrapper discovers the deployed resources, publishes the App Service sample, installs the AKS and Health Model demo components, and prepares the identity and RBAC prerequisites for the SLI demo without requiring optional Azure CLI extensions. It attempts to verify the Managed Prometheus source metrics and continues with a warning if Cloud Shell cannot request that token audience:
 
@@ -144,7 +146,7 @@ az webapp list --subscription $subscriptionId --resource-group $resourceGroup --
 
 The default Stages A-E deployment with light Control Center use is roughly **EUR 7-12 / USD 8-13 per day** when left running 24/7. This adjusts the indicative list-price estimate in [REFERENCE.md](docs/REFERENCE.md#cost-notes-north-europe-list-pricing-may-2026) to allow for Basic ACR and light Container Apps job use.
 
-This range excludes optional Foundry model traffic and Azure SRE Agent charges, which depend on usage, allocation, and trial eligibility. Microsoft Fabric is not deployed by this repository and is not included. Actual costs also vary by region, retention, exchange rates, and current Azure pricing. Stop or deallocate compute between sessions, or run `./scripts/teardown.ps1 -Yes` when the lab is not needed.
+This range excludes optional Foundry model traffic, Azure SRE Agent charges, Observability Agent Azure Agent Credit usage, and the dedicated Observability Agent workspace's ingestion, retention, and query charges. Those costs depend on usage, allocation, region, and trial or preview terms. As checked September 26, 2026, Observability Agent correlation is unbilled during preview, while chat and deep investigations consume AAC and each deep investigation is capped at 500 AAC; use the current [billing guidance](https://learn.microsoft.com/azure/azure-monitor/aiops/observability-agent-billing) and [Azure Monitor pricing](https://azure.microsoft.com/pricing/details/monitor/) rather than treating this baseline as a quote. Microsoft Fabric is not deployed by this repository and is not included. Actual costs also vary by region, retention, exchange rates, and current Azure pricing. Stop or deallocate compute between sessions, keep automatic investigation disabled unless explicitly accepted, or run `./scripts/teardown.ps1 -Yes` when the lab is not needed.
 
 When the lab is no longer needed, set `$rg` to the resource group where you deployed the lab, then run the command below. If you used the default configuration, use `rg-azure-monitor-lab`.
 

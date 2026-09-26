@@ -35,16 +35,19 @@ MCP and coding-agent integration appeared as roadmap content in the LevelUp mate
 - Supported public regions in this implementation are Australia East, Canada Central, Central US, East Asia, East US, South Central US, UK South, West Central US, and West Europe.
 - The agent and its Azure Monitor workspace must be in the same supported region. The monitored Application Insights resource can remain in the primary lab region.
 - The preview allows at most five Observability Agent resources per subscription.
+- The one-shot Bicep wrapper checks the configured agent region and attempts to count existing agents before deployment. A failed preview-list query produces a warning rather than a false success; verify the count manually before continuing in that case. The standalone staged commands do not run this preflight automatically.
 - The portal supports one Application Insights target per agent. The API supports up to ten monitored targets; this lab deliberately uses one.
 - ARM/Bicep and portal provisioning are supported. Azure CLI and Terraform provisioning are not supported preview provisioning paths. The validation script uses Azure CLI only to read the deployed ARM resources.
 
 ## Cost and privacy
 
+- Pricing guidance checked **September 26, 2026**. Review the current [Observability Agent billing guidance](https://learn.microsoft.com/azure/azure-monitor/aiops/observability-agent-billing) and [Azure Monitor pricing](https://azure.microsoft.com/pricing/details/monitor/) before deployment.
 - Autonomous alert correlation is currently unbilled during preview.
 - Chat and deep investigation consume Azure Agent Credits (AAC).
 - Deep investigation can consume up to 500 AAC per investigation.
+- Estimate variable agent spend as `chat AAC + (investigation count × AAC consumed per investigation)`, multiplied by the current regional AAC price. Do not assume every investigation consumes the 500-AAC maximum.
+- The dedicated Azure Monitor workspace can also incur ingestion, retention, and query charges. With zero chats and zero investigations, the lab assumes no AAC usage, but workspace data charges can still remain.
 - Automatic deep investigation can create unplanned usage, so `enableObservabilityAgentAutomaticInvestigation` defaults to `false`.
-- Review current pricing and preview terms before every workshop; pricing is service-side and can change independently of this repository.
 - Use only synthetic demo data. The Control Center requires explicit consent for every scenario run and records metadata only.
 
 ## Deploy
@@ -72,7 +75,8 @@ az deployment group create `
   --template-file infra/stages/70-observability-agent.bicep `
   --parameters namePrefix=amlab `
                observabilityAgentLocation=westeurope `
-               enableAutomaticInvestigation=false
+               enableObservabilityAgentAutomaticInvestigation=false `
+               observabilityAgentInstructions='Correlate alerts for the same demonstrated customer impact.'
 ```
 
 The stage creates:
@@ -108,7 +112,7 @@ The script verifies the subscription and tenant guard, region, identity, issue a
 7. Challenge the conclusion: verify timestamps, tool name, duration, expected tool, downstream dependency, and missing evidence.
 8. Select **Fixed**, approve another run, and compare the new trace. Confirm the measured outcome changed; do not accept a code or configuration change as proof by itself.
 
-For Scenario 64, the same tab includes a bounded alert-storm generator with request-count, duration, progress, and Stop controls. For Scenario 65, it includes a separately consented generator that makes 3, 5, or 10 real Foundry calls and reports actual token totals and estimated cost. These controls never automatically replay failed or ambiguous requests.
+For Scenario 64, the same tab includes a bounded alert-storm generator with request-count, duration, progress, and Stop controls. Its default batch is designed to cross the two deployed failed-request conditions; it does not affect the availability-test endpoint or trigger a separate latency alert. For Scenario 65, it includes a separately consented generator that makes 3, 5, or 10 real Foundry calls and reports actual token totals. It reports estimated cost only when model pricing is configured. These controls never automatically replay failed or ambiguous requests.
 
 Use the additional customer scenarios in [DEMO-SCENARIOS.md](DEMO-SCENARIOS.md) for alert storms, token-cost spikes, deployment regressions, and platform-versus-application failures.
 
