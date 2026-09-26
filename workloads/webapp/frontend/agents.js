@@ -357,15 +357,15 @@ export function initializeAgentViews({ resizeChart, toast, refreshIcons, checkWe
           signal: AbortSignal.any([batch.controller.signal, AbortSignal.timeout(115000)])
         });
         const data = await response.json().catch(() => null);
+        batch.inputTokens += Number(data?.inputTokens) || 0;
+        batch.outputTokens += Number(data?.outputTokens) || 0;
+        batch.cost += Number(data?.estimatedCostUsd) || 0;
         if (!response.ok || typeof data?.agent !== 'string') {
           const retry = response.headers.get('Retry-After');
           const message = typeof data?.error === 'string' ? data.error : `HTTP ${response.status}`;
           throw new Error(`${message}${retry ? ` Retry after ${retry} seconds.` : ''}`);
         }
         batch.completed++;
-        batch.inputTokens += Number(data.inputTokens) || 0;
-        batch.outputTokens += Number(data.outputTokens) || 0;
-        batch.cost += Number(data.estimatedCostUsd) || 0;
         byId('token-anomaly-progress').value = batch.completed;
         byId('token-anomaly-counter').textContent = `${batch.completed} / ${count}`;
         byId('token-anomaly-status').textContent = `Running: ${(batch.inputTokens + batch.outputTokens).toLocaleString()} tokens; estimated $${batch.cost.toFixed(6)}`;
@@ -373,8 +373,8 @@ export function initializeAgentViews({ resizeChart, toast, refreshIcons, checkWe
       byId('token-anomaly-status').textContent = `${batch.stopped ? 'Stopped' : 'Completed'} ${batch.completed} calls; ${batch.inputTokens.toLocaleString()} input + ${batch.outputTokens.toLocaleString()} output tokens; estimated $${batch.cost.toFixed(6)}; batch ${batch.batchId}`;
     } catch (error) {
       byId('token-anomaly-status').textContent = batch.stopped || error.name === 'AbortError'
-        ? `Stopped after ${batch.completed} calls; incurred usage may still be billed.`
-        : `Stopped after ${batch.completed} calls: ${error.message || 'request failed'}. No billable call was replayed.`;
+        ? `Stopped after ${batch.completed} completed calls; ${(batch.inputTokens + batch.outputTokens).toLocaleString()} reported tokens may still be billed.`
+        : `Stopped after ${batch.completed} completed calls; ${(batch.inputTokens + batch.outputTokens).toLocaleString()} reported tokens; ${error.message || 'request failed'}. No billable call was replayed.`;
     } finally {
       byId('token-anomaly-consent').checked = false;
       tokenAnomaly = null;

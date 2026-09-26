@@ -141,23 +141,13 @@ public sealed class AgentPlayground(IConfiguration configuration, ILogger<AgentP
             await agentClient.Messages.CreateMessageAsync(thread.Id, MessageRole.User, task.Prompt.Trim(), cancellationToken: deadline.Token);
             run = await agentClient.Runs.CreateRunAsync(thread.Id, verified.Id,
                 overrideTools: Array.Empty<ToolDefinition>(),
-                maxPromptTokens: 8192, maxCompletionTokens: 2048,
+                maxPromptTokens: 8192, maxCompletionTokens: task.Scenario == "token-anomaly" ? 4096 : 2048,
                 cancellationToken: deadline.Token);
             while (run.Status == RunStatus.Queued || run.Status == RunStatus.InProgress)
             {
                 await Task.Delay(750, deadline.Token);
                 run = await agentClient.Runs.GetRunAsync(thread.Id, run.Id, deadline.Token);
             }
-            if (run.Status != RunStatus.Completed)
-                return Results.Json(new { error = $"Agent run ended with status {run.Status}. No tool actions were executed by the console.", runId = run.Id }, statusCode: 502);
-            var texts = new List<string>();
-            await foreach (var message in agentClient.Messages.GetMessagesAsync(thread.Id, order: ListSortOrder.Ascending, cancellationToken: deadline.Token))
-            {
-                if (message.Role == MessageRole.Agent)
-                    texts.AddRange(message.ContentItems.OfType<MessageTextContent>().Select(item => item.Text));
-            }
-            var text = string.Join("\n\n", texts);
-            if (text.Length > 24000) text = text[..24000];
             var inputTokens = run.Usage?.PromptTokens;
             var outputTokens = run.Usage?.CompletionTokens;
             decimal? cost = null;
@@ -166,6 +156,27 @@ public sealed class AgentPlayground(IConfiguration configuration, ILogger<AgentP
                 && decimal.TryParse(pricing["OutputUsdPerMillion"], System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var outputRate)
                 && inputRate >= 0 && outputRate >= 0 && inputTokens.HasValue && outputTokens.HasValue)
                 cost = (inputTokens.Value * inputRate + outputTokens.Value * outputRate) / 1_000_000m;
+            if (run.Status != RunStatus.Completed)
+            {
+                var incompleteReason = run.IncompleteDetails?.Reason.ToString();
+                return Results.Json(new
+                {
+                    error = $"Agent run ended with status {run.Status}{(incompleteReason is null ? "" : $" ({incompleteReason})")}. No tool actions were executed by the console.",
+                    runId = run.Id,
+                    incompleteReason,
+                    inputTokens,
+                    outputTokens,
+                    estimatedCostUsd = cost
+                }, statusCode: 502);
+            }
+            var texts = new List<string>();
+            await foreach (var message in agentClient.Messages.GetMessagesAsync(thread.Id, order: ListSortOrder.Ascending, cancellationToken: deadline.Token))
+            {
+                if (message.Role == MessageRole.Agent)
+                    texts.AddRange(message.ContentItems.OfType<MessageTextContent>().Select(item => item.Text));
+            }
+            var text = string.Join("\n\n", texts);
+            if (text.Length > 24000) text = text[..24000];
             var dimensions = new Dictionary<string, string>
             {
                 ["gen_ai.agent.name"] = verified.Name, ["gen_ai.response.model"] = run.Model,
@@ -204,6 +215,8 @@ public sealed class AgentPlayground(IConfiguration configuration, ILogger<AgentP
                 dependency.ResultCode = run.Status.ToString();
                 dependency.Properties["gen_ai.response.model"] = run.Model;
                 dependency.Properties["run.id"] = run.Id;
+                if (run.IncompleteDetails is not null)
+                    dependency.Properties["run.incomplete_reason"] = run.IncompleteDetails.Reason.ToString();
                 if (run.Usage is not null)
                 {
                     dependency.Properties["gen_ai.usage.input_tokens"] = run.Usage.PromptTokens.ToString(System.Globalization.CultureInfo.InvariantCulture);

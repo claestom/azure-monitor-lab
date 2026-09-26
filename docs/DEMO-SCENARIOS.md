@@ -2876,7 +2876,7 @@ A routing or retry change increases token use and cost even though requests stil
 4. Use terminal-side GitHub Copilot/Azure tooling to inspect code or configuration if desired; do not describe this as direct Observability Agent MCP integration.
 5. Generate a bounded post-fix batch and compare token and request outcomes.
 
-> A bounded Control Center batch demonstrates a token-volume change but is not guaranteed to cross the 200,000-token static alert threshold. Use the larger [Scenario 53](#s53) simulator when the demo specifically requires that alert to fire. Stopping a live batch requests cancellation; usage already submitted to Foundry may still be billed.
+> A bounded Control Center batch demonstrates a token-volume change but is not guaranteed to cross the 200,000-token static alert threshold. Token-anomaly runs receive additional completion-token headroom because model reasoning counts against that limit. If Foundry still returns an incomplete run, the batch stops without replay and reports any returned token usage. Use the larger [Scenario 53](#s53) simulator when the demo specifically requires that alert to fire. Stopping a live batch requests cancellation; usage already submitted to Foundry may still be billed.
 
 ### Killer line
 > *"Successful requests can still be an operational regression when every answer suddenly costs three times as much."*

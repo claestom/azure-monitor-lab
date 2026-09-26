@@ -156,6 +156,31 @@ test('token anomaly runs only the approved real-call batch and aggregates usage'
   await expect(page.getByLabel('I approve this bounded batch of billable Foundry model calls.')).not.toBeChecked();
 });
 
+test('token anomaly reports usage from an incomplete call and does not replay it', async ({ page }) => {
+  let attempts = 0;
+  await page.route('**/api/agents/run', route => {
+    attempts++;
+    route.fulfill({
+      status: 502,
+      json: {
+        error: 'Agent run ended with status incomplete (max_completion_tokens). No tool actions were executed by the console.',
+        runId: 'run-incomplete',
+        incompleteReason: 'max_completion_tokens',
+        inputTokens: 3260,
+        outputTokens: 4096,
+        estimatedCostUsd: 0.01
+      }
+    });
+  });
+  await ready(page);
+  await page.getByLabel('Token anomaly calls').selectOption('3');
+  await page.getByLabel('I approve this bounded batch of billable Foundry model calls.').check();
+  await page.getByRole('button', { name: 'Generate Token Anomaly' }).click();
+  await expect(page.locator('#token-anomaly-status')).toContainText('0 completed calls; 7,356 reported tokens');
+  await expect(page.locator('#token-anomaly-status')).toContainText('max_completion_tokens');
+  expect(attempts).toBe(1);
+});
+
 test('tabs preserve console state, support keyboard navigation, and validate agent destinations', async ({ page }) => {
   await page.route('**/api/agents/context', route => route.fulfill({ json: { resourceGroup: 'test-rg', appService: 'test-app', sreUrl: 'https://sre.azure.com/#/agent/test', foundryUrl: 'javascript:alert(1)' } }));
   await page.goto('/');
